@@ -1,0 +1,35 @@
+# ========= GLOBAL =========
+.DS_Store
+Thumbs.db
+*.log
+.env
+__pycache__/
+*.pyc
+venv/
+
+# ========= ANDROID =========
+android/.gradle/
+android/**/build/
+android/**/.idea/
+android/**/local.properties
+android/**/*.iml
+android/**/*.apk
+android/**/*.aab
+android/**/*.jks
+android/**/*.keystore
+android/**/.cxx/
+android/**/.externalNativeBuild/
+
+# ========= C++ =========
+engine/build/
+engine/**/CMakeFiles/
+engine/**/CMakeCache.txt
+engine/**/*.o
+engine/**/*.obj
+engine/**/*.exe
+
+# ========= PYTHON / LLM =========
+llm/.pytest_cache/
+llm/telemetry/
+llm/**/__pycache__/
+llm/**/*.pyc
