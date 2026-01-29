@@ -1,6 +1,6 @@
-ChessCoach
+CyberChessCoach
 
-ChessCoach is a mono-repository containing a complete chess training system composed of:
+CyberChessCoach is a mono-repository containing a complete chess training system composed of:
 
 an Android application (UI + gameplay)
 
