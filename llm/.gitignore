@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+
+# OS / IDE
+.vscode/
+.idea/
+
+# Local / secrets
+.env
+
+# Data / logs
+*.log
+*.exe
+*.bin
+*.zip
+*.jsonl
+
+# User junk
+.DS_Store
+Thumbs.db
