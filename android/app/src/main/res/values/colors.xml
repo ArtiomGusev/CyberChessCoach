@@ -1,0 +1,7 @@
+<resources>
+    <color name="bg">#0B0B0F</color>
+    <color name="board_light">#1B1B2A</color>
+    <color name="board_dark">#0F0F17</color>
+    <color name="neon">#00F5FF</color>
+    <color name="select">#FF00D4</color>
+</resources>
