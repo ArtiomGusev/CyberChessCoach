@@ -1,98 +1,173 @@
-ChessCoach-AI (Mode-2)
+ChessCoach
 
-Status: Internal · Closed-Source · Proprietary
+ChessCoach is a mono-repository containing a complete chess training system composed of:
 
-Overview
+an Android application (UI + gameplay)
 
-ChessCoach-AI (Mode-2) is a non-calculating chess explanation system.
+a C++ chess engine (~1800 Elo) acting as the opponent
 
-The system explains:
+an LLM-based explanation engine (RAG + Mode-2) that explains positions after moves are played
 
-evaluations
+The system is designed with strict separation of concerns between playing, evaluating, and explaining chess positions.
 
-strategic ideas
+High-Level Architecture
+User
+  │
+  ▼
+Android App (UI)
+  │
+  ▼
+C++ Chess Engine (~1800 Elo)
+  │   (plays a move)
+  ▼
+Final Position (FEN)
+  │
+  ▼
+Stockfish Evaluator (silent, strong)
+  │   (JSON evaluation)
+  ▼
+LLM Explanation Engine (Mode-2)
+  │
+  ▼
+Human-readable explanation
 
-mistakes
+Key principle
 
-It does not calculate moves, suggest moves, or explore variations.
+Moves are facts.
+Evaluations are judgments.
+Explanations are commentary.
 
-All objective chess analysis is treated as external ground truth.
+No component is allowed to blur these roles.
 
-Core Properties
-
-Deterministic logic outside the LLM
-
-Explicit trust boundaries
-
-Enforced output contracts
-
-Regression-protected behavior
-
-No hallucinated engine facts
-
-Architecture Summary
-
-High-level flow:
-
-Engine JSON → Engine Signal → RAG Retrieval → Prompt Rendering → LLM → Validators → Output
+Repository Structure
+chesscoach/
+├── android/        # Android application (UI, interaction layer)
+├── engine/         # C++ chess engine (~1800 Elo opponent)
+├── llm/            # LLM explanation engine (RAG + Mode-2)
+├── docs/           # Architecture, testing, operations docs
+├── .gitignore
+└── README.md
 
 
-The LLM is treated as an untrusted component.
+Each top-level directory is logically independent and can be reasoned about in isolation.
 
-Details are defined in ARCHITECTURE.md.
+android/
 
-Testing
+Contains the Android application:
 
-Testing is mandatory and non-optional.
+board UI
 
-CI-safe tests
-python run_all_tests.py
+move input
 
+opponent interaction
 
-These tests must pass before any push or release.
+explanation display
 
-Detailed test policies are defined in TESTING.md.
+The Android app:
 
-Release Process
+does not evaluate positions
 
-Releases are gated by:
+does not generate explanations
 
-golden tests
+does not contain chess logic beyond legality
 
-contract tests
+It acts purely as an orchestrator and presentation layer.
 
-LLM regression tests
+engine/
 
-manual sanity review
+Contains a standalone C++ chess engine (~1800 Elo) that:
 
-The full release checklist is defined in RELEASE.md.
+plays against the user
+
+selects a single move given a position
+
+has no knowledge of evaluation or explanations
+
+This engine is intentionally weaker than Stockfish to provide a human-like playing experience.
+
+llm/
+
+Contains the LLM explanation system, including:
+
+Stockfish → JSON evaluator
+
+engine signal extraction (ESV)
+
+RAG document retrieval
+
+Mode-2 prompt system
+
+strict validation and golden tests
+
+The LLM:
+
+never suggests moves
+
+never contradicts engine evaluation
+
+never performs chess calculation
+
+only explains what already happened
+
+This guarantees safe, consistent explanations.
+
+Design Invariants (Non-Negotiable)
+
+The opponent engine never explains
+
+Stockfish never plays
+
+The LLM never calculates
+
+Explanations are generated after moves are committed
+
+No component depends on LLM output for decision-making
+
+These invariants are enforced via tests and validators.
+
+Testing Philosophy
+
+The project uses golden tests to lock behavior:
+
+engine signal extraction
+
+RAG retrieval correctness
+
+prompt snapshots
+
+negative tests to forbid illegal explanations
+
+regression tests for explanation quality
+
+See docs/TESTING.md for details.
+
+Status
+
+This repository is actively developed and structured as a closed-source mono-repo.
+
+Historical standalone repositories (e.g. early LLM-only development) are archived and preserved for reference.
 
 License
 
-This project is proprietary and closed-source.
+All rights reserved.
+This project is not open source.
 
-See LICENSE for full terms.
+See LICENSE for details.
 
-Intended Audience
+Summary
 
-This repository is intended for:
+ChessCoach is built to be:
 
-the project owner
+modular
 
-authorized collaborators
+testable
 
-It is not intended for public distribution.
+explainable
 
-Non-Goals
+resistant to feedback loops
 
-This project does not:
+safe against LLM hallucination
 
-provide move recommendations
-
-compete with chess engines
-
-expose public APIs
-
-serve as an open-source framework
+The architecture intentionally prioritizes correctness and control over convenience.
 
 End of README.md
