@@ -1,0 +1,6 @@
+id: eval_cp_small_advantage
+type: evaluation_translation
+conditions:
+  evaluation.band: small_advantage
+content:
+  description: "One side has a slight but stable positional edge."

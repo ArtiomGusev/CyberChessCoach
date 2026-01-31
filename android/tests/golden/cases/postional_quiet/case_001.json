@@ -1,0 +1,14 @@
+{
+  "fen": "r2q1rk1/ppp2ppp/2np1n2/4p3/2B1P3/2NP1N2/PPP2PPP/R1BQ1RK1 w - - 0 8",
+  "stockfish_json": {
+    "evaluation": {
+      "type": "cp",
+      "value": 65,
+      "side": "white"
+    },
+    "eval_delta": 10,
+    "position_flags": ["space_advantage", "better_development"],
+    "phase": "middlegame"
+  },
+  "user_query": "Who is better in this position?"
+}

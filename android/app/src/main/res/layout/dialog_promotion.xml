@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:padding="20dp"
+    android:background="#1E1E1E"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content">
+
+    <TextView
+        android:text="Promote pawn to"
+        android:textColor="#00FFFF"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:layout_marginBottom="16dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+
+    <GridLayout
+        android:columnCount="2"
+        android:rowCount="2"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:alignmentMode="alignMargins"
+        android:useDefaultMargins="true">
+
+            <Button
+    android:id="@+id/btnQueen"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:text="QUEEN ♛" />
+
+
+        <Button
+            
+    android:id="@+id/btnRook"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+            android:text="♖\nRook" />
+
+        <Button
+            android:id="@+id/btnBishop"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+            android:text="♗\nBishop" />
+
+        <Button
+            android:id="@+id/btnKnight"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+            android:text="♘\nKnight" />
+    </GridLayout>
+
+</LinearLayout>
