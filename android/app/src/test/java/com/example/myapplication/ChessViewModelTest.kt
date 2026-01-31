@@ -1,0 +1,59 @@
+package com.example.myapplication
+
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.*
+import org.junit.After
+import org.junit.Assert.assertFalse
+import org.junit.Before
+import org.junit.Test
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class ChessViewModelTest {
+
+    private lateinit var viewModel: ChessViewModel
+    private val testDispatcher = StandardTestDispatcher()
+
+    // 🛡️ Safe mock for testing
+    private class FakeEngine : EngineProvider {
+        override fun getBestMove(fen: String): AIMove {
+            return AIMove(0, 0, 1, 1)
+        }
+    }
+
+    @Before
+    fun setup() {
+        Dispatchers.setMain(testDispatcher)
+        viewModel = ChessViewModel(FakeEngine())
+    }
+
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `test AI move is discarded after reset`() = runTest {
+        var aiMoveApplied = false
+        
+        // 1. Trigger human move
+        viewModel.onHumanMove(
+            fr = 6, fc = 4, tr = 4, tc = 4,
+            applyHumanMove = { MoveResult.SUCCESS }, // Use extracted enum
+            exportFEN = { "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b" },
+            applyAIMove = { _, _, _, _ -> aiMoveApplied = true }
+        )
+
+        // Give the coroutine a moment to start
+        advanceTimeBy(10)
+
+        // 2. Immediately reset the ViewModel
+        viewModel.reset()
+
+        // 3. Complete all pending tasks
+        advanceUntilIdle()
+
+        // 4. Verify that the AI move was never applied
+        assertFalse("AI move should have been discarded after reset", aiMoveApplied)
+    }
+}

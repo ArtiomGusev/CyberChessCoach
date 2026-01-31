@@ -31,16 +31,3 @@ object ChessNative {
     /** No-op in pure architecture, kept for build compatibility */
     fun reset() {}
 }
-
-/**
- * ✅ Kotlin AIMove model
- * Used by JNI to return coordinates.
- */
-data class AIMove(
-    val fr: Int,
-    val fc: Int,
-    val tr: Int,
-    val tc: Int
-) {
-    fun isValid() = fr >= 0
-}

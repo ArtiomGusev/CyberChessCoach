@@ -1,6 +1,7 @@
 package com.example.myapplication
 
 import android.graphics.Typeface
+import android.os.Build
 import android.os.Bundle
 import android.text.Spannable
 import android.text.SpannableStringBuilder
@@ -149,14 +150,22 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
             for (char in response) {
                 ssb.append(char)
                 
-                // Dynamically apply monospace span to FEN string
                 if (currentFen != null && response.contains(currentFen!!)) {
                     val start = ssb.indexOf(currentFen!!)
                     if (start != -1) {
                         val end = start + currentFen!!.length
                         val currentEnd = if (ssb.length < end) ssb.length else end
+                        
+                        // 🛡️ API Compatibility FIX
+                        val span = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                            TypefaceSpan("monospace")
+                        } else {
+                            @Suppress("DEPRECATION")
+                            TypefaceSpan("monospace")
+                        }
+                        
                         ssb.setSpan(
-                            TypefaceSpan("monospace"),
+                            span,
                             start,
                             currentEnd,
                             Spannable.SPAN_EXCLUSIVE_EXCLUSIVE

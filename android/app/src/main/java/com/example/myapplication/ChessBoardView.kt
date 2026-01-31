@@ -3,6 +3,7 @@ package com.example.myapplication
 import android.content.Context
 import android.graphics.*
 import android.util.AttributeSet
+import android.util.Log
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
@@ -12,8 +13,6 @@ class ChessBoardView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
 ) : View(context, attrs) {
-
-    enum class MoveResult { SUCCESS, PROMOTION, FAILED }
 
     data class Arrow(val sr: Int, val sc: Int, val tr: Int, val tc: Int, val color: Int = Color.parseColor("#FF4444"))
 
@@ -75,7 +74,6 @@ class ChessBoardView @JvmOverloads constructor(
     private val piecePaintBlack = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#708090") // Slate Grey
         textAlign = Paint.Align.CENTER
-        // Enhanced glow for better visibility on dark squares (rim-light effect)
         setShadowLayer(12f, 0f, 0f, Color.parseColor("#4A90E2")) // Electric Blue glow
     }
 
@@ -118,6 +116,9 @@ class ChessBoardView @JvmOverloads constructor(
     fun setFEN(fen: String) {
         val parts = fen.split(" ")
         if (parts.isEmpty()) return
+        
+        for (r in 0..7) board[r].fill('.')
+
         val rows = parts[0].split("/")
         for (r in 0..7) {
             if (r >= rows.size) break
@@ -163,8 +164,21 @@ class ChessBoardView @JvmOverloads constructor(
         }
     }
 
+    /**
+     * 🛡️ SAFE AI EXECUTION:
+     * Validates that the engine's move is legal before applying.
+     */
     fun applyAIMove(fr: Int, fc: Int, tr: Int, tc: Int) {
-        if (fr !in 0..7 || fc !in 0..7 || tr !in 0..7 || tc !in 0..7) return
+        if (fr !in 0..7 || fc !in 0..7 || tr !in 0..7 || tc !in 0..7) {
+            Log.e("CHESS_BOARD", "AI Move out of bounds: $fr,$fc -> $tr,$tc")
+            return
+        }
+        
+        if (!isLegal(fr, fc, tr, tc)) {
+            Log.e("CHESS_BOARD", "AI ATTEMPTED ILLEGAL MOVE: $fr,$fc -> $tr,$tc")
+            return
+        }
+
         executeMove(fr, fc, tr, tc)
         whiteToMove = !whiteToMove
         invalidate()
@@ -380,7 +394,6 @@ class ChessBoardView @JvmOverloads constructor(
             }
         }
         
-        // Draw arrows
         for (arrow in arrows) {
             drawArrow(canvas, arrow)
         }
@@ -396,7 +409,6 @@ class ChessBoardView @JvmOverloads constructor(
         val endX = arrow.tc * squareSize + squareSize / 2
         val endY = arrow.tr * squareSize + squareSize / 2
         
-        // Adjust end point slightly so it doesn't overlap the center of the target square perfectly
         val angle = atan2((endY - startY).toDouble(), (endX - startX).toDouble())
         val dist = sqrt((endX - startX).pow(2) + (endY - startY).pow(2))
         val newEndX = startX + (dist - squareSize * 0.3f) * cos(angle).toFloat()
@@ -404,7 +416,6 @@ class ChessBoardView @JvmOverloads constructor(
 
         canvas.drawLine(startX, startY, newEndX, newEndY, arrowPaint)
         
-        // Arrow head
         val headSize = squareSize * 0.3f
         val headPath = Path()
         headPath.moveTo(newEndX, newEndY)
