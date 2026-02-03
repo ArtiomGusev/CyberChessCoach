@@ -37,9 +37,9 @@ def run(module: str):
         stderr=sys.stderr,
     )
     if result.returncode != 0:
-        print(f"\n❌ FAILED: {module}")
+        print(f"\nFAILED: {module}")
         sys.exit(result.returncode)
-    print(f"✅ PASSED: {module}")
+    print(f"PASSED: {module}")
 
 
 def main():

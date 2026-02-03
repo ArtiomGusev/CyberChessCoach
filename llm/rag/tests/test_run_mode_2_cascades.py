@@ -39,8 +39,12 @@ def test_notation_sanitization_cascade():
     out = run_mode_2(llm=llm, prompt="PROMPT", case_type="tactical")
 
     _assert_sanitized(out)
-    # At least one generation occurred
-    assert len(llm.calls) >= 1
+    # At least one generation occurred and a rewrite should have been requested
+    from rag.llm.config import MAX_MODE_2_RETRIES
+    assert len(llm.calls) >= 2
+    assert any("REWRITE INSTRUCTIONS" in c for c in llm.calls)
+    # Don't exceed the retry budget (initial + MAX retries)
+    assert len(llm.calls) <= 1 + MAX_MODE_2_RETRIES
 
 
 def test_mate_notation_advisory_cascade():
@@ -55,8 +59,12 @@ def test_mate_notation_advisory_cascade():
     out = run_mode_2(llm=llm, prompt="PROMPT", case_type="tactical")
 
     _assert_sanitized(out)
-    # Either deterministic sanitization or a rewrite should have happened
-    assert len(llm.calls) >= 1
+    # A rewrite should have been requested and applied
+    from rag.llm.config import MAX_MODE_2_RETRIES
+    assert len(llm.calls) >= 2
+    assert any("REWRITE INSTRUCTIONS" in c for c in llm.calls)
+    # Don't exceed the retry budget
+    assert len(llm.calls) <= 1 + MAX_MODE_2_RETRIES
 
 
 def test_structure_advisory_notation_cascade():
@@ -71,4 +79,9 @@ def test_structure_advisory_notation_cascade():
     out = run_mode_2(llm=llm, prompt="PROMPT", case_type="tactical")
 
     _assert_sanitized(out)
-    assert len(llm.calls) >= 1
+    # Structure rewrite should have been requested (or a rewrite was used)
+    from rag.llm.config import MAX_MODE_2_RETRIES
+    assert len(llm.calls) >= 2
+    assert any("REWRITE INSTRUCTIONS" in c for c in llm.calls)
+    # Don't exceed the retry budget
+    assert len(llm.calls) <= 1 + MAX_MODE_2_RETRIES
