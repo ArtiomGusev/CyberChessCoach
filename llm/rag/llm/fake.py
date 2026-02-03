@@ -16,7 +16,7 @@ class FakeLLM(BaseLLM):
         if self.mode == "compliant":
             return (
                 "The evaluation indicates a decisive outcome. "
-                "A forced mate cannot be avoided with correct play."
+                "The loss is inevitable with correct play."
             )
 
         if self.mode == "forbidden_phrase":
