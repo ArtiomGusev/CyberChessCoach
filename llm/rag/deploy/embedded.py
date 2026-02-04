@@ -1,4 +1,5 @@
 import os
+import time
 
 from rag.engine_signal.extract_engine_signal import extract_engine_signal
 from rag.retriever import retrieve
@@ -7,7 +8,8 @@ from rag.prompts.render_mode_2 import render_mode_2_prompt
 from rag.llm.ollama import OllamaLLM
 from rag.llm.run_mode_2 import run_mode_2
 from rag.meta.case_classifier import infer_case_type
-
+from rag.telemetry.event import Mode2TelemetryEvent
+from rag.telemetry.sink import emit
 
 # ---- Load deployment config (edge only) ----
 
@@ -43,56 +45,59 @@ else:
 
 def explain_position(payload: dict) -> dict:
     if "engine_json" not in payload:
-      raise ValueError("payload must include engine_json")
+        raise ValueError("payload must include engine_json")
 
-    """
-    Input:
-      {
-        "fen": str,
-        "engine_json": dict,
-        "metadata": { ... }   # optional
-      }
+    start_time = time.time()
+    explanation_text = None
+    confidence = "unknown"
+    case_type = "unknown"
 
-    Output:
-      {
-        "explanation": str,
-        "confidence": "high" | "low",
-        "tags": [ ... ]
-      }
-    """
+    try:
+        esv = extract_engine_signal(payload["engine_json"])
 
+        rag_docs = retrieve(esv, ALL_RAG_DOCUMENTS)
 
-    esv = extract_engine_signal(payload["engine_json"])
+        prompt = render_mode_2_prompt(
+            engine_signal=esv,
+            rag_context=rag_docs,
+            fen=payload["fen"],
+            user_query=payload.get("user_query", ""),
+        )
 
-    rag_docs = retrieve(esv, ALL_RAG_DOCUMENTS)
+        case_type = payload.get("case_type") or infer_case_type(esv)
 
-    prompt = render_mode_2_prompt(
-        engine_signal=esv,
-        rag_context=rag_docs,
-        fen=payload["fen"],
-        user_query=payload.get("user_query", ""),
-    )
+        explanation_text = run_mode_2(
+            llm=_REAL_LLM,
+            prompt=prompt,
+            case_type=case_type,
+        )
 
-    case_type = payload.get("case_type")
-    if case_type is None:
-        case_type = infer_case_type(esv)
+        from rag.quality.explanation_score import score_explanation
+        from rag.llm.config import MIN_QUALITY_SCORE
 
-    explanation_text = run_mode_2(
-        llm=_REAL_LLM,
-        prompt=prompt,
-        case_type=case_type,
-    )
+        score = score_explanation(text=explanation_text, engine_signal=esv)
+        confidence = "high" if score >= MIN_QUALITY_SCORE else "low"
 
-    # Score and determine confidence
-    from rag.quality.explanation_score import score_explanation
-    from rag.llm.config import MIN_QUALITY_SCORE
+        return {
+            "explanation": explanation_text,
+            "confidence": confidence,
+            "tags": [],
+        }
 
-    score = score_explanation(text=explanation_text, engine_signal=esv)
-    confidence = "high" if score >= MIN_QUALITY_SCORE else "low"
+    finally:
+        latency_ms = int((time.time() - start_time) * 1000)
 
-    return {
-        "explanation": explanation_text,
-        "confidence": confidence,
-        "tags": [],
-    }
+        event = Mode2TelemetryEvent(
+            success=explanation_text is not None,
+            retry_used=False,  # intentionally fixed for now
+            latency_ms=latency_ms,
+            validator_failures=[],
+            output_length=len(explanation_text) if explanation_text else 0,
+            case_type=case_type,
+            confidence=confidence,
+            model=LLM_MODEL,
+        )
+
+        emit(event)
+
 

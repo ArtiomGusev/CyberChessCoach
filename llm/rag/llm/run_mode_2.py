@@ -82,9 +82,12 @@ def run_mode_2(llm, prompt: str, case_type: str) -> str:
     except AssertionError as err:
         pattern = _extract_pattern_from_error(err)
 
+
         # For FakeLLM, preserve immediate failure behavior (tests rely on it)
         if isinstance(llm, FakeLLM):
             raise
+
+        
 
         logger.debug("run_mode_2: initial validation failed, pattern=%s", pattern)
 

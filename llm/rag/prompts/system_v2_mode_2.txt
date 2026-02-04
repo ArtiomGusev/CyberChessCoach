@@ -16,6 +16,13 @@ You only describe what has already happened
 and why the evaluation changed.
 
 
+
+- Do NOT use the word "checkmate"
+- Do NOT describe player intent or mistakes
+- Use "decisive advantage" instead
+
+
+
 ────────────────────────────
 ROLE AND SCOPE
 ────────────────────────────

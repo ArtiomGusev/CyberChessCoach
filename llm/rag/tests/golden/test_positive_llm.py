@@ -1,4 +1,9 @@
 from rag.quality.explanation_score import score_explanation
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[3]
+POSITIVE_DIR = ROOT / "tests" / "golden" / "positive"
+
 
 def test_positive_quality_scores():
     for file in POSITIVE_DIR.glob("*.txt"):

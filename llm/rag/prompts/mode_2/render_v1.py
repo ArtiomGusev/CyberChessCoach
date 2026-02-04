@@ -1,9 +1,4 @@
-from pathlib import Path
-
-_SYSTEM_PROMPT = Path(
-    "rag/prompts/system_v2_mode_2.txt"
-).read_text(encoding="utf-8")
-
+print(">>> USING MODE-2 RENDER V1 <<<")
 
 def render_mode_2_prompt(
     *,
@@ -33,11 +28,6 @@ def render_mode_2_prompt(
         if key in engine_signal:
             parts.append(f"{key}: {engine_signal[key]}")
     parts.append("")
-
-    if engine_signal is None:
-        raise ValueError(
-            "engine_signal is None. extract_engine_signal() must return a dict."
-        )
 
     # RAG CONTEXT
     parts.append("RAG CONTEXT:")

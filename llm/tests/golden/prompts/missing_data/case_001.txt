@@ -90,18 +90,17 @@ If a request violates these rules:
 End of system instructions.
 
 ENGINE SIGNAL:
-evaluation: {'type': 'mate', 'band': 'decisive_advantage', 'side': 'black'}
+evaluation: {'type': 'cp', 'band': 'equal', 'side': 'black'}
 eval_delta: stable
-last_move_quality: blunder
-tactical_flags: ['forced_mate']
+last_move_quality: unknown
+tactical_flags: []
 position_flags: []
 phase: middlegame
 
 RAG CONTEXT:
-- Decisive material or positional advantage.
 
 FEN:
-r1bq1rk1/pppp1ppp/2n5/4p3/3PPQ2/2N2N2/PPP2PPP/R1B1KB1R b KQ - 5 6
+rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
 
 USER QUESTION:
-Is the position already lost for Black?
+Is this position good for White?

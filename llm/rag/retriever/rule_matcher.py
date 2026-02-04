@@ -1,21 +1,22 @@
 # rag/retriever/rule_matcher.py
 
 def matches_conditions(esv: dict, conditions: dict) -> bool:
-    for key, value in conditions.items():
-        # Support nested keys like "evaluation.band"
-        parts = key.split(".")
+    for path, expected in conditions.items():
+        parts = path.split(".")
         current = esv
 
         for part in parts:
-            if part not in current:
+            if not isinstance(current, dict) or part not in current:
                 return False
             current = current[part]
 
         if isinstance(current, list):
-            if value not in current:
+            if expected not in current:
                 return False
         else:
-            if current != value:
+            if current != expected:
                 return False
 
     return True
+
+

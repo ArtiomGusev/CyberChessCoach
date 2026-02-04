@@ -6,7 +6,7 @@ def load_text(path: Path) -> str:
     return path.read_text(encoding="utf-8").strip()
 
 
-def render_mode_2_prompt(
+def render_mode_2_prompt_legacy(
     *,
     system_prompt: str,
     engine_signal: dict,

@@ -1,7 +1,12 @@
-────────────────────────────
-ENGINE SIGNAL (STRUCTURED)
-────────────────────────────
-{engine_signal_json}
+
+ENGINE SIGNAL:
+eval_delta: stable
+evaluation: {'type': 'mate', 'band': 'decisive_advantage', 'side': 'black'}
+last_move_quality: blunder
+phase: middlegame
+position_flags: []
+tactical_flags: ['forced_mate']
+
 
 ────────────────────────────
 RETRIEVED CONTEXT (REFERENCE)

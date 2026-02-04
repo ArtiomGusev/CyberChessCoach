@@ -15,8 +15,7 @@ class FakeLLM(BaseLLM):
     def generate(self, prompt: str) -> str:
         if self.mode == "compliant":
             return (
-                "The evaluation indicates a decisive outcome. "
-                "The loss is inevitable with correct play."
+                "The evaluation indicates a decisive outcome, and the position leaves little room for recovery. With accurate play, the result is inevitable over the next phase of the game."
             )
 
         if self.mode == "forbidden_phrase":

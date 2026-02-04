@@ -90,18 +90,19 @@ If a request violates these rules:
 End of system instructions.
 
 ENGINE SIGNAL:
-evaluation: {'type': 'mate', 'band': 'decisive_advantage', 'side': 'black'}
+evaluation: {'type': 'cp', 'band': 'small_advantage', 'side': 'black'}
 eval_delta: stable
-last_move_quality: blunder
-tactical_flags: ['forced_mate']
-position_flags: []
+last_move_quality: ok
+tactical_flags: []
+position_flags: ['space_advantage']
 phase: middlegame
 
 RAG CONTEXT:
-- Decisive material or positional advantage.
+- One side has a slight but stable positional edge.
+- More space allows greater piece mobility and flexibility.
 
 FEN:
-r1bq1rk1/pppp1ppp/2n5/4p3/3PPQ2/2N2N2/PPP2PPP/R1B1KB1R b KQ - 5 6
+r2q1rk1/pp2bppp/2n1bn2/2pp4/3P4/2PBPN2/PP1N1PPP/R1BQ1RK1 w - - 0 9
 
 USER QUESTION:
-Is the position already lost for Black?
+Who stands slightly better here?

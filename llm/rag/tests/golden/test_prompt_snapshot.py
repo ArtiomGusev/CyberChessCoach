@@ -4,7 +4,7 @@ from pathlib import Path
 from rag.engine_signal.extract_engine_signal import extract_engine_signal
 from rag.retriever.retriever import retrieve
 from rag.documents import ALL_RAG_DOCUMENTS
-from rag.prompts.mode_2.render import render_mode_2_prompt
+from rag.prompts.mode_2.render_v1 import render_mode_2_prompt
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -35,7 +35,11 @@ def test_all_golden_prompt_snapshots():
 
         case = load_json(case_path)
 
-        esv = extract_engine_signal(case["stockfish_json"])
+        esv = extract_engine_signal(
+            case["stockfish_json"],
+            fen=case["fen"],
+        )
+
         rag_docs = retrieve(esv, ALL_RAG_DOCUMENTS)
 
         rendered = render_mode_2_prompt(
@@ -49,10 +53,12 @@ def test_all_golden_prompt_snapshots():
         expected = golden_prompt_path.read_text(encoding="utf-8").strip()
 
         if rendered != expected:
-            failures.append({
-                "case": str(case_path),
-                "diff_hint": "Rendered prompt does not match golden snapshot",
-            })
+            print("\n=== RENDERED ===\n")
+            print(repr(rendered))
+            print("\n=== EXPECTED ===\n")
+            print(repr(expected))
+            raise AssertionError(f"Snapshot mismatch for {case_path}")
+
 
     if failures:
         raise AssertionError(
