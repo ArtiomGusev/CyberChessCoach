@@ -1,22 +1,41 @@
-# Stockfish → RAG System
+SECA v1 – Safe Adaptive Chess Coach
+Features
 
+Deterministic runtime
 
-This module converts Stockfish analysis into human explanations.
+Adaptive opponent (non-learning)
 
+Curriculum recommendation (static logic)
 
-## Pipeline
-1. Stockfish JSON → Engine Signal Vector (ESV)
-2. ESV → Deterministic RAG retrieval
-3. RAG context → Mode-2 LLM explanation
+SafeWorldModel stub
 
+No self-modification
 
-## Hard Guarantees
-- No chess calculation outside Stockfish
-- No hallucinated moves or tactics
-- Deterministic behavior
+Installation
+pip install -r requirements.txt
+python setup_stockfish.py
 
+Safety Verification
+python verify_safety.py
 
-## DO NOT
-- Add semantic search
-- Add move suggestions
-- Bypass ESV mapping
+Run Server
+uvicorn app.server:app --reload
+
+Health Check
+curl http://127.0.0.1:8000/health
+
+Safety Model
+
+SECA v1 enforces:
+
+No online training
+
+No bandit updates
+
+No world model learning
+
+No background adaptive loops
+
+Safety layer enforced at startup via:
+
+llm/seca/safety/freeze.py
