@@ -11,6 +11,9 @@ class SkillTrainer:
         - weakness correlation
         - explanation policy update
         """
+        from llm.seca.runtime.safe_mode import SAFE_MODE
+        if SAFE_MODE:
+            return {"status": "safe_mode"}
 
         games = len(events)
 
