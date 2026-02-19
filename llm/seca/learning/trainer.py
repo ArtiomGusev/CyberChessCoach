@@ -2,6 +2,7 @@ import asyncio
 
 from llm.seca.learning.outcome_tracker import ExplanationOutcomeTracker
 from llm.seca.learning.causal_impact import CausalTrainingImpactEngine
+from llm.seca.runtime.safe_mode import SAFE_MODE
 
 
 class SECALearner:
@@ -42,6 +43,9 @@ class SECALearner:
         """
         Pull new outcomes → update causal model.
         """
+
+        if SAFE_MODE:
+            return
 
         samples = self.tracker.consume_new_samples()
 

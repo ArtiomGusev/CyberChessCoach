@@ -4,6 +4,7 @@ from ..storage.event_storage import EventStorage
 from ..skills.skill_graph import SkillGraph
 from ..learning.causal_engine import CausalEngine
 from ..coaching.world_policy import WorldModelPolicy
+from ..runtime.safe_mode import SAFE_MODE
 from ..world_model.state import PlayerStateEncoder
 from ..world_model.transition import SkillTransitionModel
 from ..world_model.outcome import OutcomePredictor
@@ -39,6 +40,9 @@ class OnlineSECALearner:
         """
         Pull latest events → update skill model.
         """
+        if SAFE_MODE:
+            return {"status": "safe_mode"}
+
         events = self.storage.get_recent_games(limit=50)
 
         if not events:
