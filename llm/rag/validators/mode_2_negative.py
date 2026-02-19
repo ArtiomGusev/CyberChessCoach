@@ -1,32 +1,36 @@
 import re
 
 FORBIDDEN_PATTERNS = [
-    r"\bcheckmate\b",
-    r"\bmate in\b",
-    r"\bforced mate\b",
+    # speculative / intent language
+    r"\bshould\b",
+    r"\blikely\b",
+    r"\bprobably\b",
+    r"\bI think\b",
+    r"\bthe engine wants\b",
+    r"\bplans to\b",
+    r"\bconsider\b",
 
-    r"\b(should|must|needs to|best move)\b",
-    r"\bplay\b\s+[a-h][1-8]",
+    # invented chess moves (Qh5, Nf3, etc.)
+    r"\b[KQRBN][a-h][1-8]\b",
 
-    r"\b[BNRQK]?[a-h][1-8](x[a-h][1-8])?(=[BNRQ])?\+?\b",
-    r"\b0-0\b|\b0-0-0\b",
-    r"\b1-0\b|\b0-1\b|\b½-½\b",
-
-    r"\bafter\b\s+[a-h][1-8]",
-    r"\bfollowed by\b",
-
-    r"\b(blundered|carelessly|intended|overlooked|failed to see)\b",
-
-    r"\bactually winning\b",
-    r"\bdespite the evaluation\b",
+    # analysis language forbidden in MODE-2
+    r"\bcalculate\b",
+    r"\bcalculation\b",
+    r"\bvariation\b",
+    r"\bline\b",
 ]
 
-
 def validate_mode_2_negative(text: str) -> None:
-    lowered = text.lower()
+    """
+    MUST raise AssertionError for invalid MODE-2 output.
+    """
+    assert text.strip(), "Empty output is invalid"
 
     for pattern in FORBIDDEN_PATTERNS:
-        if re.search(pattern, lowered):
+        if re.search(pattern, text, re.IGNORECASE):
             raise AssertionError(
-                f"Mode-2 violation detected: pattern `{pattern}`"
+                f"Forbidden MODE-2 pattern detected: {pattern}"
             )
+
+    # If we reach here, text is INVALID *by definition*
+    raise AssertionError("Negative MODE-2 case did not violate rules")

@@ -1,3 +1,4 @@
+SYSTEM PROMPT:
 You are ChessCoach-AI, an expert chess analyst and explainer.
 
 You do NOT calculate chess moves or evaluations.
@@ -88,22 +89,20 @@ If a request violates these rules:
 
 End of system instructions.
 
-────────────────────────────
-ENGINE SIGNAL (STRUCTURED)
-────────────────────────────
-null
+ENGINE SIGNAL:
+evaluation: {'type': 'cp', 'band': 'small_advantage', 'side': 'black'}
+eval_delta: stable
+last_move_quality: ok
+tactical_flags: []
+position_flags: ['space_advantage']
+phase: middlegame
 
-────────────────────────────
-RETRIEVED CONTEXT (REFERENCE)
-────────────────────────────
-(no retrieved context)
+RAG CONTEXT:
+- One side has a slight but stable positional edge.
+- More space allows greater piece mobility and flexibility.
 
-────────────────────────────
-POSITION
-────────────────────────────
-FEN: r2q1rk1/pp2bppp/2n1bn2/2pp4/3P4/2PBPN2/PP1N1PPP/R1BQ1RK1 w - - 0 9
+FEN:
+r2q1rk1/pp2bppp/2n1bn2/2pp4/3P4/2PBPN2/PP1N1PPP/R1BQ1RK1 w - - 0 9
 
-────────────────────────────
-USER REQUEST
-────────────────────────────
+USER QUESTION:
 Who stands slightly better here?

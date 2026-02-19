@@ -1,6 +1,6 @@
 import json
 import os
-from rag.telemetry.event import Mode2TelemetryEvent
+from llm.rag.telemetry.event import Mode2TelemetryEvent
 
 TELEMETRY_ENABLED = os.getenv("LLM_TELEMETRY", "1") == "1"
 

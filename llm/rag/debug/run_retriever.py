@@ -1,8 +1,8 @@
 import json
 from pathlib import Path
 
-from rag.engine_signal.extract_engine_signal import extract_engine_signal
-from rag.retriever.retriever import retrieve
+from llm.rag.engine_signal.extract_engine_signal import extract_engine_signal
+from llm.rag.retriever.retriever import retrieve
 
 # --- Load golden case ---
 ROOT = Path(__file__).resolve().parents[2]
@@ -21,7 +21,7 @@ print(json.dumps(esv, indent=2))
 
 # --- Load all RAG documents ---
 # For now, we load them manually as a list
-from rag.documents import ALL_RAG_DOCUMENTS  # see note below
+from llm.rag.documents import ALL_RAG_DOCUMENTS  # see note below
 
 # --- Run retriever ---
 docs = retrieve(esv, ALL_RAG_DOCUMENTS)

@@ -1,4 +1,4 @@
-from rag.llm.base import BaseLLM
+from llm.rag.llm.base import BaseLLM
 
 
 class FakeLLM(BaseLLM):

@@ -1,5 +1,5 @@
 from pathlib import Path
-from rag.tests.golden.test_prompt_snapshot import (
+from llm.rag.tests.golden.test_prompt_snapshot import (
     render_mode_2_prompt,
     extract_engine_signal,
     load_json,

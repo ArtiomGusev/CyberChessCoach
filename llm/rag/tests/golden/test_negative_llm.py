@@ -1,5 +1,5 @@
 from pathlib import Path
-from rag.validators.mode_2_negative import validate_mode_2_negative
+from llm.rag.validators.mode_2_negative import validate_mode_2_negative
 
 NEGATIVE_DIR = Path("rag/tests/golden/negative")
 

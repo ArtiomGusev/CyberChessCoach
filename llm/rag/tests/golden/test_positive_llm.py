@@ -1,4 +1,4 @@
-from rag.quality.explanation_score import score_explanation
+from llm.rag.quality.explanation_score import score_explanation
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]

@@ -1,10 +1,10 @@
 import json
 from pathlib import Path
 
-from rag.engine_signal.extract_engine_signal import extract_engine_signal
-from rag.retriever.retriever import retrieve
-from rag.documents import ALL_RAG_DOCUMENTS
-from rag.prompts.mode_2.render_v1 import render_mode_2_prompt
+from llm.rag.engine_signal.extract_engine_signal import extract_engine_signal
+from llm.rag.retriever.retriever import retrieve
+from llm.rag.documents import ALL_RAG_DOCUMENTS
+from llm.rag.prompts.mode_2.render_v1 import render_mode_2_prompt
 
 
 ROOT = Path(__file__).resolve().parents[3]

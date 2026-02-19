@@ -1,4 +1,4 @@
-from rag.llm.run_mode_2 import run_mode_2
+from llm.rag.llm.run_mode_2 import run_mode_2
 
 
 class TestLLM:

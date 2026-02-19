@@ -1,6 +1,6 @@
 import re
 
-from rag.llm.run_mode_2 import run_mode_2
+from llm.rag.llm.run_mode_2 import run_mode_2
 
 
 class TestLLM:
@@ -40,7 +40,7 @@ def test_notation_sanitization_cascade():
 
     _assert_sanitized(out)
     # At least one generation occurred and a rewrite should have been requested
-    from rag.llm.config import MAX_MODE_2_RETRIES
+    from llm.rag.llm.config import MAX_MODE_2_RETRIES
     assert len(llm.calls) >= 2
     assert any("REWRITE INSTRUCTIONS" in c for c in llm.calls)
     # Don't exceed the retry budget (initial + MAX retries)
@@ -60,7 +60,7 @@ def test_mate_notation_advisory_cascade():
 
     _assert_sanitized(out)
     # A rewrite should have been requested and applied
-    from rag.llm.config import MAX_MODE_2_RETRIES
+    from llm.rag.llm.config import MAX_MODE_2_RETRIES
     assert len(llm.calls) >= 2
     assert any("REWRITE INSTRUCTIONS" in c for c in llm.calls)
     # Don't exceed the retry budget
@@ -80,7 +80,7 @@ def test_structure_advisory_notation_cascade():
 
     _assert_sanitized(out)
     # Structure rewrite should have been requested (or a rewrite was used)
-    from rag.llm.config import MAX_MODE_2_RETRIES
+    from llm.rag.llm.config import MAX_MODE_2_RETRIES
     assert len(llm.calls) >= 2
     assert any("REWRITE INSTRUCTIONS" in c for c in llm.calls)
     # Don't exceed the retry budget

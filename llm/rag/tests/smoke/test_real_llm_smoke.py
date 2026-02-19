@@ -2,7 +2,7 @@ import os
 import time
 import pytest
 
-from rag.deploy.embedded import explain_position
+from llm.rag.deploy.embedded import explain_position
 
 @pytest.mark.smoke
 def test_real_llm_smoke():

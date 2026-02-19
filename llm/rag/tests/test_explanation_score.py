@@ -1,4 +1,4 @@
-from rag.quality.explanation_score import score_explanation
+from llm.rag.quality.explanation_score import score_explanation
 
 
 def test_score_high_when_good_explanation():
