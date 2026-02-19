@@ -3,12 +3,12 @@ import json
 from pathlib import Path
 import pytest
 
-from rag.engine_signal.extract_engine_signal import extract_engine_signal
-from rag.retriever.retriever import retrieve
-from rag.documents import ALL_RAG_DOCUMENTS
-from rag.prompts.render_mode_2 import render_mode_2_prompt
-from rag.llm.ollama import OllamaLLM
-from rag.llm.run_mode_2 import run_mode_2
+from llm.rag.engine_signal.extract_engine_signal import extract_engine_signal
+from llm.rag.retriever.retriever import retrieve
+from llm.rag.documents import ALL_RAG_DOCUMENTS
+from llm.rag.prompts.render_mode_2 import render_mode_2_prompt
+from llm.rag.llm.ollama import OllamaLLM
+from llm.rag.llm.run_mode_2 import run_mode_2
 
 ROOT = Path(__file__).resolve().parents[3]
 CASES_DIR = ROOT / "tests" / "golden" / "cases"

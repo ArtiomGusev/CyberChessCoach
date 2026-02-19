@@ -1,4 +1,4 @@
-from rag.telemetry.event import Mode2TelemetryEvent
+from llm.rag.telemetry.event import Mode2TelemetryEvent
 
 
 def test_telemetry_event_shape():

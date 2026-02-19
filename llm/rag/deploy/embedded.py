@@ -1,15 +1,15 @@
 import os
 import time
 
-from rag.engine_signal.extract_engine_signal import extract_engine_signal
-from rag.retriever import retrieve
-from rag.documents import ALL_RAG_DOCUMENTS
-from rag.prompts.render_mode_2 import render_mode_2_prompt
-from rag.llm.ollama import OllamaLLM
-from rag.llm.run_mode_2 import run_mode_2
-from rag.meta.case_classifier import infer_case_type
-from rag.telemetry.event import Mode2TelemetryEvent
-from rag.telemetry.sink import emit
+from llm.rag.engine_signal.extract_engine_signal import extract_engine_signal
+from llm.rag.retriever import retrieve
+from llm.rag.documents import ALL_RAG_DOCUMENTS
+from llm.rag.prompts.render_mode_2 import render_mode_2_prompt
+from llm.rag.llm.ollama import OllamaLLM
+from llm.rag.llm.run_mode_2 import run_mode_2
+from llm.rag.meta.case_classifier import infer_case_type
+from llm.rag.telemetry.event import Mode2TelemetryEvent
+from llm.rag.telemetry.sink import emit
 
 # ---- Load deployment config (edge only) ----
 
@@ -29,7 +29,7 @@ if LLM_MODEL and LLM_MODEL.startswith("fake"):
     # Support selecting a FakeLLM with an optional mode via LLM_MODEL, e.g.:
     #   LLM_MODEL=fake             -> FakeLLM(mode="compliant")
     #   LLM_MODEL=fake:mate_softening -> FakeLLM(mode="mate_softening")
-    from rag.llm.fake import FakeLLM
+    from llm.rag.llm.fake import FakeLLM
 
     parts = LLM_MODEL.split(":", 1)
     mode = parts[1] if len(parts) > 1 else "compliant"
@@ -72,8 +72,8 @@ def explain_position(payload: dict) -> dict:
             case_type=case_type,
         )
 
-        from rag.quality.explanation_score import score_explanation
-        from rag.llm.config import MIN_QUALITY_SCORE
+        from llm.rag.quality.explanation_score import score_explanation
+        from llm.rag.llm.config import MIN_QUALITY_SCORE
 
         score = score_explanation(text=explanation_text, engine_signal=esv)
         confidence = "high" if score >= MIN_QUALITY_SCORE else "low"

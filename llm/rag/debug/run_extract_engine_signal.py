@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from rag.engine_signal.extract_engine_signal import extract_engine_signal
+from llm.rag.engine_signal.extract_engine_signal import extract_engine_signal
 
 ROOT = Path(__file__).resolve().parents[2]
 

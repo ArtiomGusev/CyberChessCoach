@@ -1,7 +1,7 @@
 import pytest
 
-from rag.llm.fake import FakeLLM
-from rag.llm.run_mode_2 import run_mode_2
+from llm.rag.llm.fake import FakeLLM
+from llm.rag.llm.run_mode_2 import run_mode_2
 
 
 PROMPT = "dummy prompt"

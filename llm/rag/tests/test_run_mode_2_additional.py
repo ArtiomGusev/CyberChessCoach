@@ -2,8 +2,8 @@ import os
 import re
 import pytest
 
-from rag.llm.run_mode_2 import run_mode_2
-from rag.llm.fake import FakeLLM
+from llm.rag.llm.run_mode_2 import run_mode_2
+from llm.rag.llm.fake import FakeLLM
 
 
 class StubbornLLM:
@@ -31,7 +31,7 @@ def test_aggressive_sanitization_applies():
     assert "[redacted]" in out or "decisive advantage" in lower
 
     # Ensure we attempted rewrites up to the retry budget
-    from rag.llm.config import MAX_MODE_2_RETRIES
+    from llm.rag.llm.config import MAX_MODE_2_RETRIES
     assert len(llm.calls) >= 1 + MAX_MODE_2_RETRIES
     # And that we didn't exceed it
     assert len(llm.calls) <= 1 + MAX_MODE_2_RETRIES
@@ -42,7 +42,7 @@ def test_retries_exhaustion_raises_for_forced_mate():
     bad = "Stockfish shows mate in 3; forced mate is obvious."
     llm = StubbornLLM(bad)
 
-    from rag.llm.config import MAX_MODE_2_RETRIES
+    from llm.rag.llm.config import MAX_MODE_2_RETRIES
     with pytest.raises(AssertionError):
         run_mode_2(llm=llm, prompt="PROMPT", case_type="forced_mate")
 
@@ -57,7 +57,7 @@ def test_explain_position_confidence_low_for_low_score(tmp_path, monkeypatch):
 
     # Re-import the embedded module to pick up the env var (safe in tests)
     import importlib
-    import rag.deploy.embedded as embedded
+    import llm.rag.deploy.embedded as embedded
     importlib.reload(embedded)
 
     payload = {

@@ -1,10 +1,10 @@
 from pathlib import Path
 import json
 
-from rag.engine_signal.extract_engine_signal import extract_engine_signal
-from rag.retriever import retrieve
-from rag.documents import ALL_RAG_DOCUMENTS
-from rag.prompts.render_mode_2 import render_mode_2_prompt
+from llm.rag.engine_signal.extract_engine_signal import extract_engine_signal
+from llm.rag.retriever import retrieve
+from llm.rag.documents import ALL_RAG_DOCUMENTS
+from llm.rag.prompts.render_mode_2 import render_mode_2_prompt
 
 ROOT = Path(".")
 CASES_DIR = ROOT / "tests/golden/cases"

@@ -1,4 +1,4 @@
-from rag.deploy.embedded import explain_position
+from llm.rag.deploy.embedded import explain_position
 
 # Example input coming from your app
 payload = {
