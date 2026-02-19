@@ -33,3 +33,4 @@ llm/.pytest_cache/
 llm/telemetry/
 llm/**/__pycache__/
 llm/**/*.pyc
+engines/stockfish.exe
