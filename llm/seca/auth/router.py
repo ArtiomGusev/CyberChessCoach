@@ -86,7 +86,12 @@ class LoginRequest(BaseModel):
 def register(req: RegisterRequest, db: DBSession = Depends(get_db)):
     service = AuthService(db)
     player = service.register(req.email, req.password)
-    return {"player_id": player.id}
+    token, _ = service.login(req.email, req.password, device_info="register")
+    return {
+        "access_token": token,
+        "player_id": str(player.id),
+        "token_type": "bearer",
+    }
 
 
 @router.post("/login")

@@ -1,6 +1,12 @@
+import os
 import chess
 import asyncio
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException, Depends, Request
+from fastapi.responses import JSONResponse
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from dotenv import load_dotenv
 from pydantic import BaseModel
 from .player_api import router as player_router
 from llm.seca.auth.router import router as auth_router
@@ -13,7 +19,6 @@ from llm.seca.engines.adaptive.controller import AdaptiveOpponent
 from llm.rag.engine_signal.extract_engine_signal import extract_engine_signal
 from llm.explain_pipeline import generate_validated_explanation
 from llm.seca.learning.outcome_tracker import ExplanationOutcomeTracker
-from llm.seca.learning.pipeline import run_skill_update
 from llm.seca.learning.skill_update import SkillState
 from llm.seca.adaptation.coupling import compute_adaptation
 from llm.seca.curriculum.scheduler import CurriculumScheduler
@@ -23,9 +28,9 @@ from llm.seca.storage.event_store import EventStore
 from llm.seca.skill.pipeline import SkillPipeline
 from llm.seca.world_model.safe_stub import SafeWorldModel
 from llm.seca.explainer.safe_explainer import SafeExplainer
+from llm.seca.safety.freeze import enforce
 from llm.seca.storage.repo import (
     create_game,
-    finish_game,
     log_move,
     log_explanation,
     update_learning_score,
@@ -33,7 +38,28 @@ from llm.seca.storage.repo import (
 
 print(">>> RUNNING SERVER FROM:", __file__)
 
+load_dotenv()
+
 app = FastAPI(title="SECA Chess Coach API")
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(status_code=429, content={"error": "Too many requests"})
+
+
+API_KEY = os.getenv("SECA_API_KEY")
+ENV = os.getenv("SECA_ENV", "dev")
+DEBUG = ENV != "prod"
+
+
+def verify_api_key(x_api_key: str = Header(None)):
+    if API_KEY is None:
+        return  # dev mode
+    if x_api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized")
 app.include_router(player_router)
 app.include_router(auth_router)
 app.include_router(game_router)
@@ -61,8 +87,10 @@ async def startup():
     try:
         init_db()  # ← NEW
         world_model = SafeWorldModel()
+        enforce(world_model)
+        stockfish_path = os.getenv("STOCKFISH_PATH", "engines/stockfish.exe")
         opponent = AdaptiveOpponent(
-            stockfish_path=r"C:\Users\artgu\chesscoach\stockfish.exe",
+            stockfish_path=stockfish_path,
             target_elo=1600,
         )
         scheduler = CurriculumScheduler()
@@ -113,12 +141,6 @@ class OutcomeRequest(BaseModel):
     confidence_delta: float
 
 
-class FinishGameRequest(BaseModel):
-    game_id: str
-    player_id: str
-    result: str  # win/loss/draw
-
-
 class CurriculumRecommendRequest(BaseModel):
     skill_vector: list[float]
 
@@ -155,7 +177,12 @@ def health():
 # ------------------------------------------------------------------
 
 @app.post("/move")
-async def move(req: MoveRequest):
+@limiter.limit("30/minute")
+async def move(
+    req: MoveRequest,
+    request: Request,
+    _: str = Depends(verify_api_key),
+):
     if opponent is None:
         return {"error": "adaptive opponent unavailable"}
 
@@ -208,7 +235,7 @@ def analyze(req: AnalyzeRequest):
 
 
 @app.get("/next-training/{player_id}")
-def next_training(player_id: str):
+def next_training(player_id: str, _: str = Depends(verify_api_key)):
     skill = player_skill_memory.get(player_id, SkillState())
 
     # demo weaknesses (later from analyzer)
@@ -228,29 +255,9 @@ def next_training(player_id: str):
 
 
 @app.post("/game/start")
-def start_game(req: StartGameRequest):
+def start_game(req: StartGameRequest, _: str = Depends(verify_api_key)):
     game_id = create_game(req.player_id)
     return {"game_id": game_id}
-
-
-@app.post("/game/finish")
-def finish_game_endpoint(req: FinishGameRequest):
-    finish_game(req.game_id, req.result)
-
-    # demo placeholders until full analyzer wired
-    moves = []
-    explanations = []
-
-    skill = player_skill_memory.get(req.player_id, SkillState())
-
-    new_skill = run_skill_update(skill, moves, req.result, explanations)
-
-    player_skill_memory[req.player_id] = new_skill
-
-    return {
-        "new_rating": new_skill.rating,
-        "confidence": new_skill.confidence,
-    }
 
 
 # ------------------------------------------------------------------
@@ -258,7 +265,7 @@ def finish_game_endpoint(req: FinishGameRequest):
 # ------------------------------------------------------------------
 
 @app.post("/explain")
-def explain(req: AnalyzeRequest):
+def explain(req: AnalyzeRequest, _: str = Depends(verify_api_key)):
     engine_signal = extract_engine_signal(req.stockfish_json, fen=req.fen)
     explanation = safe_explainer.explain(engine_signal)
 

@@ -1,7 +1,8 @@
 import hashlib
 from passlib.context import CryptContext
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Use pbkdf2_sha256 to avoid bcrypt backend issues on Windows.
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 
 def _normalize_password(password: str) -> bytes:
