@@ -1,3 +1,5 @@
 fastapi
 uvicorn
 pyyaml
+slowapi
+python-dotenv

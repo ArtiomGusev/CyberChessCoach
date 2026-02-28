@@ -1,7 +1,12 @@
-import jwt
+import os
+import secrets
 from datetime import datetime, timedelta
 
-SECRET_KEY = "a68eb6934bcd7d50420706f08ba0ca5f4959211f28dfe98a70f05e298483c528"
+import jwt
+
+SECRET_KEY = os.getenv("SECRET_KEY", secrets.token_hex(32))
+if len(SECRET_KEY) < 32:
+    raise RuntimeError("SECRET_KEY must be at least 32 characters.")
 ALGORITHM = "HS256"
 ACCESS_EXPIRE_MINUTES = 15
 

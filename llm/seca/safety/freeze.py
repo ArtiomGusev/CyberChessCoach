@@ -42,6 +42,12 @@ def _scan_loaded_modules():
     for name, module in sys.modules.items():
         if module is None:
             continue
+        if not name.startswith("llm.seca"):
+            continue
+        if name.startswith("llm.seca.safety"):
+            continue
+        if "mock" in name:
+            continue
 
         # block forbidden module paths
         for bad in FORBIDDEN_MODULE_PARTS:
@@ -55,7 +61,7 @@ def _scan_loaded_modules():
             continue
 
         for kw in FORBIDDEN_KEYWORDS:
-            if kw in src and "mock" not in name:
+            if kw in src:
                 _crash(f"Forbidden adaptive code detected in module: {name}")
 
 

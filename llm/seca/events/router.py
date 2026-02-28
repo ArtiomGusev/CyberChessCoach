@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, HTTPException
 import json
 from pydantic import BaseModel
 from sqlalchemy.orm import Session as DBSession
@@ -6,8 +6,6 @@ from sqlalchemy.orm import Session as DBSession
 from llm.seca.auth.router import get_db, get_current_player
 from .storage import EventStorage
 from llm.seca.skills.updater import SkillUpdater
-from llm.seca.brain.bandit.online_update import update_after_game
-from llm.seca.brain.bandit.context_builder import build_context_vector
 from llm.seca.brain.models import RatingUpdate, ConfidenceUpdate
 from llm.seca.coach.live_controller import (
     PostGameCoachController,
@@ -16,6 +14,7 @@ from llm.seca.coach.live_controller import (
 from llm.seca.events.models import GameEvent
 from llm.seca.coach.executor import CoachExecutor
 from types import SimpleNamespace
+from llm.seca.runtime.safe_mode import SAFE_MODE
 
 router = APIRouter(prefix="/game", tags=["game"])
 
@@ -25,6 +24,7 @@ class GameFinishRequest(BaseModel):
     result: str        # win / loss / draw
     accuracy: float    # 0..1
     weaknesses: dict
+    player_id: str | None = None
 
 
 @router.post("/finish")
@@ -34,6 +34,9 @@ def finish_game(
     request: Request = None,
     db: DBSession = Depends(get_db),
 ):
+    if req.player_id is not None and req.player_id != str(player.id):
+        raise HTTPException(status_code=403, detail="Cannot submit game for another player")
+
     storage = EventStorage(db)
 
     rating_before = player.rating
@@ -68,49 +71,53 @@ def finish_game(
     db.add(confidence_update)
     db.commit()
 
-    context = build_context_vector(
-        rating_before=rating_before,
-        confidence_before=confidence_before,
-        accuracy=req.accuracy,
-        weaknesses=req.weaknesses,
-    )
+    if not SAFE_MODE:
+        from llm.seca.brain.bandit.context_builder import build_context_vector
 
-    try:
-        update_after_game(context, action_index=0, reward=reward)
-        from llm.seca.brain.bandit.trainer import train_bandit
-        from llm.seca.brain.neural_policy.train import train_policy
-        train_bandit()
-        train_policy()
-    except Exception:
-        import traceback
-        print("\n=== BANDIT UPDATE ERROR ===")
-        traceback.print_exc()
-        print("=== END BANDIT ERROR ===\n")
+        context = build_context_vector(
+            rating_before=rating_before,
+            confidence_before=confidence_before,
+            accuracy=req.accuracy,
+            weaknesses=req.weaknesses,
+        )
 
-    try:
-        from llm.seca.brain.planning.counterfactual import CounterfactualPlanner
-        import numpy as np
+        try:
+            from llm.seca.brain.bandit.online_update import update_after_game
+            update_after_game(context, action_index=0, reward=reward)
+            from llm.seca.brain.bandit.trainer import train_bandit
+            from llm.seca.brain.neural_policy.train import train_policy
+            train_bandit()
+            train_policy()
+        except Exception:
+            import traceback
+            print("\n=== BANDIT UPDATE ERROR ===")
+            traceback.print_exc()
+            print("=== END BANDIT ERROR ===\n")
 
-        planner = CounterfactualPlanner()
+        try:
+            from llm.seca.brain.planning.counterfactual import CounterfactualPlanner
+            import numpy as np
 
-        state = np.array([rating_after, confidence_after, req.accuracy])
+            planner = CounterfactualPlanner()
 
-        actions = [
-            np.array([1, 0, 0]),  # tactics
-            np.array([0, 1, 0]),  # openings
-            np.array([0, 0, 1]),  # endgames
-        ]
+            state = np.array([rating_after, confidence_after, req.accuracy])
 
-        idx, future, score = planner.choose_action(state, actions)
+            actions = [
+                np.array([1, 0, 0]),  # tactics
+                np.array([0, 1, 0]),  # openings
+                np.array([0, 0, 1]),  # endgames
+            ]
 
-        print("Chosen training:", idx)
-        print("Predicted rating/conf delta:", future)
-        print("Score:", score)
-    except Exception:
-        import traceback
-        print("\n=== COUNTERFACTUAL ERROR ===")
-        traceback.print_exc()
-        print("=== END COUNTERFACTUAL ERROR ===\n")
+            idx, future, score = planner.choose_action(state, actions)
+
+            print("Chosen training:", idx)
+            print("Predicted rating/conf delta:", future)
+            print("Score:", score)
+        except Exception:
+            import traceback
+            print("\n=== COUNTERFACTUAL ERROR ===")
+            traceback.print_exc()
+            print("=== END COUNTERFACTUAL ERROR ===\n")
 
     controller = PostGameCoachController()
 
@@ -164,15 +171,18 @@ def finish_game(
         )
 
 
-    learner = request.app.state.seca_learner if request else None
-    try:
-        learning_result = learner.train_step() if learner else {"status": "no_learner"}
-    except Exception:
-        import traceback
-        print("\n=== LEARNER ERROR ===")
-        traceback.print_exc()
-        print("=== END LEARNER ERROR ===\n")
-        learning_result = {"status": "learner_error"}
+    if SAFE_MODE:
+        learning_result = {"status": "safe_mode"}
+    else:
+        learner = request.app.state.seca_learner if request else None
+        try:
+            learning_result = learner.train_step() if learner else {"status": "no_learner"}
+        except Exception:
+            import traceback
+            print("\n=== LEARNER ERROR ===")
+            traceback.print_exc()
+            print("=== END LEARNER ERROR ===\n")
+            learning_result = {"status": "learner_error"}
 
     return {
         "status": "stored",
