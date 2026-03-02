@@ -1,3 +1,4 @@
+import os
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session, Session as DBSession
@@ -13,6 +14,7 @@ from .service import AuthService
 from .tokens import decode_token
 
 DATABASE_URL = "sqlite:///data/seca.db"
+os.makedirs("data", exist_ok=True)
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine)

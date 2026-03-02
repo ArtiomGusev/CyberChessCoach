@@ -1,10 +1,12 @@
 import os
 import time
+import inspect
 
 from llm.rag.engine_signal.extract_engine_signal import extract_engine_signal
 from llm.rag.retriever import retrieve
 from llm.rag.documents import ALL_RAG_DOCUMENTS
 from llm.rag.prompts.render_mode_2 import render_mode_2_prompt
+from llm.rag.prompts.system_v2_mode_2 import SYSTEM_PROMPT
 from llm.rag.llm.ollama import OllamaLLM
 from llm.rag.llm.run_mode_2 import run_mode_2
 from llm.rag.meta.case_classifier import infer_case_type
@@ -57,12 +59,20 @@ def explain_position(payload: dict) -> dict:
 
         rag_docs = retrieve(esv, ALL_RAG_DOCUMENTS)
 
-        prompt = render_mode_2_prompt(
-            engine_signal=esv,
-            rag_context=rag_docs,
-            fen=payload["fen"],
-            user_query=payload.get("user_query", ""),
-        )
+        sig = inspect.signature(render_mode_2_prompt).parameters
+        prompt_kwargs = {
+            "engine_signal": esv,
+            "fen": payload["fen"],
+            "user_query": payload.get("user_query", ""),
+        }
+        if "system_prompt" in sig:
+            prompt_kwargs["system_prompt"] = SYSTEM_PROMPT
+        if "rag_docs" in sig:
+            prompt_kwargs["rag_docs"] = rag_docs
+        if "rag_context" in sig:
+            prompt_kwargs["rag_context"] = rag_docs
+
+        prompt = render_mode_2_prompt(**prompt_kwargs)
 
         case_type = payload.get("case_type") or infer_case_type(esv)
 

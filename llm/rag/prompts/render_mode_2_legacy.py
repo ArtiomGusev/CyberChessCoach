@@ -5,6 +5,7 @@ def render_mode_2_prompt(
     rag_docs: list,
     fen: str,
     user_query: str = "",
+    rag_context=None,
 ) -> str:
     parts: list[str] = []
 
@@ -43,4 +44,7 @@ def render_mode_2_prompt(
         parts.append("USER QUESTION:")
         parts.append(user_query)
 
-    return "\n".join(parts)
+    prompt = "\n".join(parts)
+    if rag_context:
+        prompt += f"\nContext:\n{rag_context}"
+    return prompt

@@ -1,11 +1,15 @@
 def render_mode_2_prompt(
     *,
-    system_prompt: str,
-    engine_signal: dict,
-    rag_docs: list,
-    fen: str,
+    system_prompt: str = "",
+    engine_signal: dict | None = None,
+    rag_docs: list | None = None,
+    fen: str = "",
     user_query: str = "",
+    rag_context=None,
 ) -> str:
+    if engine_signal is None:
+        raise ValueError("engine_signal is required")
+    rag_docs = rag_docs or []
     parts: list[str] = []
 
     # SYSTEM PROMPT
@@ -43,4 +47,7 @@ def render_mode_2_prompt(
         parts.append("USER QUESTION:")
         parts.append(user_query)
 
-    return "\n".join(parts)
+    prompt = "\n".join(parts)
+    if rag_context:
+        prompt += f"\nContext:\n{rag_context}"
+    return prompt
