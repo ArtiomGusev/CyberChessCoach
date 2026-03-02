@@ -1,5 +1,6 @@
 import os
 import chess
+from functools import lru_cache
 from fastapi import FastAPI, Header, HTTPException, Depends, Request
 from fastapi.responses import JSONResponse
 from slowapi import Limiter
@@ -60,6 +61,13 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 API_KEY = os.getenv("SECA_API_KEY")
 ENV = os.getenv("SECA_ENV", "dev")
 DEBUG = ENV != "prod"
+DEFAULT_PREWARM_FENS = [
+    chess.STARTING_FEN,
+    "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",  # 1.e4 e5
+    "rnbqkbnr/ppp1pppp/8/3p4/3P4/8/PPP1PPPP/RNBQKBNR w KQkq - 0 2",  # 1.d4 d5
+    "r1bqkbnr/pppp1ppp/2n5/4p3/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq - 2 3",
+    "r2q1rk1/pp2bppp/2n1bn2/2pp4/3P4/2PBPN2/PP1N1PPP/R1BQ1RK1 w - - 0 9",
+]
 
 
 def verify_api_key(x_api_key: str = Header(None)):
@@ -94,8 +102,44 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _env_int_first(names: list[str], default: int) -> int:
+    for name in names:
+        raw = os.getenv(name)
+        if raw is None:
+            continue
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            continue
+    return default
+
+
+def _env_csv(name: str, default_csv: str) -> list[str]:
+    raw = os.getenv(name, default_csv)
+    return [part.strip().lower() for part in raw.split(",") if part.strip()]
+
+
+def _normalize_fen(fen: str) -> str:
+    if fen.strip().lower() == "startpos":
+        return chess.STARTING_FEN
+    return fen
+
+
+def _env_fens(name: str) -> list[str]:
+    raw = os.getenv(name, "")
+    if not raw.strip():
+        return list(DEFAULT_PREWARM_FENS)
+    return [_normalize_fen(part.strip()) for part in raw.split("||") if part.strip()]
+
+
+@lru_cache(maxsize=4096)
+def _fen_board(fen: str) -> chess.Board:
+    return chess.Board(_normalize_fen(fen))
+
+
 def _board_from_payload(fen: str, moves_uci: list[str] | None) -> chess.Board:
-    board = chess.Board(fen)
+    normalized_fen = _normalize_fen(fen)
+    board = _fen_board(normalized_fen).copy(stack=False)
     if not moves_uci:
         return board
 
@@ -103,7 +147,7 @@ def _board_from_payload(fen: str, moves_uci: list[str] | None) -> chess.Board:
     try:
         for move_uci in moves_uci:
             candidate.push_uci(move_uci)
-        if candidate.fen() == fen:
+        if candidate.fen() == normalized_fen:
             return candidate
     except ValueError:
         return board
@@ -123,14 +167,21 @@ async def startup():
         stockfish_path = os.getenv("STOCKFISH_PATH", default_stockfish_path)
         settings = EnginePoolSettings(
             stockfish_path=stockfish_path,
-            pool_size=max(1, _env_int("ENGINE_POOL_SIZE", 4)),
+            pool_size=max(1, _env_int("ENGINE_POOL_SIZE", 8)),
             threads=max(1, _env_int("ENGINE_THREADS", 1)),
             hash_mb=max(16, _env_int("ENGINE_HASH_MB", 128)),
             skill_level=_env_int("ENGINE_SKILL_LEVEL", 10),
-            default_movetime_ms=max(20, _env_int("ENGINE_DEFAULT_MOVETIME_MS", 80)),
-            puzzle_movetime_ms=max(20, _env_int("ENGINE_PUZZLE_MOVETIME_MS", 50)),
-            blitz_movetime_ms=max(20, _env_int("ENGINE_BLITZ_MOVETIME_MS", 100)),
-            deep_movetime_ms=max(20, _env_int("ENGINE_DEEP_MOVETIME_MS", 700)),
+            default_movetime_ms=max(20, _env_int("ENGINE_DEFAULT_MOVETIME_MS", 40)),
+            training_movetime_ms=max(20, _env_int("ENGINE_TRAINING_MOVETIME_MS", 40)),
+            analysis_movetime_ms=max(
+                20,
+                _env_int_first(
+                    ["ENGINE_ANALYSIS_MOVETIME_MS", "ENGINE_DEEP_MOVETIME_MS"],
+                    80,
+                ),
+            ),
+            blitz_movetime_ms=max(20, _env_int("ENGINE_BLITZ_MOVETIME_MS", 25)),
+            queue_timeout_ms=max(1, _env_int("ENGINE_QUEUE_TIMEOUT_MS", 50)),
         )
         engine_pool = StockfishEnginePool(settings)
         engine_pool.startup()
@@ -138,6 +189,20 @@ async def startup():
             redis_url=os.getenv("REDIS_URL"),
             ttl_seconds=_env_int("MOVE_CACHE_TTL_SECONDS", 3600),
         )
+        prewarm_fens = _env_fens("ENGINE_PREWARM_FENS")
+        prewarm_modes = _env_csv("ENGINE_PREWARM_MODES", "blitz")
+        if prewarm_fens and prewarm_modes:
+            warmed = 0
+            for mode in prewarm_modes:
+                warmed += engine_pool.prewarm_cache(
+                    move_cache=move_cache,
+                    fens=prewarm_fens,
+                    mode=mode,
+                )
+            print(
+                f">>> Move cache prewarmed (entries={warmed}, "
+                f"positions={len(prewarm_fens)}, modes={','.join(prewarm_modes)})"
+            )
         scheduler = CurriculumScheduler()
         print(">>> DB initialized")
         print(f">>> Stockfish engine pool initialized (size={settings.pool_size})")
@@ -244,7 +309,8 @@ def move(
     if engine_pool is None:
         return {"error": "engine pool unavailable"}
 
-    board = _board_from_payload(req.fen, req.moves_uci)
+    normalized_fen = _normalize_fen(req.fen)
+    board = _board_from_payload(normalized_fen, req.moves_uci)
     skill = player_skill_memory.get("demo", SkillState())
     adaptation = compute_adaptation(skill.rating, skill.confidence)
     target_elo = adaptation["opponent"]["target_elo"]
@@ -253,11 +319,12 @@ def move(
     resolved_movetime_ms = engine_pool.resolve_movetime_ms(mode, req.movetime_ms)
 
     cache_hit = False
+    fallback_used = False
     mv: chess.Move | None = None
 
     if move_cache:
         cached_uci = move_cache.get(
-            fen=req.fen,
+            fen=normalized_fen,
             mode=mode,
             movetime_ms=resolved_movetime_ms,
             target_elo=target_elo,
@@ -271,29 +338,46 @@ def move(
             except ValueError:
                 mv = None
 
-    if mv is None:
+    if cache_hit and mv is not None:
+        san = board.san(mv)
+        return {
+            "uci": mv.uci(),
+            "san": san,
+            "opponent_elo": target_elo,
+            "mode": mode,
+            "movetime_ms": resolved_movetime_ms,
+            "cache_hit": True,
+            "fallback_used": False,
+        }
+
+    try:
         mv = engine_pool.select_move(
-            fen=req.fen,
+            fen=normalized_fen,
+            board=board,
             moves_uci=req.moves_uci,
             mode=mode,
             movetime_ms=resolved_movetime_ms,
             target_elo=target_elo,
         )
-        if move_cache:
-            move_cache.set(
-                fen=req.fen,
-                mode=mode,
-                movetime_ms=resolved_movetime_ms,
-                target_elo=target_elo,
-                move_uci=mv.uci(),
-            )
+    except RuntimeError:
+        mv = engine_pool.fast_fallback_move(board)
+        fallback_used = True
+
+    if move_cache and not fallback_used:
+        move_cache.set(
+            fen=normalized_fen,
+            mode=mode,
+            movetime_ms=resolved_movetime_ms,
+            target_elo=target_elo,
+            move_uci=mv.uci(),
+        )
 
     san = board.san(mv)
     ply = board.fullmove_number * 2 - (0 if board.turn else 1)
     log_move(
         game_id="demo",   # temporary until session system
         ply=ply,
-        fen=req.fen,
+        fen=normalized_fen,
         uci=mv.uci(),
         san=san,
         eval=None,
@@ -306,6 +390,7 @@ def move(
         "mode": mode,
         "movetime_ms": resolved_movetime_ms,
         "cache_hit": cache_hit,
+        "fallback_used": fallback_used,
     }
 
 

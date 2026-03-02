@@ -11,8 +11,16 @@ logger = logging.getLogger(__name__)
 
 
 def _extract_pattern_from_error(err: AssertionError) -> str:
-    m = re.search(r"pattern `(.+?)`", str(err))
-    return m.group(1) if m else ""
+    msg = str(err)
+    m = re.search(r"pattern `(.+?)`", msg)
+    if m:
+        return m.group(1)
+
+    # Backward-compatible parser for "detected: <regex>"
+    m = re.search(r"detected:\s*(.+)$", msg)
+    if m:
+        return m.group(1).strip()
+    return ""
 
 
 def _is_structural_pattern(pattern: str) -> bool:

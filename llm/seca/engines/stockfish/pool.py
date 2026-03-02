@@ -18,14 +18,15 @@ except Exception:  # pragma: no cover - optional dependency
 @dataclass(frozen=True)
 class EnginePoolSettings:
     stockfish_path: str
-    pool_size: int = 4
+    pool_size: int = 8
     threads: int = 1
     hash_mb: int = 128
     skill_level: int = 10
-    default_movetime_ms: int = 80
-    puzzle_movetime_ms: int = 50
-    blitz_movetime_ms: int = 100
-    deep_movetime_ms: int = 700
+    default_movetime_ms: int = 40
+    training_movetime_ms: int = 40
+    analysis_movetime_ms: int = 80
+    blitz_movetime_ms: int = 25
+    queue_timeout_ms: int = 50
     min_movetime_ms: int = 20
     max_movetime_ms: int = 2000
 
@@ -36,7 +37,7 @@ class FenMoveCache:
         *,
         redis_url: str | None,
         ttl_seconds: int = 3600,
-        namespace: str = "fen_move:v1",
+        namespace: str = "fen_move:v2",
     ):
         self._ttl_seconds = ttl_seconds
         self._namespace = namespace
@@ -60,8 +61,9 @@ class FenMoveCache:
         movetime_ms: int,
         target_elo: int | None,
     ) -> str:
+        # Keep the key coarse so tiny movetime tweaks still hit cache.
         digest = hashlib.sha256(
-            f"{fen}|{mode}|{movetime_ms}|{target_elo}".encode("utf-8")
+            f"{fen}|{mode}|{target_elo}".encode("utf-8")
         ).hexdigest()
         return f"{self._namespace}:{digest}"
 
@@ -180,14 +182,15 @@ class StockfishEnginePool:
             ms = movetime_ms
         else:
             normalized = (mode or "default").lower()
-            if normalized == "puzzle":
-                ms = self.settings.puzzle_movetime_ms
-            elif normalized == "blitz":
-                ms = self.settings.blitz_movetime_ms
-            elif normalized == "deep":
-                ms = self.settings.deep_movetime_ms
-            else:
-                ms = self.settings.default_movetime_ms
+            mode_map = {
+                "blitz": self.settings.blitz_movetime_ms,
+                "training": self.settings.training_movetime_ms,
+                "analysis": self.settings.analysis_movetime_ms,
+                # Backward-compatible aliases.
+                "puzzle": self.settings.training_movetime_ms,
+                "deep": self.settings.analysis_movetime_ms,
+            }
+            ms = mode_map.get(normalized, self.settings.default_movetime_ms)
 
         if ms < self.settings.min_movetime_ms:
             return self.settings.min_movetime_ms
@@ -209,43 +212,111 @@ class StockfishEnginePool:
             # Not all Stockfish builds expose ELO limiting.
             pass
 
+    def fast_fallback_move(self, board: chess.Board) -> chess.Move:
+        legal_moves = list(board.legal_moves)
+        if not legal_moves:
+            raise RuntimeError("No legal moves available")
+
+        captures = [mv for mv in legal_moves if board.is_capture(mv)]
+        candidates = captures or legal_moves
+        # Stable and cheap fallback: deterministic lexical move ordering.
+        return min(candidates, key=lambda mv: mv.uci())
+
     def select_move(
         self,
         *,
         fen: str,
+        board: chess.Board | None = None,
         moves_uci: list[str] | None = None,
         mode: str = "default",
         movetime_ms: int | None = None,
+        queue_timeout_ms: int | None = None,
         target_elo: int | None = None,
     ) -> chess.Move:
         if not self._started:
             raise RuntimeError("Engine pool not started")
 
-        board = chess.Board(fen)
-        if moves_uci:
-            # For start-position games this preserves move stack and can send
-            # `position startpos moves ...` to UCI engines.
-            candidate = chess.Board()
-            try:
-                for move_uci in moves_uci:
-                    candidate.push_uci(move_uci)
-                if candidate.fen() == fen:
-                    board = candidate
-            except ValueError:
-                board = chess.Board(fen)
+        resolved_board = board
+        if resolved_board is None:
+            resolved_board = chess.Board(fen)
+            if moves_uci:
+                # For start-position games this preserves move stack and can send
+                # `position startpos moves ...` to UCI engines.
+                candidate = chess.Board()
+                try:
+                    for move_uci in moves_uci:
+                        candidate.push_uci(move_uci)
+                    if candidate.fen() == fen:
+                        resolved_board = candidate
+                except ValueError:
+                    resolved_board = chess.Board(fen)
+
+        timeout_ms = queue_timeout_ms
+        if timeout_ms is None:
+            timeout_ms = self.settings.queue_timeout_ms
+        if timeout_ms <= 0:
+            timeout_ms = 1
 
         try:
-            engine = self._engines.get(timeout=5)
+            engine = self._engines.get(timeout=timeout_ms / 1000.0)
         except queue.Empty as exc:
-            raise RuntimeError("No Stockfish worker available") from exc
+            raise RuntimeError(
+                f"Stockfish queue wait exceeded {timeout_ms}ms"
+            ) from exc
         try:
             self._apply_runtime_options(engine, target_elo=target_elo)
             limit = chess.engine.Limit(
                 time=self.resolve_movetime_ms(mode, movetime_ms) / 1000.0
             )
-            result = engine.play(board, limit)
+            result = engine.play(resolved_board, limit)
             if result.move is None:
                 raise RuntimeError("Stockfish returned no move")
             return result.move
         finally:
             self._engines.put(engine)
+
+    def prewarm_cache(
+        self,
+        *,
+        move_cache: FenMoveCache,
+        fens: list[str],
+        mode: str = "blitz",
+        target_elo: int | None = None,
+    ) -> int:
+        warmed = 0
+        movetime_ms = self.resolve_movetime_ms(mode, None)
+
+        for fen in fens:
+            fen = fen.strip()
+            if not fen:
+                continue
+
+            try:
+                cached_uci = move_cache.get(
+                    fen=fen,
+                    mode=mode,
+                    movetime_ms=movetime_ms,
+                    target_elo=target_elo,
+                )
+                if cached_uci:
+                    warmed += 1
+                    continue
+
+                move = self.select_move(
+                    fen=fen,
+                    mode=mode,
+                    movetime_ms=movetime_ms,
+                    target_elo=target_elo,
+                )
+                move_cache.set(
+                    fen=fen,
+                    mode=mode,
+                    movetime_ms=movetime_ms,
+                    target_elo=target_elo,
+                    move_uci=move.uci(),
+                )
+                warmed += 1
+            except Exception:
+                continue
+
+        return warmed
