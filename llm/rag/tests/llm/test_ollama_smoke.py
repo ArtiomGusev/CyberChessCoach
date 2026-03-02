@@ -1,3 +1,6 @@
+import os
+import pytest
+
 from llm.rag.llm.ollama import OllamaLLM
 from llm.rag.llm.run_mode_2 import run_mode_2
 
@@ -8,6 +11,12 @@ forced mate
 
 Explain the position.
 """
+
+if os.getenv("RUN_OLLAMA_TESTS") != "1":
+    pytest.skip(
+        "Ollama smoke tests are disabled by default. Set RUN_OLLAMA_TESTS=1 to enable.",
+        allow_module_level=True,
+    )
 
 
 def test_ollama_forced_mate_smoke():

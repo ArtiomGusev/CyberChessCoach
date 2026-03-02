@@ -1,4 +1,4 @@
-id: positional_space_advantage
+id: positional_quiet
 type: positional
 conditions:
   position_flags: space_advantage

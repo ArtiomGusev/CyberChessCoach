@@ -1,3 +1,6 @@
+import os
+import pytest
+
 from llm.rag.llm.ollama import OllamaLLM
 from llm.rag.llm.run_mode_2 import run_mode_2
 from llm.rag.prompts.mode_2.render import render_mode_2_prompt
@@ -15,6 +18,12 @@ CASES_DIR = ROOT / "tests" / "golden" / "cases"
 MODEL_NAME = "qwen2.5:7b-instruct-q2_K"
 TEMPERATURE = 0.2
 REPEATS = 3  # repeat to catch stochastic violations
+
+if os.getenv("RUN_OLLAMA_TESTS") != "1":
+    pytest.skip(
+        "Ollama regression tests are disabled by default. Set RUN_OLLAMA_TESTS=1 to enable.",
+        allow_module_level=True,
+    )
 
 
 def load_case(case_path: Path):

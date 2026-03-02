@@ -98,7 +98,8 @@ position_flags: []
 phase: middlegame
 
 RAG CONTEXT:
-- Decisive material or positional advantage.
+- The position contains a forced, unavoidable conclusion.
+- The last move is classified as a blunder.
 
 FEN:
 r1bq1rk1/pppp1ppp/2n5/4p3/3PPQ2/2N2N2/PPP2PPP/R1B1KB1R b KQ - 5 6

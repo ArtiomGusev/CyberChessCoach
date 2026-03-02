@@ -42,11 +42,14 @@ Start:
 - `docker compose up --build`
 
 Main env knobs:
-- `ENGINE_POOL_SIZE` (default `4`)
+- `ENGINE_POOL_SIZE` (default `8`)
 - `ENGINE_THREADS` (default `1`)
 - `ENGINE_HASH_MB` (default `128`)
-- `ENGINE_DEFAULT_MOVETIME_MS` (default `80`)
-- `ENGINE_PUZZLE_MOVETIME_MS` (default `50`)
-- `ENGINE_BLITZ_MOVETIME_MS` (default `100`)
-- `ENGINE_DEEP_MOVETIME_MS` (default `700`)
+- `ENGINE_DEFAULT_MOVETIME_MS` (default `40`)
+- `ENGINE_TRAINING_MOVETIME_MS` (default `40`)
+- `ENGINE_ANALYSIS_MOVETIME_MS` (default `80`)
+- `ENGINE_BLITZ_MOVETIME_MS` (default `25`)
+- `ENGINE_QUEUE_TIMEOUT_MS` (default `50`; queue wait guard before fallback)
 - `MOVE_CACHE_TTL_SECONDS` (default `3600`)
+- `ENGINE_PREWARM_MODES` (default `blitz`; comma-separated)
+- `ENGINE_PREWARM_FENS` (default includes `startpos`, `1.e4 e5`, `1.d4 d5`; override with `||`-separated FENs)
