@@ -4,6 +4,7 @@ import hashlib
 import queue
 import threading
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 
 import chess
@@ -38,10 +39,13 @@ class FenMoveCache:
         redis_url: str | None,
         ttl_seconds: int = 3600,
         namespace: str = "fen_move:v2",
+        max_memory_items: int = 500,
     ):
         self._ttl_seconds = ttl_seconds
         self._namespace = namespace
-        self._memory_cache: dict[str, tuple[str, float]] = {}
+        self._max_memory_items = max(1, max_memory_items)
+        # L1 cache: bounded local hotset for fastest path.
+        self._memory_cache: OrderedDict[str, tuple[str, float]] = OrderedDict()
         self._lock = threading.Lock()
         self._redis = None
 
@@ -60,10 +64,12 @@ class FenMoveCache:
         mode: str,
         movetime_ms: int,
         target_elo: int | None,
+        line_key: str | None = None,
     ) -> str:
-        # Keep the key coarse so tiny movetime tweaks still hit cache.
+        # Keep key coarse for movetime, but include line_key to disambiguate
+        # equivalent FEN requests coming from different move-line contexts.
         digest = hashlib.sha256(
-            f"{fen}|{mode}|{target_elo}".encode("utf-8")
+            f"{fen}|{mode}|{target_elo}|{line_key or '-'}".encode("utf-8")
         ).hexdigest()
         return f"{self._namespace}:{digest}"
 
@@ -74,12 +80,14 @@ class FenMoveCache:
         mode: str,
         movetime_ms: int,
         target_elo: int | None,
+        line_key: str | None = None,
     ) -> str | None:
         key = self._cache_key(
             fen=fen,
             mode=mode,
             movetime_ms=movetime_ms,
             target_elo=target_elo,
+            line_key=line_key,
         )
 
         if self._redis is not None:
@@ -100,6 +108,7 @@ class FenMoveCache:
             if expires_at < now:
                 self._memory_cache.pop(key, None)
                 return None
+            self._memory_cache.move_to_end(key)
             return value
 
     def set(
@@ -110,12 +119,14 @@ class FenMoveCache:
         movetime_ms: int,
         target_elo: int | None,
         move_uci: str,
+        line_key: str | None = None,
     ) -> None:
         key = self._cache_key(
             fen=fen,
             mode=mode,
             movetime_ms=movetime_ms,
             target_elo=target_elo,
+            line_key=line_key,
         )
 
         if self._redis is not None:
@@ -127,6 +138,9 @@ class FenMoveCache:
 
         with self._lock:
             self._memory_cache[key] = (move_uci, time.time() + self._ttl_seconds)
+            self._memory_cache.move_to_end(key)
+            while len(self._memory_cache) > self._max_memory_items:
+                self._memory_cache.popitem(last=False)
 
 
 class StockfishEnginePool:
@@ -297,6 +311,7 @@ class StockfishEnginePool:
                     mode=mode,
                     movetime_ms=movetime_ms,
                     target_elo=target_elo,
+                    line_key=None,
                 )
                 if cached_uci:
                     warmed += 1
@@ -314,6 +329,7 @@ class StockfishEnginePool:
                     movetime_ms=movetime_ms,
                     target_elo=target_elo,
                     move_uci=move.uci(),
+                    line_key=None,
                 )
                 warmed += 1
             except Exception:

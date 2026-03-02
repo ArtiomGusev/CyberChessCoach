@@ -1,7 +1,9 @@
 import os
 import chess
+import time
+import threading
 from functools import lru_cache
-from fastapi import FastAPI, Header, HTTPException, Depends, Request
+from fastapi import FastAPI, Header, HTTPException, Depends, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -93,6 +95,11 @@ safe_explainer = SafeExplainer()
 
 engine_pool: StockfishEnginePool | None = None
 move_cache: FenMoveCache | None = None
+move_stats = {"total": 0, "cache_hits": 0}
+move_stats_lock = threading.Lock()
+async_predict_enabled = True
+async_predict_plies = 2
+async_predict_movetime_ms = 20
 
 
 def _env_int(name: str, default: int) -> int:
@@ -100,6 +107,13 @@ def _env_int(name: str, default: int) -> int:
         return int(os.getenv(name, str(default)))
     except (TypeError, ValueError):
         return default
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _env_int_first(names: list[str], default: int) -> int:
@@ -123,6 +137,22 @@ def _normalize_fen(fen: str) -> str:
     if fen.strip().lower() == "startpos":
         return chess.STARTING_FEN
     return fen
+
+
+def _cache_line_key(moves_uci: list[str] | None) -> str | None:
+    if not moves_uci:
+        return None
+    return moves_uci[-1]
+
+
+def _record_move_stat(cache_hit: bool) -> float:
+    with move_stats_lock:
+        move_stats["total"] += 1
+        if cache_hit:
+            move_stats["cache_hits"] += 1
+        if move_stats["total"] == 0:
+            return 0.0
+        return move_stats["cache_hits"] / move_stats["total"]
 
 
 def _env_fens(name: str) -> list[str]:
@@ -155,10 +185,69 @@ def _board_from_payload(fen: str, moves_uci: list[str] | None) -> chess.Board:
     return board
 
 
+def _predictive_cache_followups(
+    *,
+    seed_fen: str,
+    mode: str,
+    target_elo: int | None,
+) -> None:
+    if not async_predict_enabled or engine_pool is None or move_cache is None:
+        return
+
+    try:
+        board = chess.Board(seed_fen)
+    except ValueError:
+        return
+
+    line_key: str | None = None
+    for _ in range(max(0, async_predict_plies)):
+        if board.is_game_over():
+            return
+
+        cached = move_cache.get(
+            fen=board.fen(),
+            mode=mode,
+            movetime_ms=async_predict_movetime_ms,
+            target_elo=target_elo,
+            line_key=line_key,
+        )
+        if cached:
+            try:
+                mv = chess.Move.from_uci(cached)
+                if mv in board.legal_moves:
+                    board.push(mv)
+                    line_key = mv.uci()
+                    continue
+            except ValueError:
+                pass
+
+        try:
+            mv = engine_pool.select_move(
+                fen=board.fen(),
+                board=board,
+                mode=mode,
+                movetime_ms=async_predict_movetime_ms,
+                queue_timeout_ms=25,
+                target_elo=target_elo,
+            )
+            move_cache.set(
+                fen=board.fen(),
+                mode=mode,
+                movetime_ms=async_predict_movetime_ms,
+                target_elo=target_elo,
+                move_uci=mv.uci(),
+                line_key=line_key,
+            )
+            board.push(mv)
+            line_key = mv.uci()
+        except Exception:
+            return
+
+
 @app.on_event("startup")
 async def startup():
     global engine_pool, move_cache, scheduler, event_storage, skill_pipeline
-    global world_model
+    global world_model, async_predict_enabled, async_predict_plies, async_predict_movetime_ms
     try:
         init_db()
         world_model = SafeWorldModel()
@@ -188,6 +277,13 @@ async def startup():
         move_cache = FenMoveCache(
             redis_url=os.getenv("REDIS_URL"),
             ttl_seconds=_env_int("MOVE_CACHE_TTL_SECONDS", 3600),
+            max_memory_items=max(1, _env_int("MOVE_CACHE_L1_MAX_ITEMS", 500)),
+        )
+        async_predict_enabled = _env_bool("ENGINE_ASYNC_PREDICT_ENABLED", True)
+        async_predict_plies = max(0, _env_int("ENGINE_ASYNC_PREDICT_PLIES", 2))
+        async_predict_movetime_ms = max(
+            20,
+            _env_int("ENGINE_ASYNC_PREDICT_MOVETIME_MS", 20),
         )
         prewarm_fens = _env_fens("ENGINE_PREWARM_FENS")
         prewarm_modes = _env_csv("ENGINE_PREWARM_MODES", "blitz")
@@ -304,8 +400,10 @@ def engine_debug():
 def move(
     req: MoveRequest,
     request: Request,
+    background_tasks: BackgroundTasks,
     _: str = Depends(verify_api_key),
 ):
+    request_started = time.perf_counter()
     if engine_pool is None:
         return {"error": "engine pool unavailable"}
 
@@ -317,9 +415,11 @@ def move(
 
     mode = (req.mode or "default").lower()
     resolved_movetime_ms = engine_pool.resolve_movetime_ms(mode, req.movetime_ms)
+    line_key = _cache_line_key(req.moves_uci)
 
     cache_hit = False
     fallback_used = False
+    engine_time_ms = 0.0
     mv: chess.Move | None = None
 
     if move_cache:
@@ -328,6 +428,7 @@ def move(
             mode=mode,
             movetime_ms=resolved_movetime_ms,
             target_elo=target_elo,
+            line_key=line_key,
         )
         if cached_uci:
             try:
@@ -340,6 +441,8 @@ def move(
 
     if cache_hit and mv is not None:
         san = board.san(mv)
+        cache_hit_rate = _record_move_stat(cache_hit=True)
+        latency_ms = round((time.perf_counter() - request_started) * 1000.0, 2)
         return {
             "uci": mv.uci(),
             "san": san,
@@ -348,9 +451,16 @@ def move(
             "movetime_ms": resolved_movetime_ms,
             "cache_hit": True,
             "fallback_used": False,
+            "telemetry": {
+                "latency_ms": latency_ms,
+                "engine_time_ms": 0.0,
+                "cache_hit_rate": round(cache_hit_rate, 4),
+                "queue_depth": engine_pool.qsize(),
+            },
         }
 
     try:
+        engine_started = time.perf_counter()
         mv = engine_pool.select_move(
             fen=normalized_fen,
             board=board,
@@ -359,9 +469,11 @@ def move(
             movetime_ms=resolved_movetime_ms,
             target_elo=target_elo,
         )
+        engine_time_ms = round((time.perf_counter() - engine_started) * 1000.0, 2)
     except RuntimeError:
         mv = engine_pool.fast_fallback_move(board)
         fallback_used = True
+        engine_time_ms = round((time.perf_counter() - request_started) * 1000.0, 2)
 
     if move_cache and not fallback_used:
         move_cache.set(
@@ -370,6 +482,7 @@ def move(
             movetime_ms=resolved_movetime_ms,
             target_elo=target_elo,
             move_uci=mv.uci(),
+            line_key=line_key,
         )
 
     san = board.san(mv)
@@ -382,6 +495,17 @@ def move(
         san=san,
         eval=None,
     )
+    board_after = board.copy(stack=False)
+    board_after.push(mv)
+    if async_predict_enabled and not fallback_used:
+        background_tasks.add_task(
+            _predictive_cache_followups,
+            seed_fen=board_after.fen(),
+            mode=mode,
+            target_elo=target_elo,
+        )
+    cache_hit_rate = _record_move_stat(cache_hit=cache_hit)
+    latency_ms = round((time.perf_counter() - request_started) * 1000.0, 2)
 
     return {
         "uci": mv.uci(),
@@ -391,6 +515,12 @@ def move(
         "movetime_ms": resolved_movetime_ms,
         "cache_hit": cache_hit,
         "fallback_used": fallback_used,
+        "telemetry": {
+            "latency_ms": latency_ms,
+            "engine_time_ms": engine_time_ms,
+            "cache_hit_rate": round(cache_hit_rate, 4),
+            "queue_depth": engine_pool.qsize(),
+        },
     }
 
 
