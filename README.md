@@ -1,173 +1,277 @@
-CyberChessCoach
+# CyberChessCoach
 
-CyberChessCoach is a mono-repository containing a complete chess training system composed of:
+AI-powered chess training system with strict separation between move generation, evaluation, and explanation.
 
-an Android application (UI + gameplay)
+## Overview
 
-a C++ chess engine (~1800 Elo) acting as the opponent
+CyberChessCoach is a mono-repository containing:
 
-an LLM-based explanation engine (RAG + Mode-2) that explains positions after moves are played
+- **Android App** – UI and gameplay orchestration
+- **C++ Chess Engine** – ~1800 Elo opponent
+- **LLM Explanation Engine** – RAG-powered explanations with safety guarantees
 
-The system is designed with strict separation of concerns between playing, evaluating, and explaining chess positions.
+The system enforces non-negotiable invariants: the opponent never explains, Stockfish never plays, the LLM never calculates.
 
-High-Level Architecture
-User
-  │
-  ▼
-Android App (UI)
-  │
-  ▼
-C++ Chess Engine (~1800 Elo)
-  │   (plays a move)
-  ▼
-Final Position (FEN)
-  │
-  ▼
-Stockfish Evaluator (silent, strong)
-  │   (JSON evaluation)
-  ▼
-LLM Explanation Engine (Mode-2)
-  │
-  ▼
-Human-readable explanation
+## Core Architecture
 
-Key principle
+### System Principle
 
+```
 Moves are facts.
 Evaluations are judgments.
 Explanations are commentary.
 
 No component is allowed to blur these roles.
+```
 
-Repository Structure
-chesscoach/
-├── android/        # Android application (UI, interaction layer)
-├── engine/         # C++ chess engine (~1800 Elo opponent)
-├── llm/            # LLM explanation engine (RAG + Mode-2)
-├── docs/           # Architecture, testing, operations docs
-├── .gitignore
-└── README.md
+### Design Invariants
 
+- ✓ The opponent engine never explains
+- ✓ Stockfish never plays
+- ✓ The LLM never calculates
+- ✓ Explanations generated only after moves are committed
+- ✓ No component depends on LLM output for decision-making
 
-Each top-level directory is logically independent and can be reasoned about in isolation.
+## Data Flow
 
-android/
+### Complete Journey: User Move → Explanation
 
-Contains the Android application:
+```
+1. User Input (Android App)
+   │ Sends: move in algebraic notation
+   │
+   ▼
+2. Move Legality Check (Android App)
+   │ Validates: move is legal on board
+   │ Returns: success/error
+   │
+   ├─ Error → Display error, repeat input
+   │
+   └─ Success ↓
+   │
+   ▼
+3. C++ Opponent Engine
+   │ Input: Board position (FEN)
+   │ Process: Search ~1800 Elo strength
+   │ Output: Single move
+   │
+   ▼
+4. Board Update (Android App)
+   │ Commits both moves
+   │ Freezes game state
+   │ Converts to FEN
+   │
+   ▼
+5. Stockfish Evaluator (LLM System)
+   │ Input: Final position (FEN)
+   │ Process: Full analysis at high depth
+   │ Output: JSON evaluation
+   │   {
+   │     "centipawn_loss": 25,
+   │     "is_winning": true,
+   │     "is_forced_mate": false
+   │   }
+   │
+   ▼
+6. Engine Signal Extraction (ESV)
+   │ Input: Raw Stockfish JSON
+   │ Process: Normalize, coarsen, validate
+   │ Output: Trusted signal vector
+   │   • No raw scores
+   │   • No move lists
+   │   • No search metadata
+   │
+   ▼
+7. RAG Document Retrieval
+   │ Input: ESV (engine signal)
+   │ Process: Deterministic lookup
+   │ Output: Contextual documents
+   │   • Strategic principles
+   │   • Positional patterns
+   │   • Tactical concepts
+   │
+   ▼
+8. Prompt Rendering (Mode-2)
+   │ Injects (in order):
+   │   • System prompt (fixed)
+   │   • Engine signal (verbatim)
+   │   • RAG context (verbatim)
+   │   • FEN
+   │   • Optional user query
+   │
+   ▼
+9. LLM Generation
+   │ Input: Complete prompt
+   │ Process: Language model (untrusted)
+   │ Output: Raw text explanation
+   │
+   ▼
+10. Output Validation
+    │ Enforced checks:
+    │   ✓ No engine mentions
+    │   ✓ No move suggestions
+    │   ✓ No invented tactics
+    │   ✓ Correct mate handling
+    │   ✓ Explicit refusal on missing data
+    │
+    ├─ Validation fails → Error logged, fallback response
+    │
+    └─ Validation passes ↓
+    │
+    ▼
+11. Android App Display
+    │ Shows explanation to user
+    │ Ready for next move
+```
 
-board UI
+## Repository Structure
 
-move input
+```
+CyberChessCoach/
+├── android/                 # Android application
+│   ├── UI layer (board, input)
+│   ├── Game orchestration
+│   └── Explanation display
+│
+├── engine/                  # C++ chess engine
+│   ├── Move generation (~1800 Elo)
+│   └── Opponent logic
+│
+├── llm/                     # Explanation system
+│   ├── evaluator/          # Stockfish → JSON
+│   ├── esv/                # Engine signal extraction
+│   ├── rag/                # Document retrieval
+│   ├── prompts/            # Mode-2 prompt templates
+│   ├── validators/         # Output contracts
+│   └── safety/             # Safety enforcement
+│
+└── docs/                    # Architecture & testing
+    ├── ARCHITECTURE.md      # Complete formal spec
+    └── TESTING.md           # Test philosophy & examples
+```
 
-opponent interaction
+## Component Responsibilities
 
-explanation display
+### Android App
+**What it does:**
+- Renders chess board UI
+- Accepts user moves
+- Validates legality
+- Orchestrates game flow
+- Displays explanations
 
-The Android app:
+**What it never does:**
+- Evaluate positions
+- Generate explanations
+- Calculate variations
+- Contain chess logic beyond legality
 
-does not evaluate positions
+### C++ Engine
+**What it does:**
+- Play against the user
+- Select one move per position
+- Run at ~1800 Elo strength
 
-does not generate explanations
+**What it never knows:**
+- Engine evaluations
+- LLM-generated explanations
+- Opponent skill level
+- Game history
 
-does not contain chess logic beyond legality
+### LLM System (llm/)
+**What it does:**
+- Extract engine signals deterministically
+- Retrieve relevant documents
+- Render prompts with injected data
+- Call LLM as language realizer only
+- Validate all outputs before returning
 
-It acts purely as an orchestrator and presentation layer.
+**What it never does:**
+- Calculate moves
+- Suggest moves
+- Contradict engine evaluation
+- Reason beyond provided inputs
+- Introduce new facts not in documents
 
-engine/
+## Data Isolation
 
-Contains a standalone C++ chess engine (~1800 Elo) that:
+| Layer | Input Source | Output Type | Trust Level |
+|-------|--------------|-------------|------------|
+| Stockfish JSON | Evaluator binary | Raw scores, evals | ✓ Trusted |
+| Engine Signal (ESV) | Stockfish JSON | Normalized signal | ✓ Trusted |
+| RAG Documents | Document store | Textual context | ✓ Trusted |
+| Prompt Rendering | Injected data + templates | Complete prompt | ✓ Trusted |
+| LLM Output | Language model | Raw explanation | ✗ Untrusted |
+| Validators | LLM output | Validated text | ✓ Trusted |
 
-plays against the user
+**Key principle:** The LLM is never trusted. All outputs are validated against strict contracts before reaching the user.
 
-selects a single move given a position
+## Safety Model (SECA v1)
 
-has no knowledge of evaluation or explanations
+Enforced at startup via `llm/seca/safety/freeze.py`:
 
-This engine is intentionally weaker than Stockfish to provide a human-like playing experience.
+- ✓ No online training
+- ✓ No bandit updates
+- ✓ No world model learning
+- ✓ No background adaptive loops
+- ✓ Deterministic runtime
 
-llm/
+## Testing Philosophy
 
-Contains the LLM explanation system, including:
+The project uses layered testing:
 
-Stockfish → JSON evaluator
+- **Golden tests** – Lock behavior of ESV, RAG, prompt snapshots
+- **Negative tests** – Forbid illegal explanations
+- **Regression tests** – Ensure explanation quality
+- **Validator tests** – Fake LLM simulates violations
+- **Contract tests** – Prove all safety rules enforced
 
-engine signal extraction (ESV)
+See `docs/TESTING.md` for details.
 
-RAG document retrieval
+## Project Status
 
-Mode-2 prompt system
+- **Development:** Actively developed
+- **Structure:** Closed-source mono-repo
+- **License:** All rights reserved (see LICENSE.md)
+- **Historical:** Early standalone repos archived for reference
 
-strict validation and golden tests
+## Getting Started
 
-The LLM:
+### Installation
+```bash
+pip install -r requirements.txt
+python setup_stockfish.py
+```
 
-never suggests moves
+### Verify Safety
+```bash
+python verify_safety.py
+```
 
-never contradicts engine evaluation
+### Run Server
+```bash
+uvicorn app.server:app --reload
+```
 
-never performs chess calculation
+### Health Check
+```bash
+curl http://127.0.0.1:8000/health
+```
 
-only explains what already happened
+## Design Philosophy
 
-This guarantees safe, consistent explanations.
+CyberChessCoach prioritizes:
 
-Design Invariants (Non-Negotiable)
+1. **Correctness** – Invariants enforced via code & tests
+2. **Determinism** – All layers except LLM are reproducible
+3. **Explainability** – Every explanation is traceable to data
+4. **Safety** – Strict contracts on all LLM outputs
+5. **Maintainability** – Loose coupling, clear boundaries
 
-The opponent engine never explains
+Over convenience or feature velocity.
 
-Stockfish never plays
+## Further Reading
 
-The LLM never calculates
-
-Explanations are generated after moves are committed
-
-No component depends on LLM output for decision-making
-
-These invariants are enforced via tests and validators.
-
-Testing Philosophy
-
-The project uses golden tests to lock behavior:
-
-engine signal extraction
-
-RAG retrieval correctness
-
-prompt snapshots
-
-negative tests to forbid illegal explanations
-
-regression tests for explanation quality
-
-See docs/TESTING.md for details.
-
-Status
-
-This repository is actively developed and structured as a closed-source mono-repo.
-
-Historical standalone repositories (e.g. early LLM-only development) are archived and preserved for reference.
-
-License
-
-All rights reserved.
-This project is not open source.
-
-See LICENSE for details.
-
-Summary
-
-ChessCoach is built to be:
-
-modular
-
-testable
-
-explainable
-
-resistant to feedback loops
-
-safe against LLM hallucination
-
-The architecture intentionally prioritizes correctness and control over convenience.
-
-End of README.md
+- **ARCHITECTURE.md** – Formal system specification, trust boundaries, data flow details
+- **TESTING.md** – Test strategy, validator rules, test patterns
+- **LICENSE.md** – Rights and attribution
