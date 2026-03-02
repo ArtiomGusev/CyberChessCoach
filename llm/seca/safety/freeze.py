@@ -1,9 +1,9 @@
-"""
+﻿"""
 SECA SAFETY FREEZE GUARD
 Hard-disables any self-modifying or adaptive learning behavior.
 
 SAFE SECA v1 MUST import and execute this on startup.
-If unsafe components are detected → crash immediately.
+If unsafe components are detected â†’ crash immediately.
 """
 
 import os
@@ -84,7 +84,7 @@ def _assert_no_background_tasks():
 def _crash(reason: str):
     """Immediate hard stop."""
     print("\n" + "=" * 60)
-    print("🚨 SECA SAFETY FREEZE TRIGGERED")
+    print("SECA SAFETY FREEZE TRIGGERED")
     print("Reason:", reason)
     print("Runtime is NOT SAFE. Shutting down.")
     print("=" * 60 + "\n")
@@ -107,4 +107,4 @@ def enforce(world_model):
     _assert_no_background_tasks()
     _scan_loaded_modules()
 
-    print("🟢 SECA SAFETY FREEZE: runtime verified SAFE")
+    print("SECA SAFETY FREEZE: runtime verified SAFE")
