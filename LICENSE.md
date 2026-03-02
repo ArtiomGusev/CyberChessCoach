@@ -1,46 +1,25 @@
-LICENSE
+# License Agreement for CyberChessCoach
 
-Copyright © 2026 Artiom Gusev
-All rights reserved.
+## Grant of License  
+The author of this software grants you a non-exclusive, non-transferable license to use, copy, modify, and distribute this software, provided that any copies include this license agreement.
 
-This software and all associated source code, documentation, models, prompts, test suites, and artifacts (the “Software”) are proprietary and confidential.
+## Restrictions  
+1. You may not use the software for any illegal activities.  
+2. You may not reproduce or distribute the software for profit or commercial purposes without explicit permission from the author.  
+3. You may not alter the license, copyright, or any other notices contained in the software.
 
-Grant of Rights
+## No Warranty  
+This software is provided "as is", without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, or non-infringement. The author does not warrant that the software will meet your requirements or be uninterrupted or error-free.
 
-No rights are granted to use, copy, modify, distribute, sublicense, disclose, or deploy the Software, in whole or in part, except as explicitly authorized in writing by the copyright holder.
+## Limitation of Liability  
+In no event shall the author be liable for any indirect, incidental, special, consequential, or punitive damages arising from your use of the software, even if the author has been advised of the possibility of such damages.
 
-Restrictions
+## Contact Information  
+For inquiries regarding authorized use, please contact the author at:  
+Email: author@example.com  
 
-Without prior written permission, you may NOT:
+## Governing Law  
+This license agreement shall be governed by and construed in accordance with the laws of the jurisdiction in which the author resides.
 
-Copy or redistribute the Software
-
-Modify or create derivative works
-
-Publish or disclose source code
-
-Reverse engineer or decompile
-
-Use the Software for commercial or non-commercial purposes
-
-Train, fine-tune, or benchmark models using the Software
-
-Expose the Software via public APIs or services
-
-Ownership
-
-All intellectual property rights, including but not limited to copyrights, trade secrets, and proprietary know-how, remain the exclusive property of the copyright holder.
-
-No Warranty
-
-The Software is provided “AS IS”, without warranty of any kind, express or implied, including but not limited to warranties of merchantability, fitness for a particular purpose, or non-infringement.
-
-Limitation of Liability
-
-In no event shall the copyright holder be liable for any damages arising out of or in connection with the use or inability to use the Software.
-
-Termination
-
-Any unauthorized use automatically terminates any permission to access or possess the Software.
-
-End of LICENSE
+## Amendments  
+Any amendments to this license must be made in writing and signed by the author.
