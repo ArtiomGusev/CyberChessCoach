@@ -1,91 +1,18 @@
-# flyctl launch added from .gitignore
-# ========= GLOBAL =========
-**\.DS_Store
-**\Thumbs.db
-**\*.log
-**\.env
-**\__pycache__
-**\*.pyc
-**\venv
-
-# ========= ANDROID =========
-**\android\.gradle
-**\android\**\build
-**\android\**\.idea
-**\android\**\local.properties
-**\android\**\*.iml
-**\android\**\*.apk
-**\android\**\*.aab
-**\android\**\*.jks
-**\android\**\*.keystore
-**\android\**\.cxx
-**\android\**\.externalNativeBuild
-
-# ========= C++ =========
-**\engine\build
-**\engine\**\CMakeFiles
-**\engine\**\CMakeCache.txt
-**\engine\**\*.o
-**\engine\**\*.obj
-**\engine\**\*.exe
-
-# ========= PYTHON / LLM =========
-**\llm\.pytest_cache
-**\llm\telemetry
-**\llm\**\__pycache__
-**\llm\**\*.pyc
-**\engines\stockfish.exe
-
-# flyctl launch added from android\.gitignore
-android\**\*.iml
-android\**\.gradle
-android\local.properties
-android\.idea\caches
-android\.idea\libraries
-android\.idea\modules.xml
-android\.idea\workspace.xml
-android\.idea\navEditor.xml
-android\.idea\assetWizardSettings.xml
-android\**\.DS_Store
-android\build
-android\captures
-android\**\.externalNativeBuild
-android\**\.cxx
-android\**\local.properties
-
-# flyctl launch added from android\.idea\.gitignore
-# Default ignored files
-android\.idea\shelf
-android\.idea\workspace.xml
-
-# flyctl launch added from android\app\.gitignore
-android\app\build
-
-# flyctl launch added from llm\.gitignore
-# Python
-llm\**\__pycache__
-llm\**\*.pyc
-llm\**\venv
-
-# OS / IDE
-llm\**\.vscode
-llm\**\.idea
-
-# Local / secrets
-llm\**\.env
-
-# Data / logs
-llm\**\*.log
-llm\**\*.exe
-llm\**\*.bin
-llm\**\*.zip
-llm\**\*.jsonl
-
-# User junk
-llm\**\.DS_Store
-llm\**\Thumbs.db
-
-# flyctl launch added from llm\.pytest_cache\.gitignore
-# Created by pytest automatically.
-llm\.pytest_cache\**\*
-fly.toml
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.git
+.gitignore
+node_modules/
+android/
+data/
+docs/
+engine/
+mock/
+scripts/
+**/.gradle/
+**/.pytest_cache/
+**/venv/
+**/__pycache__/

@@ -5,6 +5,7 @@ DB_PATH = Path("data/seca.db")
 
 
 def get_conn():
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     return sqlite3.connect(DB_PATH, check_same_thread=False)
 
 

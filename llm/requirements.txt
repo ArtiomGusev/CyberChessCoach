@@ -3,3 +3,10 @@ uvicorn
 pyyaml
 slowapi
 python-dotenv
+python-chess
+redis
+SQLAlchemy
+PyJWT
+passlib
+numpy
+httpx

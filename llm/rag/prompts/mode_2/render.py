@@ -13,6 +13,7 @@ def render_mode_2_prompt(
     rag_docs: list[dict],
     fen: str,
     user_query: str,
+    rag_context=None,
 ) -> str:
     rag_blocks = []
 
@@ -22,7 +23,7 @@ def render_mode_2_prompt(
 
     rag_text = "\n\n".join(rag_blocks) if rag_blocks else "(no retrieved context)"
 
-    return f"""{system_prompt}
+    prompt = f"""{system_prompt}
 
 ────────────────────────────
 ENGINE SIGNAL (STRUCTURED)
@@ -44,3 +45,6 @@ USER REQUEST
 ────────────────────────────
 {user_query}
 """.strip()
+    if rag_context:
+        prompt += f"\nContext:\n{rag_context}"
+    return prompt

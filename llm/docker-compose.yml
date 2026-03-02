@@ -1,0 +1,29 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: llm/Dockerfile.api
+    command: ["uvicorn", "llm.server:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      SECA_ENV: prod
+      ENGINE_POOL_SIZE: "4"
+      ENGINE_THREADS: "1"
+      ENGINE_HASH_MB: "128"
+      ENGINE_SKILL_LEVEL: "10"
+      ENGINE_DEFAULT_MOVETIME_MS: "80"
+      ENGINE_PUZZLE_MOVETIME_MS: "50"
+      ENGINE_BLITZ_MOVETIME_MS: "100"
+      ENGINE_DEEP_MOVETIME_MS: "700"
+      MOVE_CACHE_TTL_SECONDS: "3600"
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+    cpus: 2.0
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    restart: unless-stopped

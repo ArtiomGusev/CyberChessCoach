@@ -32,3 +32,21 @@ Examples:
   set RUN_REPR_CI=1 && set LLM_MODEL=qwen2.5:7b-instruct-q2_K && python -m pytest -q rag/tests/test_ci_optional_run.py
 
 Use this to verify end-to-end behavior when a real model is available.
+
+Docker runtime for low-latency Stockfish
+
+- A pooled Stockfish runtime is available via `docker-compose.yml` and `Dockerfile.api`.
+- It pre-spawns engine workers, keeps them alive, and uses Redis FEN caching.
+
+Start:
+- `docker compose up --build`
+
+Main env knobs:
+- `ENGINE_POOL_SIZE` (default `4`)
+- `ENGINE_THREADS` (default `1`)
+- `ENGINE_HASH_MB` (default `128`)
+- `ENGINE_DEFAULT_MOVETIME_MS` (default `80`)
+- `ENGINE_PUZZLE_MOVETIME_MS` (default `50`)
+- `ENGINE_BLITZ_MOVETIME_MS` (default `100`)
+- `ENGINE_DEEP_MOVETIME_MS` (default `700`)
+- `MOVE_CACHE_TTL_SECONDS` (default `3600`)
