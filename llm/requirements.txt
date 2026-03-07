@@ -1,5 +1,6 @@
 fastapi
 uvicorn
+orjson
 pyyaml
 slowapi
 python-dotenv
