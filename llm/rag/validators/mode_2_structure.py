@@ -10,10 +10,9 @@ FORBIDDEN_SECTIONS = [
     r"\bconsider\b",
 ]
 
+
 def validate_mode_2_structure(text: str):
     lowered = text.lower()
     for pattern in FORBIDDEN_SECTIONS:
         if re.search(pattern, lowered):
-            raise AssertionError(
-                f"Mode-2 structural violation: forbidden section `{pattern}`"
-            )
+            raise AssertionError(f"Mode-2 structural violation: forbidden section `{pattern}`")

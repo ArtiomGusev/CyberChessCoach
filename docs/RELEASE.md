@@ -164,6 +164,11 @@ git push --tags
 
 
 Tags must correspond exactly to the released version.
+Pushing a `vX.Y.Z` tag automatically publishes the GitHub Release and the GHCR images for:
+
+`ghcr.io/<owner>/cyberchesscoach:vX.Y.Z`
+
+`ghcr.io/<owner>/cyberchesscoach-llm-api:vX.Y.Z`
 
 2️⃣ Record Release Metadata (RECOMMENDED)
 

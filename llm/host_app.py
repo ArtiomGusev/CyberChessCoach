@@ -22,6 +22,7 @@ try:
     from .elite_engine_service import EliteEngineService
     from .metrics import miss_metrics_snapshot, record_miss_sample
     from .opening_book import OpeningBook
+    from .position_input import normalize_fen
     from .predictive_cache import get_predictions
     from .redis_client import (
         close_redis,
@@ -39,6 +40,7 @@ except ImportError:
     from elite_engine_service import EliteEngineService
     from metrics import miss_metrics_snapshot, record_miss_sample
     from opening_book import OpeningBook
+    from position_input import normalize_fen
     from predictive_cache import get_predictions
     from redis_client import (
         close_redis,
@@ -270,7 +272,7 @@ def debug_miss_metrics():
 
 @app.get("/engine/predictions")
 async def engine_predictions(fen: str):
-    normalized_fen = _normalize_fen(fen)
+    normalized_fen = normalize_fen(fen) or fen
     return {
         "fen": normalized_fen,
         "predictions": await get_predictions(normalized_fen),

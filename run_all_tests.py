@@ -10,4 +10,6 @@ RUNNER = ROOT / "llm" / "run_all_tests.py"
 
 
 if __name__ == "__main__":
-    raise SystemExit(subprocess.run([sys.executable, str(RUNNER), *sys.argv[1:]]).returncode)
+    raise SystemExit(
+        subprocess.run([sys.executable, str(RUNNER), *sys.argv[1:]], check=False).returncode
+    )

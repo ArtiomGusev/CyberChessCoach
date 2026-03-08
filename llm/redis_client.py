@@ -7,7 +7,8 @@ from typing import Any
 try:
     import redis.asyncio as redis
 except Exception:  # pragma: no cover - optional dependency
-    redis = None
+    redis: Any | None = None
+
 
 def _connection_kwargs() -> dict[str, Any]:
     return {
@@ -49,9 +50,7 @@ async def verify_redis_connection() -> None:
     try:
         await asyncio.wait_for(redis_client.ping(), timeout=ping_timeout_seconds)
     except Exception as exc:
-        raise RuntimeError(
-            "Redis ping failed. Check that Redis is running and reachable."
-        ) from exc
+        raise RuntimeError("Redis ping failed. Check that Redis is running and reachable.") from exc
 
 
 async def redis_is_available() -> bool:

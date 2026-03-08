@@ -34,7 +34,7 @@ QUALITY_TESTS = [
 def run(paths: list[str], label: str) -> None:
     cmd = [sys.executable, "-m", "pytest", "-q", *paths]
     print(f"\n=== RUNNING {label}: {' '.join(paths)} ===")
-    result = subprocess.run(cmd, cwd=PROJECT_ROOT)
+    result = subprocess.run(cmd, cwd=PROJECT_ROOT, check=False)
     if result.returncode != 0:
         print(f"\nFAILED: {label}")
         sys.exit(result.returncode)
