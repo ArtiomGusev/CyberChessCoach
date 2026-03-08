@@ -187,7 +187,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build app image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
@@ -198,7 +198,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=app-image
 
       - name: Build llm API image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./llm/Dockerfile.api
