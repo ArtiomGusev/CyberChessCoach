@@ -47,7 +47,9 @@ class EliteEngineService:
         resolved_movetime = None if movetime is None else max(1, int(movetime))
         resolved_nodes = None if nodes is None else max(1, int(nodes))
         if resolved_movetime is None and resolved_nodes is None:
-            resolved_nodes = max(1, int(getattr(self.evaluator, "default_nodes", self.predictive_nodes)))
+            resolved_nodes = max(
+                1, int(getattr(self.evaluator, "default_nodes", self.predictive_nodes))
+            )
         return resolved_movetime, resolved_nodes
 
     async def evaluate(

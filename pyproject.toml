@@ -1,0 +1,28 @@
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_configs = true
+pretty = true
+cache_dir = ".mypy_cache"
+
+[tool.pylint.main]
+py-version = "3.11"
+persistent = false
+
+[tool.pylint."messages control"]
+disable = [
+  "broad-exception-caught",
+  "line-too-long",
+  "missing-class-docstring",
+  "missing-function-docstring",
+  "missing-module-docstring",
+  "subprocess-run-check",
+  "too-few-public-methods",
+  "too-many-arguments",
+  "too-many-instance-attributes",
+  "too-many-locals",
+]

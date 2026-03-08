@@ -300,3 +300,21 @@ def test_evaluate_position_does_not_record_cache_hits(monkeypatch):
         metrics_module.MISS_SAMPLES.clear()
 
     asyncio.run(_run())
+
+
+def test_engine_predictions_normalizes_startpos(monkeypatch):
+    async def _run():
+        async def _get_predictions(fen: str):
+            assert fen == "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+            return ["e2e4", "d2d4"]
+
+        monkeypatch.setattr(host_app, "get_predictions", _get_predictions)
+
+        result = await host_app.engine_predictions("startpos")
+
+        assert result == {
+            "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "predictions": ["e2e4", "d2d4"],
+        }
+
+    asyncio.run(_run())

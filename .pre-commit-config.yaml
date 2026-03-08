@@ -1,0 +1,15 @@
+repos:
+  - repo: local
+    hooks:
+      - id: python-quality
+        name: python-quality
+        entry: python llm/run_quality_gate.py
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: python-ci-suite
+        name: python-ci-suite
+        entry: python llm/run_ci_suite.py
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

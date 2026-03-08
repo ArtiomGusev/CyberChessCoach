@@ -3,9 +3,9 @@ from __future__ import annotations
 import hashlib
 
 try:
-    from .position_input import normalize_position
+    from . import position_input as _position_input
 except ImportError:
-    from position_input import normalize_position
+    import position_input as _position_input
 
 
 def _limit_suffix(movetime_ms: int | None = None, nodes: int | None = None) -> str:
@@ -23,6 +23,6 @@ def eval_cache_key(
     movetime_ms: int | None = None,
     nodes: int | None = None,
 ) -> str:
-    position_fen, _, _ = normalize_position(fen=fen, moves=moves)
+    position_fen, _, _ = _position_input.normalize_position(fen=fen, moves=moves)
     digest = hashlib.sha1(position_fen.encode("utf-8")).hexdigest()[:12]
     return f"cc:eval:{digest}:{_limit_suffix(movetime_ms=movetime_ms, nodes=nodes)}"

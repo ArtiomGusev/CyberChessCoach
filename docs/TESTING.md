@@ -200,6 +200,8 @@ No
 
 Required Test Runs
 Before pushing code
+python llm/run_quality_gate.py
+python llm/run_ci_suite.py
 python -m pytest -q llm/rag/tests/golden/test_retriever.py
 python -m pytest -q llm/rag/tests/golden/test_prompt_snapshot.py
 python -m pytest -q llm/rag/tests/contracts/test_fake_llm.py
@@ -212,9 +214,24 @@ CI Policy
 
 CI runs only the following:
 
+python llm/run_quality_gate.py
+python llm/run_ci_suite.py
 python -m pytest -q llm/rag/tests/golden/test_retriever.py
 python -m pytest -q llm/rag/tests/golden/test_prompt_snapshot.py
 python -m pytest -q llm/rag/tests/contracts/test_fake_llm.py
+
+
+CI quality gates also enforce:
+
+Black formatting checks
+
+Pylint checks on the stable Python surface
+
+Mypy checks on the typed utility surface
+
+Coverage fail-under 80% for the CI-covered Python modules
+
+pip-audit and Trivy security scans
 
 
 CI must never run:

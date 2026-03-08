@@ -155,7 +155,11 @@ class EngineEvaluator:
 
         fallback = self._fast_fallback(board)
         wait_start = time.perf_counter()
-        engine = self.pool.try_acquire() if hasattr(self.pool, "try_acquire") else self.pool.acquire_nowait()
+        engine = (
+            self.pool.try_acquire()
+            if hasattr(self.pool, "try_acquire")
+            else self.pool.acquire_nowait()
+        )
         if engine is None and self.acquire_timeout_ms > 0:
             try:
                 engine = await asyncio.wait_for(

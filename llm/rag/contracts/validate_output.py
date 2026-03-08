@@ -27,12 +27,8 @@ def validate_output(text: str, *, case_type: str):
 
     if case_type == "missing_data":
         if not any(p in lower for p in REQUIRED_ON_MISSING):
-            raise AssertionError(
-                "Missing-data response does not acknowledge missing information"
-            )
+            raise AssertionError("Missing-data response does not acknowledge missing information")
 
     if case_type == "forced_mate":
         if not any(p in lower for p in REQUIRED_ON_MATE):
-            raise AssertionError(
-                "Forced-mate response does not emphasize inevitability"
-            )
+            raise AssertionError("Forced-mate response does not emphasize inevitability")
