@@ -1,18 +1,149 @@
-# See https://fly.io/docs/app-guides/continuous-deployment-with-github-actions/
+name: CI/CD
 
-name: Fly Deploy
 on:
+  pull_request:
+    branches: [main]
   push:
-    branches:
-      - main
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-cd-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  deploy:
-    name: Deploy app
+  changes:
+    name: Detect changed areas
     runs-on: ubuntu-latest
-    concurrency: deploy-group    # optional: ensure only one action runs at a time
+    outputs:
+      llm: ${{ steps.filter.outputs.llm }}
+      deploy: ${{ steps.filter.outputs.deploy }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: superfly/flyctl-actions/setup-flyctl@master
-      - run: flyctl deploy --remote-only
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Filter changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            llm:
+              - '.github/workflows/**'
+              - 'llm/**'
+              - 'run_all_tests.py'
+              - 'TESTING.md'
+              - 'RELEASE.md'
+              - 'docs/TESTING.md'
+              - 'docs/RELEASE.md'
+            deploy:
+              - '.dockerignore'
+              - '.github/workflows/**'
+              - 'Dockerfile'
+              - 'docker-compose.yml'
+              - 'fly.toml'
+              - 'llm/**'
+
+  llm-tests:
+    name: LLM safety and unit tests
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.llm == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            llm/requirements.txt
+            llm/requirements-ci.txt
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r llm/requirements-ci.txt
+
+      - name: Run mandatory CI-safe tests
+        run: python run_all_tests.py
+
+      - name: Run fast service unit tests
+        run: |
+          python -m pytest -q \
+            llm/tests/test_cache_keys.py \
+            llm/tests/test_engine_eval_limits.py \
+            llm/tests/test_elite_engine_service.py \
+            llm/tests/test_host_app.py
+
+  docker-builds:
+    name: Build deployable images
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Fly image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: chesscoach:ci
+          cache-from: type=gha,scope=fly-image
+          cache-to: type=gha,mode=max,scope=fly-image
+
+      - name: Build low-latency API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./llm/Dockerfile.api
+          push: false
+          tags: chesscoach-llm-api:ci
+          cache-from: type=gha,scope=llm-api-image
+          cache-to: type=gha,mode=max,scope=llm-api-image
+
+  deploy:
+    name: Deploy to Fly
+    needs:
+      - changes
+      - llm-tests
+      - docker-builds
+    if: >-
+      (
+        github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'push' &&
+         github.ref == 'refs/heads/main' &&
+         needs.changes.outputs.deploy == 'true')
+      ) &&
+      needs.docker-builds.result == 'success' &&
+      (needs.llm-tests.result == 'success' || needs.llm-tests.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: fly-production
+      cancel-in-progress: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@v1
+
+      - name: Deploy application
+        run: flyctl deploy --remote-only
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

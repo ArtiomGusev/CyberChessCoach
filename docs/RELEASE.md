@@ -73,9 +73,9 @@ If this requirement is not met, the release is invalid.
 
 The following tests must pass:
 
-python -m rag.tests.golden.test_retriever
-python -m rag.tests.golden.test_prompt_snapshot
-python -m rag.tests.contracts.test_fake_llm
+python -m pytest -q llm/rag/tests/golden/test_retriever.py
+python -m pytest -q llm/rag/tests/golden/test_prompt_snapshot.py
+python -m pytest -q llm/rag/tests/contracts/test_fake_llm.py
 
 
 Rules:
@@ -92,7 +92,7 @@ LLM regression tests must be run immediately prior to release.
 
 Command:
 
-python -m rag.tests.llm.test_llm_regression
+python -m pytest -q llm/rag/tests/llm/test_llm_regression.py
 
 
 Rules:
@@ -109,7 +109,7 @@ A real LLM smoke test must be executed.
 
 Command:
 
-python -m rag.tests.llm.test_ollama_smoke
+python -m pytest -q llm/rag/tests/llm/test_ollama_smoke.py
 
 
 Rules:

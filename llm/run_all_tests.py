@@ -1,7 +1,5 @@
 """
-Unified test runner for ChessCoach-AI.
-
-This script is the ONLY supported way to run multiple test categories together.
+Unified pytest runner for ChessCoach-AI.
 
 Usage:
   python run_all_tests.py              -> CI-safe tests only
@@ -9,60 +7,57 @@ Usage:
   python run_all_tests.py --llm        -> ONLY real-LLM tests
 """
 
+from pathlib import Path
 import subprocess
 import sys
 
 
+LLM_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = LLM_ROOT.parent
+
 CI_TESTS = [
-    "rag.tests.golden.test_retriever",
-    "rag.tests.golden.test_prompt_snapshot",
-    "rag.tests.contracts.test_fake_llm",
+    "llm/rag/tests/golden/test_retriever.py",
+    "llm/rag/tests/golden/test_prompt_snapshot.py",
+    "llm/rag/tests/contracts/test_fake_llm.py",
 ]
 
 LOCAL_ONLY_TESTS = [
-    "rag.tests.llm.test_ollama_smoke",
-    "rag.tests.llm.test_llm_regression",
+    "llm/rag/tests/llm/test_ollama_smoke.py",
+    "llm/rag/tests/llm/test_llm_regression.py",
 ]
 
 QUALITY_TESTS = [
-    "rag.tests.quality.test_explanation_quality",
+    "llm/rag/tests/quality/test_explanation_quality.py",
 ]
 
 
-def run(module: str):
-    print(f"\n=== RUNNING: python -m {module} ===")
-    result = subprocess.run(
-        [sys.executable, "-m", module],
-        stdout=sys.stdout,
-        stderr=sys.stderr,
-    )
+def run(paths: list[str], label: str) -> None:
+    cmd = [sys.executable, "-m", "pytest", "-q", *paths]
+    print(f"\n=== RUNNING {label}: {' '.join(paths)} ===")
+    result = subprocess.run(cmd, cwd=PROJECT_ROOT)
     if result.returncode != 0:
-        print(f"\nFAILED: {module}")
+        print(f"\nFAILED: {label}")
         sys.exit(result.returncode)
-    print(f"PASSED: {module}")
+    print(f"PASSED: {label}")
 
 
-def main():
+def main() -> None:
     args = set(sys.argv[1:])
 
     if "--llm" in args:
         print(">>> Running REAL LLM tests ONLY")
-        for test in LOCAL_ONLY_TESTS:
-            run(test)
+        run(LOCAL_ONLY_TESTS, "real-llm")
         return
 
     print(">>> Running CI-SAFE tests")
-    for test in CI_TESTS:
-        run(test)
+    run(CI_TESTS, "ci-safe")
 
     if "--local" in args:
         print("\n>>> Running LOCAL-ONLY tests")
-        for test in LOCAL_ONLY_TESTS:
-            run(test)
+        run(LOCAL_ONLY_TESTS, "local-llm")
 
         print("\n>>> Running QUALITY tests (advisory)")
-        for test in QUALITY_TESTS:
-            run(test)
+        run(QUALITY_TESTS, "quality")
 
 
 if __name__ == "__main__":
