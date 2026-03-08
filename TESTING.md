@@ -48,8 +48,8 @@ Mode-2 prompt injection
 
 Commands
 
-python -m rag.tests.golden.test_retriever
-python -m rag.tests.golden.test_prompt_snapshot
+python -m pytest -q llm/rag/tests/golden/test_retriever.py
+python -m pytest -q llm/rag/tests/golden/test_prompt_snapshot.py
 
 
 Rules
@@ -88,7 +88,7 @@ Fake LLM only
 
 Command
 
-python -m rag.tests.contracts.test_fake_llm
+python -m pytest -q llm/rag/tests/contracts/test_fake_llm.py
 
 
 Rules
@@ -119,7 +119,7 @@ Output passes contract validators
 
 Command
 
-python -m rag.tests.llm.test_ollama_smoke
+python -m pytest -q llm/rag/tests/llm/test_ollama_smoke.py
 
 
 Rules
@@ -150,7 +150,7 @@ Contract compliance over time
 
 Command
 
-python -m rag.tests.llm.test_llm_regression
+python -m pytest -q llm/rag/tests/llm/test_llm_regression.py
 
 
 Rules
@@ -183,7 +183,7 @@ Non-triviality
 
 Command
 
-python -m rag.tests.quality.test_explanation_quality
+python -m pytest -q llm/rag/tests/quality/test_explanation_quality.py
 
 
 Rules
@@ -200,21 +200,21 @@ No
 
 Required Test Runs
 Before pushing code
-python -m rag.tests.golden.test_retriever
-python -m rag.tests.golden.test_prompt_snapshot
-python -m rag.tests.contracts.test_fake_llm
+python -m pytest -q llm/rag/tests/golden/test_retriever.py
+python -m pytest -q llm/rag/tests/golden/test_prompt_snapshot.py
+python -m pytest -q llm/rag/tests/contracts/test_fake_llm.py
 
 Before release (local)
-python -m rag.tests.llm.test_ollama_smoke
-python -m rag.tests.llm.test_llm_regression
+python -m pytest -q llm/rag/tests/llm/test_ollama_smoke.py
+python -m pytest -q llm/rag/tests/llm/test_llm_regression.py
 
 CI Policy
 
 CI runs only the following:
 
-python -m rag.tests.golden.test_retriever
-python -m rag.tests.golden.test_prompt_snapshot
-python -m rag.tests.contracts.test_fake_llm
+python -m pytest -q llm/rag/tests/golden/test_retriever.py
+python -m pytest -q llm/rag/tests/golden/test_prompt_snapshot.py
+python -m pytest -q llm/rag/tests/contracts/test_fake_llm.py
 
 
 CI must never run:
@@ -285,7 +285,7 @@ After updating Ollama or model weights
 
 Command:
 
-python -m rag.tests.llm.test_llm_regression
+python -m pytest -q llm/rag/tests/llm/test_llm_regression.py
 
 Prohibited Usage
 
