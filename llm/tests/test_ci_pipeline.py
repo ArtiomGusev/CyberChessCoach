@@ -91,10 +91,19 @@ def test_ci_workflow_hardens_checkout_and_supply_chain_controls():
         _step_named(jobs["node-security"], "Audit Node dependencies")["run"]
         == "npm audit --omit=dev --audit-level=high"
     )
-    assert (
-        _step_named(jobs["trivy-repo-scan"], "Run Trivy filesystem scan")["with"]["scanners"]
-        == "vuln"
+    assert jobs["trivy-repo-scan"]["permissions"] == {"contents": "read"}
+    prepare_trivy_input = _step_named(
+        jobs["trivy-repo-scan"], "Prepare Trivy runtime manifest scan input"
     )
+    assert (
+        "cp llm/requirements.txt tmp_logs/trivy-runtime/requirements.txt"
+        in prepare_trivy_input["run"]
+    )
+
+    trivy_python_step = _step_named(jobs["trivy-repo-scan"], "Run Trivy Python runtime scan")
+    assert trivy_python_step["with"]["scanners"] == "vuln"
+    assert trivy_python_step["with"]["scan-ref"] == "tmp_logs/trivy-runtime"
+    assert trivy_python_step["with"]["format"] == "table"
 
     docker_job = jobs["docker-images"]
     assert docker_job["permissions"] == {
