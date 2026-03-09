@@ -38,6 +38,10 @@ def test_ci_workflow_includes_required_gates():
         "APP_IMAGE_NAME": "cyberchesscoach",
         "API_IMAGE_NAME": "cyberchesscoach-llm-api",
     }
+    assert workflow["concurrency"] == {
+        "group": "ci-cd-${{ github.workflow }}-${{ github.ref }}",
+        "cancel-in-progress": "${{ github.event_name == 'pull_request' }}",
+    }
     assert {
         "workflow-lint",
         "python-tests",
