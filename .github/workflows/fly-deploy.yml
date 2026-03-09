@@ -10,22 +10,43 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  packages: write
-  security-events: write
+  contents: read
+
+env:
+  APP_IMAGE_NAME: cyberchesscoach
+  API_IMAGE_NAME: cyberchesscoach-llm-api
 
 concurrency:
   group: ci-cd-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  workflow-lint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Lint GitHub Actions workflows
+        uses: raven-actions/actionlint@v2
+
   python-tests:
     name: Python tests and coverage
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -58,9 +79,13 @@ jobs:
     name: Black, Pylint, and Mypy
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -90,9 +115,13 @@ jobs:
     name: Python dependency audit
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -111,13 +140,43 @@ jobs:
       - name: Audit Python dependencies
         run: python -m pip_audit -r llm/requirements.txt --strict --progress-spinner off
 
+  node-security:
+    name: Node dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Generate package lock for audit
+        working-directory: llm
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Audit Node dependencies
+        working-directory: llm
+        run: npm audit --omit=dev --audit-level=high
+
   trivy-repo-scan:
     name: Trivy repository scan
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Run Trivy filesystem scan
         id: trivy
@@ -130,7 +189,7 @@ jobs:
           output: trivy-results.sarif
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-          scanners: vuln
+          scanners: vuln,misconfig
           exit-code: "1"
 
       - name: Upload Trivy results
@@ -153,13 +212,26 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs:
+      - workflow-lint
       - python-tests
       - python-quality
       - dependency-security
+      - node-security
       - trivy-repo-scan
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      image_owner: ${{ steps.prep.outputs.owner }}
+      app_digest: ${{ steps.build-app.outputs.digest }}
+      api_digest: ${{ steps.build-api.outputs.digest }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Normalize image owner
         id: prep
@@ -181,7 +253,7 @@ jobs:
         id: meta-app
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ steps.prep.outputs.owner }}/cyberchesscoach
+          images: ghcr.io/${{ steps.prep.outputs.owner }}/${{ env.APP_IMAGE_NAME }}
           tags: |
             type=sha,format=short,prefix=sha-
             type=ref,event=branch
@@ -194,7 +266,7 @@ jobs:
         id: meta-api
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ steps.prep.outputs.owner }}/cyberchesscoach-llm-api
+          images: ghcr.io/${{ steps.prep.outputs.owner }}/${{ env.API_IMAGE_NAME }}
           tags: |
             type=sha,format=short,prefix=sha-
             type=ref,event=branch
@@ -204,6 +276,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build app image
+        id: build-app
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -213,8 +286,11 @@ jobs:
           labels: ${{ steps.meta-app.outputs.labels }}
           cache-from: type=gha,scope=app-image
           cache-to: type=gha,mode=max,scope=app-image
+          provenance: ${{ github.event_name == 'push' }}
+          sbom: ${{ github.event_name == 'push' }}
 
       - name: Build llm API image
+        id: build-api
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -224,24 +300,125 @@ jobs:
           labels: ${{ steps.meta-api.outputs.labels }}
           cache-from: type=gha,scope=llm-api-image
           cache-to: type=gha,mode=max,scope=llm-api-image
+          provenance: ${{ github.event_name == 'push' }}
+          sbom: ${{ github.event_name == 'push' }}
+
+      - name: Attest app image provenance
+        if: github.event_name == 'push'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ghcr.io/${{ steps.prep.outputs.owner }}/${{ env.APP_IMAGE_NAME }}
+          subject-digest: ${{ steps.build-app.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest llm API image provenance
+        if: github.event_name == 'push'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ghcr.io/${{ steps.prep.outputs.owner }}/${{ env.API_IMAGE_NAME }}
+          subject-digest: ${{ steps.build-api.outputs.digest }}
+          push-to-registry: true
+
+      - name: Install Cosign
+        if: github.event_name == 'push'
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign published images
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          cosign sign --yes "ghcr.io/${{ steps.prep.outputs.owner }}/${{ env.APP_IMAGE_NAME }}@${{ steps.build-app.outputs.digest }}"
+          cosign sign --yes "ghcr.io/${{ steps.prep.outputs.owner }}/${{ env.API_IMAGE_NAME }}@${{ steps.build-api.outputs.digest }}"
+
+  image-security:
+    name: Trivy image scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs:
+      - docker-images
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Scan published app image
+        id: trivy-app-image
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: image
+          image-ref: ghcr.io/${{ needs.docker-images.outputs.image_owner }}/${{ env.APP_IMAGE_NAME }}@${{ needs.docker-images.outputs.app_digest }}
+          format: sarif
+          output: trivy-app-image.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Upload app image scan results
+        if: hashFiles('trivy-app-image.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-app-image.sarif
+
+      - name: Scan published llm API image
+        id: trivy-api-image
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: image
+          image-ref: ghcr.io/${{ needs.docker-images.outputs.image_owner }}/${{ env.API_IMAGE_NAME }}@${{ needs.docker-images.outputs.api_digest }}
+          format: sarif
+          output: trivy-api-image.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Upload llm API image scan results
+        if: hashFiles('trivy-api-image.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-api-image.sarif
+
+      - name: Fail on published image vulnerabilities
+        if: steps.trivy-app-image.outcome == 'failure' || steps.trivy-api-image.outcome == 'failure'
+        run: |
+          echo "Trivy found HIGH/CRITICAL vulnerabilities in a published container image."
+          exit 1
 
   deploy:
     name: Deploy to Fly
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs:
+      - workflow-lint
       - python-tests
       - python-quality
       - dependency-security
+      - node-security
       - trivy-repo-scan
       - docker-images
+      - image-security
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+    environment:
+      name: production
     concurrency:
       group: fly-production
       cancel-in-progress: false
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Check Fly token availability
         id: fly-token
@@ -270,12 +447,17 @@ jobs:
     name: Create GitHub release
     runs-on: ubuntu-latest
     needs:
+      - workflow-lint
       - python-tests
       - python-quality
       - dependency-security
+      - node-security
       - trivy-repo-scan
       - docker-images
+      - image-security
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
     steps:
       - name: Normalize image owner
         id: prep
@@ -288,5 +470,5 @@ jobs:
           generate_release_notes: true
           body: |
             Container images published for this release:
-            - `ghcr.io/${{ steps.prep.outputs.owner }}/cyberchesscoach:${{ github.ref_name }}`
-            - `ghcr.io/${{ steps.prep.outputs.owner }}/cyberchesscoach-llm-api:${{ github.ref_name }}`
+            - `ghcr.io/${{ steps.prep.outputs.owner }}/${{ env.APP_IMAGE_NAME }}:${{ github.ref_name }}`
+            - `ghcr.io/${{ steps.prep.outputs.owner }}/${{ env.API_IMAGE_NAME }}:${{ github.ref_name }}`

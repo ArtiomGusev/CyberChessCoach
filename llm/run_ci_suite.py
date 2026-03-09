@@ -21,6 +21,7 @@ TEST_TARGETS = [
     "llm/rag/tests/test_explanation_score.py",
     "llm/rag/tests/unit/test_telemetry_event.py",
     "llm/tests/test_cache_keys.py",
+    "llm/tests/test_ci_pipeline.py",
     "llm/tests/test_engine_eval_limits.py",
     "llm/tests/test_elite_engine_service.py",
     "llm/tests/test_host_app.py",
