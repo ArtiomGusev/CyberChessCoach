@@ -25,6 +25,10 @@ def _step_named(job: dict, name: str) -> dict:
     raise AssertionError(f"Step {name!r} not found")
 
 
+def _version_tuple(version: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in version.split("."))
+
+
 def test_ci_workflow_includes_required_gates():
     workflow = _load_workflow("fly-deploy.yml")
     jobs = workflow["jobs"]
@@ -195,6 +199,7 @@ def test_runtime_dependency_files_are_pinned():
 
     assert dependencies
     assert all(not version.startswith(("^", "~")) for version in dependencies.values())
+    assert _version_tuple(dependencies["express"]) >= (4, 22, 1)
 
 
 def test_run_ci_suite_builds_expected_pytest_command(monkeypatch, tmp_path):
