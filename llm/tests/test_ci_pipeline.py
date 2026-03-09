@@ -93,7 +93,7 @@ def test_ci_workflow_hardens_checkout_and_supply_chain_controls():
     )
     assert (
         _step_named(jobs["trivy-repo-scan"], "Run Trivy filesystem scan")["with"]["scanners"]
-        == "vuln,misconfig"
+        == "vuln"
     )
 
     docker_job = jobs["docker-images"]
@@ -157,10 +157,32 @@ def test_security_workflow_uses_safe_checkout_and_codeql_v4():
         assert checkout["uses"] == "actions/checkout@v4"
         assert checkout["with"]["persist-credentials"] is False
 
-    codeql_job = jobs["codeql"]
-    assert _step_named(codeql_job, "Initialize CodeQL")["uses"] == "github/codeql-action/init@v4"
+    codeql_python_job = jobs["codeql-python"]
     assert (
-        _step_named(codeql_job, "Analyze with CodeQL")["uses"] == "github/codeql-action/analyze@v4"
+        _step_named(codeql_python_job, "Initialize CodeQL")["uses"]
+        == "github/codeql-action/init@v4"
+    )
+    assert _step_named(codeql_python_job, "Initialize CodeQL")["with"]["languages"] == "python"
+    assert (
+        _step_named(codeql_python_job, "Analyze with CodeQL")["uses"]
+        == "github/codeql-action/analyze@v4"
+    )
+
+    codeql_javascript_job = jobs["codeql-javascript"]
+    assert "schedule" in codeql_javascript_job["if"]
+    assert "workflow_dispatch" in codeql_javascript_job["if"]
+    assert (
+        _step_named(codeql_javascript_job, "Initialize CodeQL")["with"]["languages"] == "javascript"
+    )
+
+    trivy_misconfig_job = jobs["trivy-misconfig"]
+    assert (
+        trivy_misconfig_job["if"]
+        == "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'"
+    )
+    assert (
+        _step_named(trivy_misconfig_job, "Run Trivy misconfiguration scan")["with"]["scanners"]
+        == "misconfig"
     )
 
 

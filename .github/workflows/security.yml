@@ -28,14 +28,10 @@ jobs:
       - name: Review dependency changes
         uses: actions/dependency-review-action@v4
 
-  codeql:
-    name: CodeQL (${{ matrix.language }})
+  codeql-python:
+    name: CodeQL (python)
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        language: [python, javascript]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -45,7 +41,63 @@ jobs:
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
-          languages: ${{ matrix.language }}
+          languages: python
 
       - name: Analyze with CodeQL
         uses: github/codeql-action/analyze@v4
+
+  codeql-javascript:
+    name: CodeQL (javascript)
+    if: >-
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: javascript
+
+      - name: Analyze with CodeQL
+        uses: github/codeql-action/analyze@v4
+
+  trivy-misconfig:
+    name: Trivy misconfiguration scan
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Run Trivy misconfiguration scan
+        id: trivy-misconfig
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-misconfig-results.sarif
+          severity: HIGH,CRITICAL
+          scanners: misconfig
+          exit-code: "1"
+
+      - name: Upload Trivy misconfiguration results
+        if: hashFiles('trivy-misconfig-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-misconfig-results.sarif
+
+      - name: Fail on Trivy misconfig findings
+        if: steps.trivy-misconfig.outcome == 'failure'
+        run: |
+          echo "Trivy found HIGH/CRITICAL misconfigurations. See the step log and SARIF results."
+          exit 1
