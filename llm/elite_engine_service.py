@@ -208,7 +208,7 @@ class EliteEngineService:
             target_nodes = self.predictive_nodes if nodes is None else max(1, nodes)
             target_movetime = max(1, movetime) if movetime else self.predictive_movetime
             for mv_uci in candidates:
-                next_board = board.copy(stack=False)
+                next_board = chess.Board(board.fen())
                 next_board.push_uci(mv_uci)
                 next_fen = next_board.fen()
                 if await get_eval_cache(
