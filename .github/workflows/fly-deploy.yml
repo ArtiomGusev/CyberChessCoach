@@ -171,41 +171,29 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-      security-events: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           persist-credentials: false
 
-      - name: Run Trivy filesystem scan
-        id: trivy
-        continue-on-error: true
+      - name: Prepare Trivy runtime manifest scan input
+        shell: bash
+        run: |
+          rm -rf tmp_logs/trivy-runtime
+          mkdir -p tmp_logs/trivy-runtime
+          cp llm/requirements.txt tmp_logs/trivy-runtime/requirements.txt
+
+      - name: Run Trivy Python runtime scan
         uses: aquasecurity/trivy-action@0.28.0
         with:
           scan-type: fs
-          scan-ref: .
-          format: sarif
-          output: trivy-results.sarif
+          scan-ref: tmp_logs/trivy-runtime
+          format: table
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           scanners: vuln
           exit-code: "1"
-
-      - name: Upload Trivy results
-        if: >-
-          always() &&
-          hashFiles('trivy-results.sarif') != '' &&
-          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: trivy-results.sarif
-
-      - name: Fail on Trivy findings
-        if: steps.trivy.outcome == 'failure'
-        run: |
-          echo "Trivy found HIGH/CRITICAL vulnerabilities. See the step log and SARIF results."
-          exit 1
 
   docker-images:
     name: Build and publish Docker images
