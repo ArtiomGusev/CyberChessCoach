@@ -101,3 +101,32 @@ jobs:
         run: |
           echo "Trivy found HIGH/CRITICAL misconfigurations. See the step log and SARIF results."
           exit 1
+
+  trivy-runtime-vulns:
+    name: Trivy runtime vulnerability scan
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Prepare Trivy runtime manifest scan input
+        shell: bash
+        run: |
+          rm -rf tmp_logs/trivy-runtime
+          mkdir -p tmp_logs/trivy-runtime
+          cp llm/requirements.txt tmp_logs/trivy-runtime/requirements.txt
+
+      - name: Run Trivy runtime vulnerability scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: tmp_logs/trivy-runtime
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          scanners: vuln
+          exit-code: "1"

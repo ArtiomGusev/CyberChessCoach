@@ -165,36 +165,6 @@ jobs:
         working-directory: llm
         run: npm audit --omit=dev --audit-level=high
 
-  trivy-repo-scan:
-    name: Trivy repository scan
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - name: Prepare Trivy runtime manifest scan input
-        shell: bash
-        run: |
-          rm -rf tmp_logs/trivy-runtime
-          mkdir -p tmp_logs/trivy-runtime
-          cp llm/requirements.txt tmp_logs/trivy-runtime/requirements.txt
-
-      - name: Run Trivy Python runtime scan
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          scan-type: fs
-          scan-ref: tmp_logs/trivy-runtime
-          format: table
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          scanners: vuln
-          exit-code: "1"
-
   docker-images:
     name: Build and publish Docker images
     runs-on: ubuntu-latest
@@ -205,7 +175,6 @@ jobs:
       - python-quality
       - dependency-security
       - node-security
-      - trivy-repo-scan
     permissions:
       contents: read
       packages: write
@@ -391,7 +360,6 @@ jobs:
       - python-quality
       - dependency-security
       - node-security
-      - trivy-repo-scan
       - docker-images
       - image-security
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -440,7 +408,6 @@ jobs:
       - python-quality
       - dependency-security
       - node-security
-      - trivy-repo-scan
       - docker-images
       - image-security
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')

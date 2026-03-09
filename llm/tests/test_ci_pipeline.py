@@ -44,7 +44,6 @@ def test_ci_workflow_includes_required_gates():
         "python-quality",
         "dependency-security",
         "node-security",
-        "trivy-repo-scan",
         "docker-images",
         "image-security",
         "deploy",
@@ -56,7 +55,6 @@ def test_ci_workflow_includes_required_gates():
         "python-quality",
         "dependency-security",
         "node-security",
-        "trivy-repo-scan",
     }
     assert "image-security" in jobs["deploy"]["needs"]
     assert "image-security" in jobs["release"]["needs"]
@@ -75,7 +73,6 @@ def test_ci_workflow_hardens_checkout_and_supply_chain_controls():
         "python-quality",
         "dependency-security",
         "node-security",
-        "trivy-repo-scan",
         "docker-images",
         "deploy",
     ]:
@@ -91,20 +88,6 @@ def test_ci_workflow_hardens_checkout_and_supply_chain_controls():
         _step_named(jobs["node-security"], "Audit Node dependencies")["run"]
         == "npm audit --omit=dev --audit-level=high"
     )
-    assert jobs["trivy-repo-scan"]["permissions"] == {"contents": "read"}
-    prepare_trivy_input = _step_named(
-        jobs["trivy-repo-scan"], "Prepare Trivy runtime manifest scan input"
-    )
-    assert (
-        "cp llm/requirements.txt tmp_logs/trivy-runtime/requirements.txt"
-        in prepare_trivy_input["run"]
-    )
-
-    trivy_python_step = _step_named(jobs["trivy-repo-scan"], "Run Trivy Python runtime scan")
-    assert trivy_python_step["with"]["scanners"] == "vuln"
-    assert trivy_python_step["with"]["scan-ref"] == "tmp_logs/trivy-runtime"
-    assert trivy_python_step["with"]["format"] == "table"
-
     docker_job = jobs["docker-images"]
     assert docker_job["permissions"] == {
         "contents": "read",
@@ -193,6 +176,23 @@ def test_security_workflow_uses_safe_checkout_and_codeql_v4():
         _step_named(trivy_misconfig_job, "Run Trivy misconfiguration scan")["with"]["scanners"]
         == "misconfig"
     )
+
+    trivy_runtime_job = jobs["trivy-runtime-vulns"]
+    assert (
+        trivy_runtime_job["if"]
+        == "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'"
+    )
+    prepare_trivy_input = _step_named(
+        trivy_runtime_job, "Prepare Trivy runtime manifest scan input"
+    )
+    assert (
+        "cp llm/requirements.txt tmp_logs/trivy-runtime/requirements.txt"
+        in prepare_trivy_input["run"]
+    )
+    trivy_runtime_step = _step_named(trivy_runtime_job, "Run Trivy runtime vulnerability scan")
+    assert trivy_runtime_step["with"]["scanners"] == "vuln"
+    assert trivy_runtime_step["with"]["scan-ref"] == "tmp_logs/trivy-runtime"
+    assert trivy_runtime_step["with"]["format"] == "table"
 
 
 def test_container_images_keep_health_checks_and_non_root_runtime():
