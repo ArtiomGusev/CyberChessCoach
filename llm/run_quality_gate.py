@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import argparse
 import os
 import subprocess
 import sys
@@ -79,6 +80,15 @@ def run_step(name: str, cmd: list[str], *, env: dict[str, str] | None = None) ->
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "steps",
+        nargs="*",
+        metavar="step",
+        help="Run only the selected quality steps.",
+    )
+    args = parser.parse_args()
+
     PYLINT_HOME.mkdir(parents=True, exist_ok=True)
 
     pylint_env = os.environ.copy()
@@ -101,6 +111,18 @@ def main() -> int:
             None,
         ),
     ]
+
+    selected_steps = set(args.steps or [])
+    invalid_steps = sorted(selected_steps - {"black", "pylint", "mypy"})
+    if invalid_steps:
+        parser.error(
+            "invalid quality step(s): "
+            + ", ".join(invalid_steps)
+            + ". Choose from: black, pylint, mypy."
+        )
+
+    if selected_steps:
+        steps = [step for step in steps if step[0] in selected_steps]
 
     for name, cmd, env in steps:
         code = run_step(name, cmd, env=env)
