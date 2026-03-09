@@ -5,6 +5,8 @@ __pycache__/
 .env
 .git
 .gitignore
+.coverage
+tmp_logs/
 node_modules/
 android/
 data/
@@ -12,6 +14,11 @@ docs/
 engine/
 mock/
 scripts/
+llm/.github/
+llm/tests/
+llm/rag/tests/
+llm/redis-win/
+llm/test*.js
 **/.gradle/
 **/.pytest_cache/
 **/venv/

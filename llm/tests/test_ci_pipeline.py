@@ -198,16 +198,30 @@ def test_security_workflow_uses_safe_checkout_and_codeql_v4():
 def test_container_images_keep_health_checks_and_non_root_runtime():
     root_dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     assert "ENV NODE_ENV=production" in root_dockerfile
+    assert "RUN apk upgrade --no-cache" in root_dockerfile
+    assert "COPY llm/server.js ./server.js" in root_dockerfile
+    assert "COPY llm/. ." not in root_dockerfile
     assert "USER node" in root_dockerfile
     assert "HEALTHCHECK" in root_dockerfile
     assert "/health" in root_dockerfile
 
     llm_api_dockerfile = (ROOT / "llm" / "Dockerfile.api").read_text(encoding="utf-8")
+    assert "apt-get upgrade -y" in llm_api_dockerfile
+    assert (
+        "rm -rf /app/llm/tests /app/llm/rag/tests /app/llm/.github /app/llm/redis-win"
+        in llm_api_dockerfile
+    )
+    assert (
+        "rm -f /app/llm/package.json /app/llm/package-lock.json /app/llm/server.js"
+        in llm_api_dockerfile
+    )
     assert "USER appuser" in llm_api_dockerfile
     assert "HEALTHCHECK" in llm_api_dockerfile
     assert "127.0.0.1:8000/health" in llm_api_dockerfile
 
     llm_dockerfile = (ROOT / "llm" / "Dockerfile").read_text(encoding="utf-8")
+    assert "rm -rf /app/tests /app/rag/tests /app/.github /app/redis-win" in llm_dockerfile
+    assert "rm -f /app/package.json /app/package-lock.json /app/server.js" in llm_dockerfile
     assert "USER appuser" in llm_dockerfile
     assert "HEALTHCHECK" in llm_dockerfile
     assert "127.0.0.1:8000/health" in llm_dockerfile

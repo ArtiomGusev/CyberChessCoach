@@ -4,10 +4,12 @@ ENV NODE_ENV=production
 
 WORKDIR /app
 
+RUN apk upgrade --no-cache
+
 COPY llm/package*.json ./
 RUN if [ -f package-lock.json ]; then npm ci --omit=dev --no-audit --no-fund; else npm install --omit=dev --no-audit --no-fund; fi
 
-COPY llm/. .
+COPY llm/server.js ./server.js
 RUN chown -R node:node /app
 
 USER node
