@@ -344,10 +344,16 @@ jobs:
         with:
           sarif_file: trivy-api-image.sarif
 
-      - name: Fail on published image vulnerabilities
-        if: steps.trivy-app-image.outcome == 'failure' || steps.trivy-api-image.outcome == 'failure'
+      - name: Fail on published app image vulnerabilities
+        if: steps.trivy-app-image.outcome == 'failure'
         run: |
-          echo "Trivy found HIGH/CRITICAL vulnerabilities in a published container image."
+          echo "Trivy found HIGH/CRITICAL vulnerabilities in the published app image."
+          exit 1
+
+      - name: Fail on published llm API image vulnerabilities
+        if: steps.trivy-api-image.outcome == 'failure'
+        run: |
+          echo "Trivy found HIGH/CRITICAL vulnerabilities in the published llm API image."
           exit 1
 
   deploy:

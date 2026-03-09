@@ -12,7 +12,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
-RUN mkdir -p /app/data \
+RUN rm -rf /app/tests /app/rag/tests /app/.github /app/redis-win \
+    && rm -f /app/package.json /app/package-lock.json /app/server.js /app/test.js /app/test_mixed.js /app/test_unique_fens.js \
+    && mkdir -p /app/data \
     && chown -R appuser:appuser /app
 
 USER appuser
