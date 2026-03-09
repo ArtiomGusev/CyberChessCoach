@@ -9,6 +9,10 @@ app.get("/", (req, res) => {
   res.send("VERSION 2");
 });
 
+app.get("/health", (req, res) => {
+  res.json({ status: "ok" });
+});
+
 function buildPrompt(engineData, userLevel) {
   const prompt = `
 You are a chess coach.
