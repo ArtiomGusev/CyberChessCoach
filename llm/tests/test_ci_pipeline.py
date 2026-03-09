@@ -202,11 +202,18 @@ def test_security_workflow_uses_safe_checkout_and_codeql_v4():
 def test_container_images_keep_health_checks_and_non_root_runtime():
     root_dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     assert "ENV NODE_ENV=production" in root_dockerfile
+    assert "FROM node:22-alpine AS deps" in root_dockerfile
+    assert "FROM gcr.io/distroless/nodejs22-debian12:nonroot" in root_dockerfile
     assert "RUN apk upgrade --no-cache" in root_dockerfile
-    assert "COPY llm/server.js ./server.js" in root_dockerfile
+    assert "COPY --chown=nonroot:nonroot llm/server.js ./server.js" in root_dockerfile
+    assert (
+        "COPY --from=deps --chown=nonroot:nonroot /app/node_modules ./node_modules"
+        in root_dockerfile
+    )
     assert "COPY llm/. ." not in root_dockerfile
-    assert "USER node" in root_dockerfile
+    assert 'CMD ["server.js"]' in root_dockerfile
     assert "HEALTHCHECK" in root_dockerfile
+    assert "/nodejs/bin/node" in root_dockerfile
     assert "/health" in root_dockerfile
 
     llm_api_dockerfile = (ROOT / "llm" / "Dockerfile.api").read_text(encoding="utf-8")
@@ -249,6 +256,7 @@ def test_runtime_dependency_files_are_pinned():
     assert dependencies
     assert all(not version.startswith(("^", "~")) for version in dependencies.values())
     assert _version_tuple(dependencies["express"]) >= (4, 22, 1)
+    assert "node-fetch" not in dependencies
 
 
 def test_run_ci_suite_builds_expected_pytest_command(monkeypatch, tmp_path):
