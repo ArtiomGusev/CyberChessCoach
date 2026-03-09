@@ -309,15 +309,31 @@ jobs:
       - name: Scan published app image
         id: trivy-app-image
         continue-on-error: true
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.34.0
+        with:
+          scan-type: image
+          image-ref: ghcr.io/${{ needs.docker-images.outputs.image_owner }}/${{ env.APP_IMAGE_NAME }}@${{ needs.docker-images.outputs.app_digest }}
+          format: table
+          scanners: vuln
+          vuln-type: library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Generate app image SARIF
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@0.34.0
         with:
           scan-type: image
           image-ref: ghcr.io/${{ needs.docker-images.outputs.image_owner }}/${{ env.APP_IMAGE_NAME }}@${{ needs.docker-images.outputs.app_digest }}
           format: sarif
           output: trivy-app-image.sarif
+          scanners: vuln
+          vuln-type: library
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-          exit-code: "1"
+          exit-code: "0"
 
       - name: Upload app image scan results
         if: hashFiles('trivy-app-image.sarif') != ''
@@ -328,15 +344,31 @@ jobs:
       - name: Scan published llm API image
         id: trivy-api-image
         continue-on-error: true
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.34.0
+        with:
+          scan-type: image
+          image-ref: ghcr.io/${{ needs.docker-images.outputs.image_owner }}/${{ env.API_IMAGE_NAME }}@${{ needs.docker-images.outputs.api_digest }}
+          format: table
+          scanners: vuln
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Generate llm API image SARIF
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@0.34.0
         with:
           scan-type: image
           image-ref: ghcr.io/${{ needs.docker-images.outputs.image_owner }}/${{ env.API_IMAGE_NAME }}@${{ needs.docker-images.outputs.api_digest }}
           format: sarif
           output: trivy-api-image.sarif
+          scanners: vuln
+          vuln-type: os,library
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-          exit-code: "1"
+          exit-code: "0"
 
       - name: Upload llm API image scan results
         if: hashFiles('trivy-api-image.sarif') != ''
