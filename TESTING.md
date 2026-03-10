@@ -1,361 +1,158 @@
-TESTING.md
 Purpose
 
-This document defines mandatory and optional tests for the ChessCoach-AI Mode-2 system.
+Testing ensures system reliability and architectural discipline.
 
-Tests exist to guarantee:
+A push is allowed only when all tests pass.
 
-correctness
+Core Rule
 
-safety
+Never push code before all tests pass.
 
-non-hallucination
+This rule is absolute.
 
-long-term stability
+Testing Principles
 
-No test exists to measure chess strength or stylistic quality.
+Tests must be:
 
-Definitions
+objective
 
-Golden test: deterministic test with fixed expected output
-
-Contract test: behavioral constraint on LLM output
-
-Smoke test: basic execution check
-
-Regression test: repeated execution to detect drift
-
-CI: Continuous Integration (GitHub Actions)
-
-Test Categories
-Category A — Golden Tests (MANDATORY)
-
-Purpose
-
-Lock deterministic logic
-
-Prevent prompt drift
-
-Prevent retrieval drift
-
-Scope
-
-Engine → ESV mapping
-
-RAG retrieval
-
-Mode-2 prompt injection
-
-Commands
-
-python -m pytest -q llm/rag/tests/golden/test_retriever.py
-python -m pytest -q llm/rag/tests/golden/test_prompt_snapshot.py
-
-
-Rules
-
-Must always pass
-
-Must produce no output on success
-
-Any failure blocks merge
-
-CI
-
-Yes
-
-Category B — LLM Contract Tests (MANDATORY)
-
-Purpose
-
-Enforce LLM behavior rules
-
-Prevent hallucinations
-
-Prevent engine leakage
-
-Scope
-
-Forbidden phrases
-
-Forced-mate handling
-
-Missing-data handling
-
-LLM Used
-
-Fake LLM only
-
-Command
-
-python -m pytest -q llm/rag/tests/contracts/test_fake_llm.py
-
-
-Rules
-
-Must always pass
-
-Must run in CI
-
-Validators must never be weakened
-
-CI
-
-Yes
-
-Category C — Real LLM Smoke Test (OPTIONAL, LOCAL ONLY)
-
-Purpose
-
-Verify real LLM connectivity
-
-Verify validators accept real output
-
-Scope
-
-Ollama model execution
-
-Output passes contract validators
-
-Command
-
-python -m pytest -q llm/rag/tests/llm/test_ollama_smoke.py
-
-
-Rules
-
-Must not run in CI
-
-Failure indicates environment or model issue
-
-No golden expectations
-
-CI
-
-No
-
-Category D — LLM Regression Tests (OPTIONAL, LOCAL ONLY)
-
-Purpose
-
-Detect model drift
-
-Detect intermittent violations
-
-Scope
-
-Repeated runs of real LLM
-
-Contract compliance over time
-
-Command
-
-python -m pytest -q llm/rag/tests/llm/test_llm_regression.py
-
-
-Rules
-
-Must not run in CI
-
-Any failure indicates instability
-
-Validators must not be relaxed to fix failures
-
-CI
-
-No
-
-Category E — Quality Heuristic Tests (OPTIONAL)
-
-Purpose
-
-Detect explanation degradation
-
-Assist human review
-
-Scope
-
-Length heuristics
-
-Sentence structure
-
-Non-triviality
-
-Command
-
-python -m pytest -q llm/rag/tests/quality/test_explanation_quality.py
-
-
-Rules
-
-Must never block CI
-
-Failures are advisory only
-
-No exact text matching
-
-CI
-
-No
-
-Required Test Runs
-Before pushing code
-python llm/run_quality_gate.py
-python llm/run_ci_suite.py
-python -m pytest -q llm/rag/tests/golden/test_retriever.py
-python -m pytest -q llm/rag/tests/golden/test_prompt_snapshot.py
-python -m pytest -q llm/rag/tests/contracts/test_fake_llm.py
-
-Before release (local)
-python -m pytest -q llm/rag/tests/llm/test_ollama_smoke.py
-python -m pytest -q llm/rag/tests/llm/test_llm_regression.py
-
-CI Policy
-
-CI runs only the following:
-
-python llm/run_quality_gate.py
-python llm/run_ci_suite.py
-python -m pytest -q llm/rag/tests/golden/test_retriever.py
-python -m pytest -q llm/rag/tests/golden/test_prompt_snapshot.py
-python -m pytest -q llm/rag/tests/contracts/test_fake_llm.py
-
-
-CI quality gates also enforce:
-
-Black formatting checks
-
-Pylint checks on the stable Python surface
-
-Mypy checks on the typed utility surface
-
-Coverage fail-under 80% for the CI-covered Python modules
-
-pip-audit and Trivy security scans
-
-
-CI must never run:
-
-real LLM tests
-
-regression tests
-
-quality heuristics
-
-Enforcement Rules
-
-Golden failures indicate logic or prompt regressions
-
-Contract failures indicate safety violations
-
-Regression failures indicate model instability
-
-Quality failures indicate possible UX degradation only
-
-No test category may be removed without replacement.
-
-Invariants
-
-If all CI tests pass, the system is guaranteed to be:
+reproducible
 
 deterministic
 
-non-hallucinatory
+meaningful
 
-rule-compliant
+Tests must not be weakened to force success.
 
-regression-protected
+Test Categories
+Unit Tests
 
-Non-Goals
+Test individual components.
 
-This test suite does NOT:
+Examples:
 
-evaluate chess strength
+mistake classifier
 
-optimize wording
+evaluation parser
 
-rank models
+analytics calculator
 
-measure creativity
+context builder
 
+Integration Tests
 
-LLM Regression Test Frequency (MANDATORY POLICY)
-Definition
+Test component interactions.
 
-LLM regression tests are designed to detect behavior drift over time in real language models.
+Examples:
 
-They are not continuous tests and are not CI tests.
+API → engine
+API → coaching
+coaching → LLM
+LLM → schema validator
+Pipeline Tests
 
-Required Frequency
+Validate the full coaching flow.
 
-LLM regression tests MUST be run in the following situations:
+Android request
+ ↓
+API
+ ↓
+engine
+ ↓
+coaching logic
+ ↓
+LLM explanation
+ ↓
+response
+Engine Tests
 
-Before any release
+Validate:
 
-After any system prompt change
+evaluation correctness
 
-After any RAG document content change
+move ordering
 
-After updating or replacing the LLM model
+latency limits
 
-After updating Ollama or model weights
+JNI Bridge Tests
 
-Command:
+Critical tests include:
 
-python -m pytest -q llm/rag/tests/llm/test_llm_regression.py
+board state synchronization
 
-Prohibited Usage
+move encoding correctness
 
-LLM regression tests MUST NOT be:
+engine command parsing
 
-Run on every commit
+Analytics Tests
 
-Run in CI
+Ensure analytics produce consistent results.
 
-Used to evaluate explanation quality
+Example:
 
-Used to compare models subjectively
+repeated games produce consistent profile updates
 
-They exist only to detect contract violations.
+mistake frequencies calculated correctly
 
-Failure Interpretation
+LLM Schema Tests
 
-If an LLM regression test fails:
+Verify that:
 
-The model behavior is considered unstable
+responses match schema
 
-Validators must NOT be weakened
+fields exist
 
-The failure must be addressed by:
+enums are valid
 
-lowering temperature
+Regression Tests
 
-tightening the system prompt
+Regression tests prevent reintroducing past bugs.
 
-adjusting RAG phrasing
+Every bug fix should add or update a regression test.
 
-changing model variant
+Performance Tests
 
-Ignoring a regression failure is not permitted.
+Validate:
 
-Relationship to Other Tests
-Test Type	Frequency
-Golden tests	Every commit
-Contract tests	Every commit
-Regression tests	On change events
-Quality tests	On demand
-Enforcement Rule
+engine latency
 
-A release is invalid unless LLM regression tests pass immediately prior to release.
+API responsiveness
 
-Invariant
+concurrent request handling
 
-If LLM regression tests pass at release time, then:
+cache effectiveness
 
-Model behavior is contract-stable
+Pre-Push Checklist
 
-No intermittent hallucinations are present
+Before pushing:
 
-Production deployment is permitted
+run all tests
 
-End of TESTING.md
+confirm test integrity
+
+verify no architectural rule is violated
+
+ensure commits describe the development session
+
+Forbidden Testing Practices
+
+The following are prohibited:
+
+disabling tests to push code
+
+modifying expected values to hide bugs
+
+removing failing tests
+
+bypassing schema validation
+
+CI/CD Recommendation
+
+CI pipeline should run:
+
+unit tests
+integration tests
+schema validation
+lint checks
+
+A push must fail automatically if tests fail.
