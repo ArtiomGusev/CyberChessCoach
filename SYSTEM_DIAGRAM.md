@@ -1,3 +1,5 @@
+AI Chess Coach System Diagram
+
 flowchart TD
     A[Android App<br/>Dark UI / Board / Training / Deep Chat / Profile]
     A1[Quick Coach Mode]
@@ -94,3 +96,179 @@ flowchart TD
     F8 --> G5
 
     B --> A
+
+
+---
+
+End-to-end request flow
+
+flowchart LR
+    A[Android Move / Chat / Game Request]
+    B[API Validation]
+    C[SECA Auth]
+    D[Normalization]
+    E[Engine Eval / Cache]
+    F[SECA Brain Classification]
+    G[RAG Context]
+    H[LLM Explanation]
+    I[Schema Validation]
+    J[SECA Events]
+    K[SECA Analytics Update]
+    L[Response to Android]
+
+    A --> B --> C --> D --> E --> F --> G --> H --> I --> J --> K --> L
+
+
+---
+
+Game-finish and next-training flow
+
+flowchart LR
+    A[Android: POST /game/finish]
+    B[API / Auth]
+    C[Store Game + Moves]
+    D[SECA Events: game_finished]
+    E[SECA Analytics Update]
+    F[SECA Brain: Recommend Next Training]
+    G[Store Recommendation]
+    H[Android: GET /next-training]
+    I[Return Training Recommendation]
+
+    A --> B --> C --> D --> E --> F --> G --> H --> I
+
+
+---
+
+Deep chat flow
+
+flowchart LR
+    A[Android Deep Chat Message]
+    B[API Validation]
+    C[SECA Auth]
+    D[Load Current Game + Player Profile]
+    E[RAG Context Builder]
+    F[LLM Deep Chess Response]
+    G[Schema / Safety Validation]
+    H[SECA Events Logging]
+    I[Response to Android]
+
+    A --> B --> C --> D --> E --> F --> G --> H --> I
+
+
+---
+
+Layer responsibilities summary
+
+Android App
+
+board play
+
+quick coaching
+
+deep chat
+
+profile and training UI
+
+stable dark-themed UX
+
+
+API / Server Layer
+
+request validation
+
+auth/session enforcement
+
+endpoint contracts
+
+pipeline routing
+
+
+Engine Layer
+
+chess truth
+
+best-move search
+
+evaluation scores
+
+JNI bridge and engine pool
+
+
+Intelligence Layer
+
+coaching logic
+
+deterministic classification
+
+RAG grounding
+
+LLM explanation generation
+
+
+Data Layer
+
+games
+
+profiles
+
+analytics
+
+events
+
+cached evaluations
+
+
+SECA
+
+auth
+
+events
+
+brain
+
+analytics
+
+safety and governance
+
+
+Monitoring
+
+logs
+
+traces
+
+latency
+
+health
+
+failures
+
+
+
+---
+
+Repo-ready short version for README
+
+If you want a more compact diagram for the top of README.md, use this:
+
+flowchart TD
+    A[Android App]
+    B[API / Server]
+    C[Core Pipeline]
+    D[Engine Layer]
+    E[Intelligence Layer]
+    F[Data Layer]
+    G[SECA]
+    H[Monitoring]
+
+    A --> B --> C
+    C --> D
+    C --> E
+    C --> F
+    C --> G
+    C --> H
+
+    D --> E
+    F --> E
+    G --> E
+    E --> A
