@@ -1,0 +1,318 @@
+openapi: 3.1.0
+info:
+  title: AI Chess Coach API
+  version: 2.0.0
+  description: |
+    API for the AI Chess Coach platform.
+
+    Core system principles:
+
+    - Engine evaluation is the chess source of truth
+    - LLM provides explanations only
+    - Deterministic coaching decisions
+    - SECA-based architecture
+    - Strict schema validation
+
+servers:
+  - url: https://api.your-domain.com/v2
+  - url: http://localhost:8000/v2
+
+tags:
+  - name: auth
+  - name: engine
+  - name: coaching
+  - name: chat
+  - name: games
+  - name: training
+  - name: profile
+  - name: system
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  /health:
+    get:
+      tags: [system]
+      summary: Service health check
+      security: []
+      responses:
+        "200":
+          description: Service health
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Login user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+
+  /engine/eval:
+    post:
+      tags: [engine]
+      summary: Evaluate chess position
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EngineEvalRequest"
+      responses:
+        "200":
+          description: Engine evaluation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EngineEvalResponse"
+
+  /coach/quick:
+    post:
+      tags: [coaching]
+      summary: Instant coaching feedback
+      description: |
+        Fast coaching response used during gameplay.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CoachQuickRequest"
+      responses:
+        "200":
+          description: Coaching feedback
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoachResponse"
+
+  /chat/deep:
+    post:
+      tags: [chat]
+      summary: Deep chess conversation
+      description: |
+        GPT-style chess chat using player profile and game context.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatRequest"
+      responses:
+        "200":
+          description: Chat response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatResponse"
+
+  /game/finish:
+    post:
+      tags: [games]
+      summary: Record completed game
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GameFinishRequest"
+      responses:
+        "200":
+          description: Game recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameFinishResponse"
+
+  /training/next:
+    get:
+      tags: [training]
+      summary: Get next training recommendation
+      responses:
+        "200":
+          description: Training recommendation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrainingRecommendation"
+
+  /profile:
+    get:
+      tags: [profile]
+      summary: Player analytics summary
+      responses:
+        "200":
+          description: Player profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfileResponse"
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        engine_pool_available:
+          type: integer
+        engine_pool_capacity:
+          type: integer
+        redis_available:
+          type: boolean
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+
+    AuthResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        user_id:
+          type: string
+
+    EngineEvalRequest:
+      type: object
+      required:
+        - fen
+        - depth
+      properties:
+        fen:
+          type: string
+        depth:
+          type: integer
+
+    EngineEvalResponse:
+      type: object
+      properties:
+        best_move:
+          type: string
+        evaluation:
+          type: integer
+        cache_hit:
+          type: boolean
+        analysis_depth:
+          type: integer
+
+    CoachQuickRequest:
+      type: object
+      required:
+        - fen
+        - played_move
+      properties:
+        fen:
+          type: string
+        played_move:
+          type: string
+
+    CoachResponse:
+      type: object
+      properties:
+        mistake:
+          type: string
+        consequence:
+          type: string
+        better_move:
+          type: string
+        category:
+          type: string
+        severity:
+          type: string
+
+    ChatRequest:
+      type: object
+      properties:
+        message:
+          type: string
+        game_context:
+          type: object
+        player_profile:
+          type: object
+
+    ChatResponse:
+      type: object
+      properties:
+        response:
+          type: string
+        topic:
+          type: string
+        confidence:
+          type: number
+
+    GameFinishRequest:
+      type: object
+      properties:
+        game_id:
+          type: string
+        moves:
+          type: array
+          items:
+            type: string
+        result:
+          type: string
+
+    GameFinishResponse:
+      type: object
+      properties:
+        status:
+          type: string
+
+    TrainingRecommendation:
+      type: object
+      properties:
+        training_type:
+          type: string
+        reason:
+          type: string
+        priority:
+          type: string
+
+    ProfileResponse:
+      type: object
+      properties:
+        rating_estimate:
+          type: integer
+        main_weaknesses:
+          type: array
+          items:
+            type: string
+        strengths:
+          type: array
+          items:
+            type: string
+        recent_accuracy:
+          type: number
