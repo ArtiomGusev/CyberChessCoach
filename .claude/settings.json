@@ -1,0 +1,100 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "LS",
+      "Edit",
+      "Write",
+      "MultiEdit",
+      "Bash(git status)",
+      "Bash(git diff)",
+      "Bash(git diff:*)",
+      "Bash(git log)",
+      "Bash(git log:*)",
+      "Bash(pytest)",
+      "Bash(pytest:*)",
+      "Bash(python -m pytest)",
+      "Bash(python -m pytest:*)",
+      "Bash(python run_all_tests.py)",
+      "Bash(python run_all_tests.py:*)",
+      "Bash(python llm/run_quality_gate.py)",
+      "Bash(python llm/run_quality_gate.py:*)",
+      "Bash(python llm/run_ci_suite.py)",
+      "Bash(python llm/run_ci_suite.py:*)",
+      "Bash(./gradlew test)",
+      "Bash(./gradlew test:*)",
+      "Bash(./gradlew lint)",
+      "Bash(./gradlew lint:*)",
+      "Bash(cmd.exe /c gradlew.bat test)",
+      "Bash(cmd.exe /c gradlew.bat test:*)",
+      "Bash(cmd.exe /c gradlew.bat lint)",
+      "Bash(cmd.exe /c gradlew.bat lint:*)"
+    ],
+    "deny": [
+      "Bash(git push)",
+      "Bash(git push:*)",
+      "Bash(git reset --hard)",
+      "Bash(git reset --hard:*)",
+      "Bash(git clean -fd)",
+      "Bash(git clean -fd:*)",
+      "Bash(rm -rf)",
+      "Bash(rm -rf:*)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/.env)",
+      "Read(./**/.env.*)",
+      "Read(./secrets/**)",
+      "Read(./**/secrets/**)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/validate-bash.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/run-backend-tests.sh",
+            "async": true,
+            "timeout": 600
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/run-android-checks.sh",
+            "async": true,
+            "timeout": 900
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/run-backend-tests.sh --full",
+            "timeout": 900
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/run-android-checks.sh --full",
+            "timeout": 1200
+          }
+        ]
+      }
+    ]
+  }
+}
