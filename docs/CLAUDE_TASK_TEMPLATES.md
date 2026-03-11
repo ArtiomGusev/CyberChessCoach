@@ -34,9 +34,23 @@ General constraints:
 - Tests must not be weakened to pass.
 - Changes should be minimal and localized.
 
+## First-Pass Workflow
+
+Use this workflow on the first pass for any task:
+
+1. Read `CLAUDE.md` and the relevant docs/context files.
+2. Use Explore or equivalent read-only inspection first to find the relevant
+   code paths.
+3. Summarize the affected modules and propose a minimal plan before editing.
+4. Make the smallest safe change in the correct layer.
+5. Use the appropriate specialist, use `test-writer` when tests are needed, and
+   use `architecture-reviewer` before finishing substantial work.
+
 ## 1. Engine Bug Fix
 
 Read `CLAUDE.md`, `ARCHITECTURE.md`, and `.claude/context/engine.md`.
+Use Explore first to inspect the relevant engine paths, summarize the affected
+modules, and propose a minimal plan before editing.
 
 Task:
 Fix the engine-layer issue described below.
@@ -61,6 +75,8 @@ Required output:
 ## 2. Backend API Fix
 
 Read `CLAUDE.md`, `docs/ARCHITECTURE.md`, and `.claude/context/api.md`.
+Use Explore first to inspect the relevant API paths, summarize the affected
+modules, and propose a minimal plan before editing.
 
 Task:
 Fix the backend/API issue below.
@@ -84,6 +100,8 @@ Use:
 ## 3. Coaching Pipeline Fix
 
 Read `CLAUDE.md`, `.claude/context/pipeline.md`, `.claude/context/api.md`, and the relevant validators under `llm/rag/`.
+Use Explore first to inspect the relevant pipeline paths, summarize the
+affected modules, and propose a minimal plan before editing.
 
 Task:
 Fix the coaching pipeline issue below.
@@ -107,6 +125,8 @@ Use:
 ## 4. JNI Bridge Investigation
 
 Read `CLAUDE.md` and `.claude/context/engine.md`.
+Use Explore first to inspect the JNI and engine boundary paths, summarize the
+affected modules, and propose a minimal plan before editing.
 
 Task:
 Investigate and fix the JNI issue below.
@@ -131,6 +151,8 @@ Output:
 ## 5. Redis Cache Bug
 
 Read `CLAUDE.md`, `.claude/context/engine.md`, and the relevant cache modules under `llm/`.
+Use Explore first to inspect the cache-related paths, summarize the affected
+modules, and propose a minimal plan before editing.
 
 Task:
 Fix the caching issue below.
@@ -153,6 +175,8 @@ Use:
 ## 6. Android UI Task
 
 Read `CLAUDE.md`, `.claude/context/api.md`, and the relevant files under `android/`.
+Use Explore first to inspect the relevant Android and API paths, summarize the
+affected modules, and propose a minimal plan before editing.
 
 Task:
 Implement the Android task below.
@@ -177,6 +201,8 @@ Output:
 ## 7. Regression Test Creation
 
 Read `CLAUDE.md` and `docs/TESTING.md`.
+Use Explore first to inspect the relevant production and test paths, summarize
+the affected modules, and propose a minimal plan before editing.
 
 Task:
 Write regression tests for the issue below.
@@ -197,6 +223,8 @@ Use:
 ## 8. API Contract Verification
 
 Read `CLAUDE.md`, `.claude/context/api.md`, and the relevant FastAPI route definitions/tests.
+Use Explore first to inspect the relevant route, schema, and test paths, then
+summarize the affected modules before reporting or editing anything.
 
 Task:
 Verify implementation matches documented API contracts.
@@ -219,6 +247,8 @@ Output:
 ## 9. Feature Implementation
 
 Read `CLAUDE.md`, `ARCHITECTURE.md`, and the relevant `.claude/context/*.md` files.
+Use Explore first to inspect the relevant code paths, summarize the affected
+modules, and propose a minimal plan before editing.
 
 Task:
 Implement the feature below.
@@ -242,6 +272,8 @@ Use:
 ## 10. Safe Code Review
 
 Read `CLAUDE.md`.
+Use Explore or other read-only inspection first to gather the relevant code
+paths before reviewing the diff.
 
 Review the current diff.
 
@@ -271,6 +303,8 @@ Output:
 Use this shorter template for quick tasks.
 
 Read `CLAUDE.md` and relevant docs.
+Use Explore first to inspect the relevant code paths, summarize the affected
+modules, and propose a minimal plan before editing.
 
 Task:
 [one specific task]

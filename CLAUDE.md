@@ -6,35 +6,33 @@
 @.claude/context/seca.md
 @.claude/context/api.md
 
-## Governance Layers
-
-This repository uses six governance layers:
-
-1. `CLAUDE.md` for project rules and delegation.
-2. `.claude/context/` for stable architecture knowledge imported at session start.
-3. `.claude/settings.json` for permissions and hooks.
-4. `.claude/agents/` for role-specialized subagents.
-5. `.claude/hooks/` for deterministic enforcement.
-6. CI/CD as the final external gate.
-
 ## Project Rules
 
-1. Never push before all required validation passes.
-2. Tests must remain objective.
+1. Engine output is the chess source of truth.
+2. The LLM explains, but must not override engine truth or bypass ESV.
 3. Autonomous RL implementation is prohibited.
-4. Commits must describe changes in detail.
-5. The architecture defined in `ARCHITECTURE.md` and `docs/ARCHITECTURE.md` must not be violated.
-6. Do not weaken validators, bypass ESV, or allow the LLM to override engine truth.
+4. Tests must remain objective.
+5. Never weaken tests or validators to make them pass.
+6. Never push before all required validation passes.
+7. Prefer minimal, localized, layer-correct changes.
+8. The architecture defined in `ARCHITECTURE.md` and `docs/ARCHITECTURE.md` must not be violated.
+9. Commits must describe changes in detail.
 
-## Repo Map
+## Required Reviews
 
-- `llm/`: backend coaching, API, RAG, auth, SECA flows, and backend tests
-- `android/`: Android client and Gradle validation surface
-- `engine/`: native engine code and engine-side experiments
-- `docs/`: architecture, testing, operations, and release references
-- `.claude/agents/`: project subagents
-- `.claude/context/`: imported repo handbooks
-- `.claude/hooks/`: deterministic governance hooks
+- Use specialist subagents where appropriate.
+- Use `architecture-reviewer` before finishing substantial or cross-layer work.
+- Preserve API contracts unless docs, tests, and dependent callers are updated together.
+- Report blockers explicitly instead of bypassing checks.
+
+## Required Workflow
+
+1. Read this file and the relevant `.claude/context/*.md` handbooks before editing.
+2. Use Explore or equivalent read-only inspection first to find the relevant code paths.
+3. Summarize the affected modules and propose a minimal plan before making changes.
+4. Modify only the necessary files in the correct layer.
+5. Run the relevant validation and fix failures when possible.
+6. Finish with the required checks for the layers you touched.
 
 ## Subagent Routing
 
@@ -48,8 +46,17 @@ This repository uses six governance layers:
 
 - Backend edits should trigger backend-safe checks.
 - Android edits should trigger Gradle validation.
-- Substantial tasks should use `architecture-reviewer` before finishing.
 - Finishing a task should trigger the configured stop hooks before Claude exits.
+
+## Repo Map
+
+- `llm/`: backend coaching, API, RAG, auth, SECA flows, and backend tests
+- `android/`: Android client and Gradle validation surface
+- `engine/`: native engine code and engine-side experiments
+- `docs/`: architecture, testing, operations, and release references
+- `.claude/agents/`: project subagents
+- `.claude/context/`: imported repo handbooks
+- `.claude/hooks/`: deterministic governance hooks
 
 ## References
 
@@ -57,3 +64,8 @@ This repository uses six governance layers:
 - `docs/ARCHITECTURE.md`
 - `TESTING.md`
 - `docs/TESTING.md`
+- `.claude/context/architecture.md`
+- `.claude/context/pipeline.md`
+- `.claude/context/engine.md`
+- `.claude/context/seca.md`
+- `.claude/context/api.md`
