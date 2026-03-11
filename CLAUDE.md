@@ -64,6 +64,7 @@
 - `docs/ARCHITECTURE.md`
 - `TESTING.md`
 - `docs/TESTING.md`
+- `docs/CLAUDE_SETUP_GUARDRAILS.md`
 - `.claude/context/architecture.md`
 - `.claude/context/pipeline.md`
 - `.claude/context/engine.md`
