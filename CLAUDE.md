@@ -1,3 +1,9 @@
+@.claude/context/architecture.md
+@.claude/context/pipeline.md
+@.claude/context/engine.md
+@.claude/context/seca.md
+@.claude/context/api.md
+
 AI Chess Coach System – Development Protocol
 
 This repository contains the development of a deterministic AI-powered chess coaching system integrated with an Android client.
