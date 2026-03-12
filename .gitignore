@@ -6,6 +6,8 @@ Thumbs.db
 __pycache__/
 *.pyc
 venv/
+.claude/settings.local.json
+dump.rdb
 
 # ========= ANDROID =========
 android/.gradle/
@@ -33,4 +35,8 @@ llm/.pytest_cache/
 llm/telemetry/
 llm/**/__pycache__/
 llm/**/*.pyc
+*.db
+data/*.db
+llm/data/*.db
+llm/*.db
 engines/stockfish.exe
