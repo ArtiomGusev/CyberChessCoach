@@ -22,10 +22,15 @@ TEST_TARGETS = [
     "llm/rag/tests/unit/test_telemetry_event.py",
     "llm/tests/test_cache_keys.py",
     "llm/tests/test_ci_pipeline.py",
-    "llm/tests/test_engine_eval_limits.py",
     "llm/tests/test_elite_engine_service.py",
+    "llm/tests/test_elite_engine_service_resolve_limits.py",
+    "llm/tests/test_engine_eval_fallback_cache.py",
+    "llm/tests/test_engine_eval_limits.py",
+    "llm/tests/test_fen_move_cache_key.py",
     "llm/tests/test_host_app.py",
+    "llm/tests/test_position_input_build_board.py",
     "llm/tests/test_predictive_cache.py",
+    "llm/tests/test_stockfish_adapter_isolation.py",
 ]
 
 COVERAGE_TARGETS = [
