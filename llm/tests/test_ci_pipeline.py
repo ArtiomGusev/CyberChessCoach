@@ -88,6 +88,31 @@ def test_ci_workflow_hardens_checkout_and_supply_chain_controls():
         assert checkout["uses"] == "actions/checkout@v4"
         assert checkout["with"]["persist-credentials"] is False
 
+    android_build = jobs["android-build"]
+    assert android_build["env"] == {
+        "GRADLE_USER_HOME": "${{ github.workspace }}/.gradle",
+        "ANDROID_USER_HOME": "${{ github.workspace }}/.android",
+    }
+    android_step = _step_named(android_build, "Generate packaged manifests and run unit tests")
+    assert android_step["working-directory"] == "android"
+    assert (
+        android_step["run"]
+        == "./gradlew test processDebugManifestForPackage processReleaseManifestForPackage --no-daemon"
+    )
+    verify_manifest_step = _step_named(
+        android_build, "Verify packaged manifest includes INTERNET permission"
+    )
+    assert verify_manifest_step["shell"] == "bash"
+    assert (
+        "android.permission.INTERNET" in verify_manifest_step["run"]
+    )
+    assert (
+        "processDebugManifestForPackage/AndroidManifest.xml" in verify_manifest_step["run"]
+    )
+    assert (
+        "processReleaseManifestForPackage/AndroidManifest.xml" in verify_manifest_step["run"]
+    )
+
     assert (
         _step_named(jobs["workflow-lint"], "Lint GitHub Actions workflows")["uses"]
         == "raven-actions/actionlint@v2"

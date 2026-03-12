@@ -171,6 +171,9 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
+    env:
+      GRADLE_USER_HOME: ${{ github.workspace }}/.gradle
+      ANDROID_USER_HOME: ${{ github.workspace }}/.android
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -190,9 +193,19 @@ jobs:
       - name: Install Android SDK platform 36
         run: sdkmanager "platforms;android-36"
 
-      - name: Run Android unit tests
+      - name: Generate packaged manifests and run unit tests
         working-directory: android
-        run: ./gradlew test --no-daemon
+        run: ./gradlew test processDebugManifestForPackage processReleaseManifestForPackage --no-daemon
+
+      - name: Verify packaged manifest includes INTERNET permission
+        shell: bash
+        run: |
+          debug_manifest="android/app/build/intermediates/packaged_manifests/debug/processDebugManifestForPackage/AndroidManifest.xml"
+          release_manifest="android/app/build/intermediates/packaged_manifests/release/processReleaseManifestForPackage/AndroidManifest.xml"
+          for manifest in "$debug_manifest" "$release_manifest"; do
+            test -f "$manifest"
+            grep -q 'android.permission.INTERNET' "$manifest"
+          done
 
   docker-images:
     name: Build and publish Docker images
