@@ -163,7 +163,7 @@ def test_first_call_empty_pool_returns_fallback():
         result, metrics = await ev.evaluate_with_metrics(fen=_STARTPOS, nodes=100)
         return result, metrics
 
-    result, metrics = asyncio.get_event_loop().run_until_complete(_run())
+    result, metrics = asyncio.run(_run())
 
     assert metrics["engine_fallback"] is True
     assert metrics["engine_result_cache_hit"] is False
@@ -193,7 +193,7 @@ def test_second_call_same_position_returns_cache_hit():
         result2, metrics2 = await ev.evaluate_with_metrics(fen=_STARTPOS, nodes=100)
         return result2, metrics2
 
-    result2, metrics2 = asyncio.get_event_loop().run_until_complete(_run())
+    result2, metrics2 = asyncio.run(_run())
 
     assert metrics2["engine_result_cache_hit"] is True, (
         "Second call for the same position must be a cache hit"
@@ -221,7 +221,7 @@ def test_fallback_cached_per_limit_key():
         _, m3 = await ev.evaluate_with_metrics(fen=_STARTPOS, nodes=100)
         return m1, m2, m3
 
-    m1, m2, m3 = asyncio.get_event_loop().run_until_complete(_run())
+    m1, m2, m3 = asyncio.run(_run())
 
     # First call for nodes=100: fresh fallback.
     assert m1["engine_fallback"] is True
@@ -253,7 +253,7 @@ def test_real_engine_result_cached_and_returned_as_cache_hit():
         result2, metrics2 = await ev.evaluate_with_metrics(fen=_FEN_E4, nodes=50)
         return result1, metrics1, result2, metrics2
 
-    result1, metrics1, result2, metrics2 = asyncio.get_event_loop().run_until_complete(_run())
+    result1, metrics1, result2, metrics2 = asyncio.run(_run())
 
     # First call: real engine, no fallback, no cache hit.
     assert metrics1["engine_fallback"] is False
@@ -283,7 +283,7 @@ def test_timeout_fallback_is_cached():
         _, m2 = await ev.evaluate_with_metrics(fen=_STARTPOS, nodes=100)
         return m1, m2
 
-    m1, m2 = asyncio.get_event_loop().run_until_complete(_run())
+    m1, m2 = asyncio.run(_run())
 
     assert m1["engine_fallback"] is True
     assert m1["engine_result_cache_hit"] is False
