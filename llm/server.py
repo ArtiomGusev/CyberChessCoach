@@ -1,4 +1,5 @@
 import os
+import shutil
 import chess
 import time
 import threading
@@ -252,7 +253,10 @@ async def startup():
         init_db()
         world_model = SafeWorldModel()
         enforce(world_model)
-        default_stockfish_path = "engines/stockfish.exe" if os.name == "nt" else "/usr/games/stockfish"
+        if os.name == "nt":
+            default_stockfish_path = "engines/stockfish.exe"
+        else:
+            default_stockfish_path = shutil.which("stockfish") or "/usr/games/stockfish"
         stockfish_path = os.getenv("STOCKFISH_PATH", default_stockfish_path)
         settings = EnginePoolSettings(
             stockfish_path=stockfish_path,

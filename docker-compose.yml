@@ -4,5 +4,10 @@ services:
     environment:
       OLLAMA_URL: ${COACH_OLLAMA_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${COACH_OLLAMA_MODEL:-qwen2.5:7b-instruct-q2_K}
+      SECA_API_KEY: ${SECA_API_KEY:-dev-key}
+      SECA_ENV: ${SECA_ENV:-dev}
+      STOCKFISH_PATH: ${STOCKFISH_PATH:-/usr/games/stockfish}
     ports:
       - "8000:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
