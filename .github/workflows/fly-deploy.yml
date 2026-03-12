@@ -306,6 +306,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Cache Trivy vulnerability DB
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ github.run_id }}
+          restore-keys: trivy-db-
+
       - name: Scan published app image
         id: trivy-app-image
         continue-on-error: true
@@ -319,9 +326,12 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
+        env:
+          TRIVY_CACHE_DIR: ~/.cache/trivy
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate app image SARIF
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
         continue-on-error: true
         uses: aquasecurity/trivy-action@0.34.0
         with:
@@ -334,6 +344,10 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "0"
+        env:
+          TRIVY_CACHE_DIR: ~/.cache/trivy
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload app image scan results
         if: hashFiles('trivy-app-image.sarif') != ''
@@ -354,9 +368,12 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
+        env:
+          TRIVY_CACHE_DIR: ~/.cache/trivy
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate llm API image SARIF
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
         continue-on-error: true
         uses: aquasecurity/trivy-action@0.34.0
         with:
@@ -369,6 +386,10 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "0"
+        env:
+          TRIVY_CACHE_DIR: ~/.cache/trivy
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload llm API image scan results
         if: hashFiles('trivy-api-image.sarif') != ''
