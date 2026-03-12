@@ -22,6 +22,7 @@
 
 - Use specialist subagents where appropriate.
 - Use `architecture-reviewer` before finishing substantial or cross-layer work.
+- Use `devils-advocate` for adversarial security, lifecycle, memory, or interop review when code is risky or externally exposed.
 - Preserve API contracts unless docs, tests, and dependent callers are updated together.
 - Report blockers explicitly instead of bypassing checks.
 
@@ -40,6 +41,7 @@
 - Use `backend-coach-specialist` for API routes, coaching pipeline, auth, RAG assembly, and backend integration behavior.
 - Use `android-specialist` for Android UI, API client integration, and Gradle-backed validation.
 - Use `test-writer` for unit, integration, regression, and contract coverage.
+- Use `devils-advocate` for hostile-input, security, memory, coroutine/lifecycle, and cross-language boundary audits.
 - Use `architecture-reviewer` for read-only compliance review before closing substantial work.
 
 ## Required Checks

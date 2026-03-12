@@ -26,6 +26,7 @@ required_files=(
   ".claude/agents/backend-coach-specialist.md"
   ".claude/agents/android-specialist.md"
   ".claude/agents/test-writer.md"
+  ".claude/agents/devils-advocate.md"
   "tools/claude-task.sh"
 )
 

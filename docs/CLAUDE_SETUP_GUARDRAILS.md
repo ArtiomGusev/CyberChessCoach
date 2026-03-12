@@ -134,6 +134,7 @@ Implemented in:
 - `.claude/agents/backend-coach-specialist.md`
 - `.claude/agents/android-specialist.md`
 - `.claude/agents/test-writer.md`
+- `.claude/agents/devils-advocate.md`
 
 What it enforces:
 
@@ -141,6 +142,7 @@ What it enforces:
 - backend/pipeline work stays in backend boundaries
 - Android work stays in Android boundaries
 - tests get explicit authoring attention instead of incidental edits
+- adversarial security and edge-case review is available as a dedicated read-only pass
 
 ### 9. Operator Checklists
 
