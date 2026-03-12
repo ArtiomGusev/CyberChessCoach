@@ -9,6 +9,8 @@ interface EngineProvider {
  */
 class NativeEngineProvider : EngineProvider {
     override fun getBestMove(fen: String): AIMove? {
-        return ChessNative.getBestMove(fen)
+        if (!ChessNative.isLibraryLoaded) return null
+        val move = ChessNative.getBestMove(fen) ?: return null
+        return JniMoveBridge.normalize(move, fen)
     }
 }
