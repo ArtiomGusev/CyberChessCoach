@@ -7,6 +7,8 @@ __pycache__/
 *.pyc
 venv/
 .claude/settings.local.json
+.coverage
+tmp_logs/
 dump.rdb
 
 # ========= ANDROID =========
@@ -39,4 +41,8 @@ llm/**/*.pyc
 data/*.db
 llm/data/*.db
 llm/*.db
+llm/redis-win/
 engines/stockfish.exe
+
+# ========= LOCAL TOOLS =========
+tools/run_autonomous.sh
