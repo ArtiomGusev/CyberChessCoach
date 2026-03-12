@@ -1,3 +1,5 @@
+import os
+
 import httpx
 
 from llm.rag.engine_signal.extract_engine_signal import extract_engine_signal
@@ -9,8 +11,9 @@ from llm.rag.validators.mode_2_negative import validate_mode_2_negative
 from llm.confidence_language_controller import build_language_controller_block
 
 
-OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
-MODEL_NAME = "qwen2.5:7b-instruct-q2_K"
+_ollama_base = os.getenv("COACH_OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+OLLAMA_URL = f"{_ollama_base}/api/generate"
+MODEL_NAME = os.getenv("COACH_OLLAMA_MODEL", "qwen2.5:7b-instruct-q2_K")
 
 MAX_RETRIES = 2
 

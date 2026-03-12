@@ -1,6 +1,10 @@
-from fastapi import APIRouter, Depends, Request, HTTPException
 import json
-from pydantic import BaseModel
+import logging
+
+from fastapi import APIRouter, Depends, Request, HTTPException
+from pydantic import BaseModel, field_validator
+
+logger = logging.getLogger(__name__)
 from sqlalchemy.orm import Session as DBSession
 
 from llm.seca.auth.router import get_db, get_current_player
@@ -25,6 +29,41 @@ class GameFinishRequest(BaseModel):
     accuracy: float    # 0..1
     weaknesses: dict
     player_id: str | None = None
+
+    @field_validator("pgn")
+    @classmethod
+    def validate_pgn(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("pgn must not be empty")
+        if len(v) > 100_000:
+            raise ValueError("pgn too large (max 100 000 chars)")
+        return v
+
+    @field_validator("result")
+    @classmethod
+    def validate_result(cls, v: str) -> str:
+        if v not in {"win", "loss", "draw"}:
+            raise ValueError("result must be 'win', 'loss', or 'draw'")
+        return v
+
+    @field_validator("accuracy")
+    @classmethod
+    def validate_accuracy(cls, v: float) -> float:
+        if not (0.0 <= v <= 1.0):
+            raise ValueError("accuracy must be between 0.0 and 1.0")
+        return v
+
+    @field_validator("weaknesses")
+    @classmethod
+    def validate_weaknesses(cls, v: dict) -> dict:
+        if len(v) > 50:
+            raise ValueError("too many weakness entries (max 50)")
+        for k, val in v.items():
+            if not isinstance(k, str) or len(k) > 100:
+                raise ValueError("weakness key must be a string ≤ 100 chars")
+            if not isinstance(val, (int, float)):
+                raise ValueError("weakness values must be numeric")
+        return v
 
 
 @router.post("/finish")
@@ -89,10 +128,7 @@ def finish_game(
             train_bandit()
             train_policy()
         except Exception:
-            import traceback
-            print("\n=== BANDIT UPDATE ERROR ===")
-            traceback.print_exc()
-            print("=== END BANDIT ERROR ===\n")
+            logger.exception("Bandit update failed")
 
         try:
             from llm.seca.brain.planning.counterfactual import CounterfactualPlanner
@@ -114,10 +150,7 @@ def finish_game(
             print("Predicted rating/conf delta:", future)
             print("Score:", score)
         except Exception:
-            import traceback
-            print("\n=== COUNTERFACTUAL ERROR ===")
-            traceback.print_exc()
-            print("=== END COUNTERFACTUAL ERROR ===\n")
+            logger.exception("Counterfactual planner failed")
 
     controller = PostGameCoachController()
 
@@ -159,10 +192,7 @@ def finish_game(
         executor = CoachExecutor()
         coach_content = executor.execute(coach_action)
     except Exception:
-        import traceback
-        print("\n=== COACH PIPELINE ERROR ===")
-        traceback.print_exc()
-        print("=== END COACH ERROR ===\n")
+        logger.exception("Coach pipeline failed")
         coach_action = SimpleNamespace(type="default", weakness=None, reason="fallback")
         coach_content = SimpleNamespace(
             title="Keep playing",
@@ -178,10 +208,7 @@ def finish_game(
         try:
             learning_result = learner.train_step() if learner else {"status": "no_learner"}
         except Exception:
-            import traceback
-            print("\n=== LEARNER ERROR ===")
-            traceback.print_exc()
-            print("=== END LEARNER ERROR ===\n")
+            logger.exception("Learner train_step failed")
             learning_result = {"status": "learner_error"}
 
     return {

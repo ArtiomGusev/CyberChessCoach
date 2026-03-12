@@ -5,12 +5,13 @@ import time
 import threading
 from functools import lru_cache
 from fastapi import FastAPI, Header, HTTPException, Depends, Request, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from starlette.middleware.base import BaseHTTPMiddleware
+from llm.seca.shared_limiter import limiter
 from dotenv import load_dotenv
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 try:
     from .player_api import router as player_router
 except ImportError:
@@ -51,9 +52,50 @@ print(">>> RUNNING SERVER FROM:", __file__)
 
 load_dotenv()
 
+API_KEY = os.getenv("SECA_API_KEY")
+ENV = os.getenv("SECA_ENV", "dev")
+IS_PROD = ENV in {"prod", "production"}
+DEBUG = not IS_PROD
+
 app = FastAPI(title="SECA Chess Coach API")
-limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
+
+# ---- CORS ----------------------------------------------------------------
+_cors_origins = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins if _cors_origins else (["*"] if DEBUG else []),
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type", "X-Api-Key"],
+)
+
+# ---- Request body size limit (512 KB) ------------------------------------
+_MAX_BODY_BYTES = 512 * 1024
+
+
+class _LimitBodySize(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        cl = request.headers.get("content-length")
+        if cl:
+            try:
+                if int(cl) > _MAX_BODY_BYTES:
+                    return JSONResponse(status_code=413, content={"error": "Request body too large"})
+            except ValueError:
+                return JSONResponse(status_code=400, content={"error": "Invalid Content-Length"})
+        return await call_next(request)
+
+
+app.add_middleware(_LimitBodySize)
+
+# ---- Security response headers -------------------------------------------
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
 
 
 @app.exception_handler(RateLimitExceeded)
@@ -61,9 +103,6 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     return JSONResponse(status_code=429, content={"error": "Too many requests"})
 
 
-API_KEY = os.getenv("SECA_API_KEY")
-ENV = os.getenv("SECA_ENV", "dev")
-DEBUG = ENV != "prod"
 DEFAULT_PREWARM_FENS = [
     chess.STARTING_FEN,
     "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",  # 1.e4 e5
@@ -75,7 +114,9 @@ DEFAULT_PREWARM_FENS = [
 
 def verify_api_key(x_api_key: str = Header(None)):
     if API_KEY is None:
-        return  # dev mode
+        if IS_PROD:
+            raise HTTPException(status_code=500, detail="Server misconfiguration")
+        return  # dev mode only — never allowed in prod
     if x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Unauthorized")
 app.include_router(player_router)
@@ -325,17 +366,61 @@ async def shutdown():
 # Schemas
 # ------------------------------------------------------------------
 
+_VALID_MODES = {"default", "blitz", "analysis", "training"}
+
+
+def _validate_fen_field(v: str) -> str:
+    stripped = v.strip()
+    if stripped.lower() == "startpos":
+        return v
+    parts = stripped.split()
+    if len(parts) != 6 or len(stripped) > 100:
+        raise ValueError("invalid FEN")
+    return v
+
+
 class MoveRequest(BaseModel):
     fen: str
     moves_uci: list[str] | None = None
     mode: str | None = "default"
     movetime_ms: int | None = None
 
+    @field_validator("fen")
+    @classmethod
+    def validate_fen(cls, v: str) -> str:
+        return _validate_fen_field(v)
+
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, v: str | None) -> str | None:
+        if v is not None and v.lower() not in _VALID_MODES:
+            raise ValueError(f"mode must be one of {_VALID_MODES}")
+        return v
+
+    @field_validator("movetime_ms")
+    @classmethod
+    def validate_movetime(cls, v: int | None) -> int | None:
+        if v is not None and not (1 <= v <= 60_000):
+            raise ValueError("movetime_ms must be 1–60000")
+        return v
+
 
 class AnalyzeRequest(BaseModel):
     fen: str
     stockfish_json: dict | None = None
     user_query: str | None = ""
+
+    @field_validator("fen")
+    @classmethod
+    def validate_fen(cls, v: str) -> str:
+        return _validate_fen_field(v)
+
+    @field_validator("user_query")
+    @classmethod
+    def validate_user_query(cls, v: str | None) -> str | None:
+        if v and len(v) > 2000:
+            raise ValueError("user_query too long (max 2000 chars)")
+        return v
 
 
 class LiveMoveRequest(BaseModel):

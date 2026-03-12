@@ -34,7 +34,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        Log.e("AI_TEST", "🔥 MAIN ACTIVITY STARTED 🔥")
+        Log.d("AI_TEST", "MainActivity started")
 
         // -------- FIND VIEWS --------
         chessBoard = findViewById(R.id.chessBoard)

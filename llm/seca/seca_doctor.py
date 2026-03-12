@@ -143,19 +143,24 @@ def check_db():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
-    tables = [
+    _ALLOWED_TABLES = frozenset({
         "players",
         "game_events",
         "rating_updates",
         "confidence_updates",
         "analytics_events",
-    ]
+    })
+    tables = list(_ALLOWED_TABLES)
 
     ok_all = True
 
     for t in tables:
+        if t not in _ALLOWED_TABLES:
+            fail(f"Unexpected table name rejected: {t}")
+            ok_all = False
+            continue
         try:
-            cur.execute(f"SELECT COUNT(*) FROM {t}")
+            cur.execute(f"SELECT COUNT(*) FROM {t}")  # nosec: validated against allowlist above
             count = cur.fetchone()[0]
             info(f"{t}: {count}")
             if count == 0:
