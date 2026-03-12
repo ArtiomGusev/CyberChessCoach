@@ -29,7 +29,6 @@ public:
 
     void reset();
     void setupLenta();
-    void loadFromFEN(const char* fen);
     void loadFromBoard64(const char* board);
 
     /** Pure state mutation for internal sync */

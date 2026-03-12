@@ -24,24 +24,7 @@ class ChessEngineTest {
         assertFalse("Pawn should not be able to move 3 squares", success)
     }
 
-    /**
-     * 🧪 Unit Test: “AI never moves twice”
-     * Verifies that for a given FEN, the pure native engine returns a consistent 
-     * result without mutating internal global state.
-     */
-    @Test
-    fun ai_moves_only_once_per_turn() {
-        // Position after 1. e4
-        val fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b"
-
-        // Step 6: Pure function contract ensures same input -> same output
-        val move1 = ChessNative.getBestMove(fen)
-        val move2 = ChessNative.getBestMove(fen)
-
-        assertNotNull("AI should return a valid move", move1)
-        assertNotNull("AI should return a valid move on second call", move2)
-
-        // Same position -> same suggestion (idempotency)
-        assertEquals("AI must be pure and return consistent results", move1, move2)
-    }
+    // ai_moves_only_once_per_turn is tested in androidTest/ChessNativeInstrumentedTest.kt.
+    // It calls ChessNative.getBestMove (an external JNI function) which requires the
+    // native library to be loaded — not available in the host JVM test environment.
 }

@@ -26,8 +26,6 @@ object ChessNative {
      */
     external fun getBestMove(fen: String): AIMove?
 
-    external fun nativePing(): Int
-
     /** No-op in pure architecture, kept for build compatibility */
     fun reset() {}
 }
