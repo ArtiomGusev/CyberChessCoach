@@ -165,7 +165,6 @@ jobs:
         working-directory: llm
         run: npm audit --omit=dev --audit-level=high
 
-
   android-build:
     name: Android build and unit tests
     runs-on: ubuntu-latest
@@ -194,6 +193,7 @@ jobs:
       - name: Run Android unit tests
         working-directory: android
         run: ./gradlew test --no-daemon
+
   docker-images:
     name: Build and publish Docker images
     runs-on: ubuntu-latest
@@ -233,7 +233,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
+          username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Docker metadata for app image
@@ -273,8 +273,9 @@ jobs:
           labels: ${{ steps.meta-app.outputs.labels }}
           cache-from: type=gha,scope=app-image
           cache-to: type=gha,mode=max,scope=app-image
-          provenance: ${{ github.event_name == 'push' }}
-          sbom: ${{ github.event_name == 'push' }}
+          provenance: false
+          sbom: false
+          build-args: BUILDDATE=${{ github.run_id }}
 
       - name: Build llm API image
         id: build-api
@@ -287,8 +288,9 @@ jobs:
           labels: ${{ steps.meta-api.outputs.labels }}
           cache-from: type=gha,scope=llm-api-image
           cache-to: type=gha,mode=max,scope=llm-api-image
-          provenance: ${{ github.event_name == 'push' }}
-          sbom: ${{ github.event_name == 'push' }}
+          provenance: false
+          sbom: false
+          build-args: BUILDDATE=${{ github.run_id }}
 
       - name: Attest app image provenance
         if: github.event_name == 'push'
@@ -329,19 +331,24 @@ jobs:
       packages: read
       security-events: write
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
+          username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cache Trivy vulnerability DB
         uses: actions/cache@v4
         with:
-          path: ~/.cache/trivy
-          key: trivy-db-${{ github.run_id }}
-          restore-keys: trivy-db-
+          path: ${{ runner.temp }}/trivy
+          key: trivy-db-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: trivy-db-${{ runner.os }}-
 
       - name: Scan published app image
         id: trivy-app-image
@@ -353,12 +360,14 @@ jobs:
           format: table
           scanners: vuln
           vuln-type: library
-          severity: HIGH,CRITICAL
+          severity: CRITICAL
           ignore-unfixed: true
           exit-code: "1"
+          trivy-config: trivy.yaml
         env:
-          TRIVY_CACHE_DIR: ~/.cache/trivy
-          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy
+          TRIVY_TIMEOUT: "15m"
+          TRIVY_USERNAME: ${{ github.repository_owner }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate app image SARIF
@@ -372,11 +381,14 @@ jobs:
           scanners: vuln
           vuln-type: library
           severity: HIGH,CRITICAL
-          ignore-unfixed: true
+          ignore-unfixed: false
           exit-code: "0"
+          trivy-config: trivy.yaml
         env:
-          TRIVY_CACHE_DIR: ~/.cache/trivy
-          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy
+          TRIVY_SKIP_DB_UPDATE: "true"
+          TRIVY_TIMEOUT: "15m"
+          TRIVY_USERNAME: ${{ github.repository_owner }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload app image scan results
@@ -395,12 +407,14 @@ jobs:
           format: table
           scanners: vuln
           vuln-type: os,library
-          severity: HIGH,CRITICAL
+          severity: CRITICAL
           ignore-unfixed: true
           exit-code: "1"
+          trivy-config: trivy.yaml
         env:
-          TRIVY_CACHE_DIR: ~/.cache/trivy
-          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy
+          TRIVY_TIMEOUT: "15m"
+          TRIVY_USERNAME: ${{ github.repository_owner }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate llm API image SARIF
@@ -414,11 +428,14 @@ jobs:
           scanners: vuln
           vuln-type: os,library
           severity: HIGH,CRITICAL
-          ignore-unfixed: true
+          ignore-unfixed: false
           exit-code: "0"
+          trivy-config: trivy.yaml
         env:
-          TRIVY_CACHE_DIR: ~/.cache/trivy
-          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy
+          TRIVY_SKIP_DB_UPDATE: "true"
+          TRIVY_TIMEOUT: "15m"
+          TRIVY_USERNAME: ${{ github.repository_owner }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload llm API image scan results

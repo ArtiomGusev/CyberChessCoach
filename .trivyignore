@@ -1,0 +1,8 @@
+# Trivy vulnerability ignore file
+# Format: one CVE-ID or GHSA-ID per line, optionally followed by an expiry date
+# Example:
+#   CVE-2023-12345
+#   GHSA-xxxx-yyyy-zzzz until:2026-06-01
+#
+# Add entries here for accepted risks or vulnerabilities with no available fix
+# when ignore-unfixed: true in the workflow does not cover them.

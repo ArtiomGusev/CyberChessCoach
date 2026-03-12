@@ -4,6 +4,7 @@ ENV NODE_ENV=production
 
 WORKDIR /app
 
+ARG BUILDDATE=0
 RUN apk upgrade --no-cache
 
 COPY llm/package*.json ./

@@ -48,6 +48,7 @@ def test_ci_workflow_includes_required_gates():
         "python-quality",
         "dependency-security",
         "node-security",
+        "android-build",
         "docker-images",
         "image-security",
         "deploy",
@@ -59,6 +60,7 @@ def test_ci_workflow_includes_required_gates():
         "python-quality",
         "dependency-security",
         "node-security",
+        "android-build",
     }
     assert "image-security" in jobs["deploy"]["needs"]
     assert "image-security" in jobs["release"]["needs"]
@@ -77,7 +79,9 @@ def test_ci_workflow_hardens_checkout_and_supply_chain_controls():
         "python-quality",
         "dependency-security",
         "node-security",
+        "android-build",
         "docker-images",
+        "image-security",
         "deploy",
     ]:
         checkout = _step_named(jobs[job_name], "Checkout repository")
@@ -104,18 +108,18 @@ def test_ci_workflow_hardens_checkout_and_supply_chain_controls():
         "app_digest": "${{ steps.build-app.outputs.digest }}",
         "api_digest": "${{ steps.build-api.outputs.digest }}",
     }
-    assert _step_named(docker_job, "Build app image")["with"]["provenance"] == (
-        "${{ github.event_name == 'push' }}"
-    )
-    assert _step_named(docker_job, "Build app image")["with"]["sbom"] == (
-        "${{ github.event_name == 'push' }}"
-    )
-    assert _step_named(docker_job, "Build llm API image")["with"]["provenance"] == (
-        "${{ github.event_name == 'push' }}"
-    )
-    assert _step_named(docker_job, "Build llm API image")["with"]["sbom"] == (
-        "${{ github.event_name == 'push' }}"
-    )
+    docker_login = _step_named(docker_job, "Log in to GHCR")
+    assert docker_login["with"]["username"] == "${{ github.repository_owner }}"
+
+    build_app = _step_named(docker_job, "Build app image")
+    assert build_app["with"]["provenance"] is False
+    assert build_app["with"]["sbom"] is False
+    assert build_app["with"]["build-args"] == "BUILDDATE=${{ github.run_id }}"
+
+    build_api = _step_named(docker_job, "Build llm API image")
+    assert build_api["with"]["provenance"] is False
+    assert build_api["with"]["sbom"] is False
+    assert build_api["with"]["build-args"] == "BUILDDATE=${{ github.run_id }}"
     assert _step_named(docker_job, "Install Cosign")["uses"] == "sigstore/cosign-installer@v3"
     assert [
         step["uses"]
@@ -132,27 +136,49 @@ def test_ci_workflow_hardens_checkout_and_supply_chain_controls():
         "packages": "read",
         "security-events": "write",
     }
+    image_security_login = _step_named(image_security, "Log in to GHCR")
+    assert image_security_login["with"]["username"] == "${{ github.repository_owner }}"
+
     scan_app = _step_named(image_security, "Scan published app image")
     assert scan_app["uses"] == "aquasecurity/trivy-action@0.34.0"
     assert scan_app["with"]["scan-type"] == "image"
     assert scan_app["with"]["format"] == "table"
     assert scan_app["with"]["vuln-type"] == "library"
+    assert scan_app["with"]["severity"] == "CRITICAL"
+    assert scan_app["with"]["ignore-unfixed"] is True
+    assert scan_app["with"]["trivy-config"] == "trivy.yaml"
+    assert scan_app["env"]["TRIVY_CACHE_DIR"] == "${{ runner.temp }}/trivy"
+    assert scan_app["env"]["TRIVY_TIMEOUT"] == "15m"
+    assert scan_app["env"]["TRIVY_USERNAME"] == "${{ github.repository_owner }}"
 
     sarif_app = _step_named(image_security, "Generate app image SARIF")
     assert sarif_app["uses"] == "aquasecurity/trivy-action@0.34.0"
     assert sarif_app["with"]["format"] == "sarif"
     assert sarif_app["with"]["exit-code"] == "0"
+    assert sarif_app["with"]["ignore-unfixed"] is False
+    assert sarif_app["with"]["trivy-config"] == "trivy.yaml"
+    assert sarif_app["env"]["TRIVY_SKIP_DB_UPDATE"] == "true"
+    assert sarif_app["env"]["TRIVY_USERNAME"] == "${{ github.repository_owner }}"
 
     scan_api = _step_named(image_security, "Scan published llm API image")
     assert scan_api["uses"] == "aquasecurity/trivy-action@0.34.0"
     assert scan_api["with"]["scan-type"] == "image"
     assert scan_api["with"]["format"] == "table"
     assert scan_api["with"]["vuln-type"] == "os,library"
+    assert scan_api["with"]["severity"] == "CRITICAL"
+    assert scan_api["with"]["ignore-unfixed"] is True
+    assert scan_api["with"]["trivy-config"] == "trivy.yaml"
+    assert scan_api["env"]["TRIVY_TIMEOUT"] == "15m"
+    assert scan_api["env"]["TRIVY_USERNAME"] == "${{ github.repository_owner }}"
 
     sarif_api = _step_named(image_security, "Generate llm API image SARIF")
     assert sarif_api["uses"] == "aquasecurity/trivy-action@0.34.0"
     assert sarif_api["with"]["format"] == "sarif"
     assert sarif_api["with"]["exit-code"] == "0"
+    assert sarif_api["with"]["ignore-unfixed"] is False
+    assert sarif_api["with"]["trivy-config"] == "trivy.yaml"
+    assert sarif_api["env"]["TRIVY_SKIP_DB_UPDATE"] == "true"
+    assert sarif_api["env"]["TRIVY_USERNAME"] == "${{ github.repository_owner }}"
 
 
 def test_security_workflow_uses_safe_checkout_and_codeql_v4():
@@ -189,10 +215,9 @@ def test_security_workflow_uses_safe_checkout_and_codeql_v4():
     )
 
     trivy_misconfig_job = jobs["trivy-misconfig"]
-    assert (
-        trivy_misconfig_job["if"]
-        == "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'"
-    )
+    assert "github.event_name == 'schedule'" in trivy_misconfig_job["if"]
+    assert "github.event_name == 'workflow_dispatch'" in trivy_misconfig_job["if"]
+    assert "github.event_name == 'pull_request'" in trivy_misconfig_job["if"]
     assert (
         _step_named(trivy_misconfig_job, "Run Trivy misconfiguration scan")["with"]["scanners"]
         == "misconfig"
