@@ -307,7 +307,7 @@ jobs:
 
       - name: Attest app image provenance
         if: github.event_name == 'push'
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ghcr.io/${{ steps.prep.outputs.owner }}/${{ env.APP_IMAGE_NAME }}
           subject-digest: ${{ steps.build-app.outputs.digest }}
@@ -315,7 +315,7 @@ jobs:
 
       - name: Attest llm API image provenance
         if: github.event_name == 'push'
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ghcr.io/${{ steps.prep.outputs.owner }}/${{ env.API_IMAGE_NAME }}
           subject-digest: ${{ steps.build-api.outputs.digest }}
