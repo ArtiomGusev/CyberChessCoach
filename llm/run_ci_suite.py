@@ -35,6 +35,7 @@ TEST_TARGETS = [
     "llm/tests/test_stockfish_adapter_isolation.py",
     "llm/tests/test_seca_layer_boundaries.py",
     "llm/tests/test_coaching_pipeline_regression.py",
+    "llm/tests/test_api_contract_validation.py",
 ]
 
 COVERAGE_TARGETS = [
