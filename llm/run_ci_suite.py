@@ -34,6 +34,7 @@ TEST_TARGETS = [
     "llm/tests/test_predictive_cache.py",
     "llm/tests/test_stockfish_adapter_isolation.py",
     "llm/tests/test_seca_layer_boundaries.py",
+    "llm/tests/test_coaching_pipeline_regression.py",
 ]
 
 COVERAGE_TARGETS = [
@@ -54,6 +55,14 @@ COVERAGE_TARGETS = [
     "llm.seca.analytics.logger",
     "llm.seca.analytics.events",
     "llm.seca.events.storage",
+    # llm.seca.coach.live_controller and llm.seca.coach.executor are excluded from
+    # --cov targets: llm.seca.coach.__init__ imports engine.py which loads numpy via
+    # a C extension; coverage pre-loading the package for instrumentation triggers
+    # "cannot load module more than once per process" when the tests later re-import.
+    # Their logic is fully exercised by TestPostGameCoachRegressionSuite and
+    # TestCoachExecutorStability (22 tests).
+    "llm.rag.meta.case_classifier",
+    "llm.confidence_language_controller",
     # llm.seca.engines.stockfish.pool is intentionally excluded from coverage targets:
     # the majority of its lines require a live Stockfish process and Redis, which are
     # unavailable in the unit-test environment. The pure logic (FenMoveCache, movetime
