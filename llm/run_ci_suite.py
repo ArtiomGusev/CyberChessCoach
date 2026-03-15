@@ -33,6 +33,7 @@ TEST_TARGETS = [
     "llm/tests/test_position_input_build_board.py",
     "llm/tests/test_predictive_cache.py",
     "llm/tests/test_stockfish_adapter_isolation.py",
+    "llm/tests/test_seca_layer_boundaries.py",
 ]
 
 COVERAGE_TARGETS = [
@@ -50,6 +51,9 @@ COVERAGE_TARGETS = [
     "llm.rag.validators.sanitize",
     "llm.rag.prompts.input_sanitizer",
     "llm.rag.engine_signal.extract_engine_signal",
+    "llm.seca.analytics.logger",
+    "llm.seca.analytics.events",
+    "llm.seca.events.storage",
     # llm.seca.engines.stockfish.pool is intentionally excluded from coverage targets:
     # the majority of its lines require a live Stockfish process and Redis, which are
     # unavailable in the unit-test environment. The pure logic (FenMoveCache, movetime
