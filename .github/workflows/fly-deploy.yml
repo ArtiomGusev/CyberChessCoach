@@ -251,7 +251,7 @@ jobs:
 
       - name: Docker metadata for app image
         id: meta-app
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ steps.prep.outputs.owner }}/${{ env.APP_IMAGE_NAME }}
           tags: |
@@ -264,7 +264,7 @@ jobs:
 
       - name: Docker metadata for llm API image
         id: meta-api
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ steps.prep.outputs.owner }}/${{ env.API_IMAGE_NAME }}
           tags: |
