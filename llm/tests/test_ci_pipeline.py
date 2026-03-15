@@ -69,7 +69,7 @@ def test_ci_workflow_includes_required_gates():
     assert jobs["release"]["permissions"] == {"contents": "write"}
 
 
-def test_ci_workflow_hardens_checkout_and_supply_chain_controls():
+def test_ci_workflow_hardens_checkout_and_supply_chain_controls():  # pylint: disable=too-many-statements
     workflow = _load_workflow("fly-deploy.yml")
     jobs = workflow["jobs"]
 
@@ -103,15 +103,9 @@ def test_ci_workflow_hardens_checkout_and_supply_chain_controls():
         android_build, "Verify packaged manifest includes INTERNET permission"
     )
     assert verify_manifest_step["shell"] == "bash"
-    assert (
-        "android.permission.INTERNET" in verify_manifest_step["run"]
-    )
-    assert (
-        "processDebugManifestForPackage/AndroidManifest.xml" in verify_manifest_step["run"]
-    )
-    assert (
-        "processReleaseManifestForPackage/AndroidManifest.xml" in verify_manifest_step["run"]
-    )
+    assert "android.permission.INTERNET" in verify_manifest_step["run"]
+    assert "processDebugManifestForPackage/AndroidManifest.xml" in verify_manifest_step["run"]
+    assert "processReleaseManifestForPackage/AndroidManifest.xml" in verify_manifest_step["run"]
 
     assert (
         _step_named(jobs["workflow-lint"], "Lint GitHub Actions workflows")["uses"]
