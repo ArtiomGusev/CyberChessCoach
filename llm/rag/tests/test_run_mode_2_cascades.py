@@ -3,7 +3,7 @@ import re
 from llm.rag.llm.run_mode_2 import run_mode_2
 
 
-class TestLLM:
+class FakeLLM:
     def __init__(self, initial: str, rewritten: str):
         self.initial = initial
         self.rewritten = rewritten
@@ -34,7 +34,7 @@ def test_notation_sanitization_cascade():
     initial = "After 1. e4 e5 2. Nf3, White's knight on f3 is active and White is better."
     rewritten = "The evaluation indicates a development advantage for White and greater piece activity."
 
-    llm = TestLLM(initial=initial, rewritten=rewritten)
+    llm = FakeLLM(initial=initial, rewritten=rewritten)
 
     out = run_mode_2(llm=llm, prompt="PROMPT", case_type="tactical")
 
@@ -54,7 +54,7 @@ def test_mate_notation_advisory_cascade():
     )
     rewritten = "The evaluation indicates a decisive advantage for White without specifying moves."
 
-    llm = TestLLM(initial=initial, rewritten=rewritten)
+    llm = FakeLLM(initial=initial, rewritten=rewritten)
 
     out = run_mode_2(llm=llm, prompt="PROMPT", case_type="tactical")
 
@@ -74,7 +74,7 @@ def test_structure_advisory_notation_cascade():
     )
     rewritten = "The evaluation explains that White's activity and castling options increase pressure on Black's position."
 
-    llm = TestLLM(initial=initial, rewritten=rewritten)
+    llm = FakeLLM(initial=initial, rewritten=rewritten)
 
     out = run_mode_2(llm=llm, prompt="PROMPT", case_type="tactical")
 

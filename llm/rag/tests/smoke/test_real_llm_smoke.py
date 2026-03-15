@@ -2,6 +2,12 @@ import os
 import time
 import pytest
 
+if not os.getenv("LLM_MODEL"):
+    pytest.skip(
+        "LLM_MODEL not set; skipping real-LLM smoke test",
+        allow_module_level=True,
+    )
+
 from llm.rag.deploy.embedded import explain_position
 
 @pytest.mark.smoke

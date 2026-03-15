@@ -1,7 +1,7 @@
 from llm.rag.llm.run_mode_2 import run_mode_2
 
 
-class TestLLM:
+class FakeLLM:
     def __init__(self):
         self.calls = []
 
@@ -15,7 +15,7 @@ class TestLLM:
 
 
 def test_run_mode_2_quick_mate_sanitization():
-    llm = TestLLM()
+    llm = FakeLLM()
     prompt = "SOME PROMPT"
 
     result = run_mode_2(llm=llm, prompt=prompt, case_type="tactical")
