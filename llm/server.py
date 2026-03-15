@@ -30,6 +30,7 @@ from llm.seca.engines.stockfish.pool import (
 )
 from llm.rag.engine_signal.extract_engine_signal import extract_engine_signal
 from llm.explain_pipeline import generate_validated_explanation
+from llm.rag.prompts.input_sanitizer import sanitize_user_query
 from llm.seca.learning.outcome_tracker import ExplanationOutcomeTracker
 from llm.seca.learning.skill_update import SkillState
 from llm.seca.adaptation.coupling import compute_adaptation
@@ -420,7 +421,7 @@ class AnalyzeRequest(BaseModel):
     def validate_user_query(cls, v: str | None) -> str | None:
         if v and len(v) > 2000:
             raise ValueError("user_query too long (max 2000 chars)")
-        return v
+        return sanitize_user_query(v) if v else v
 
 
 class LiveMoveRequest(BaseModel):

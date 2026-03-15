@@ -43,7 +43,9 @@ FEN: {fen}
 ────────────────────────────
 USER REQUEST
 ────────────────────────────
+<user_query>
 {user_query}
+</user_query>
 """.strip()
     if rag_context:
         prompt += f"\nContext:\n{rag_context}"

@@ -9,6 +9,7 @@ from llm.rag.prompts.mode_2.render import render_mode_2_prompt
 from llm.rag.prompts.system_v2_mode_2 import SYSTEM_PROMPT
 from llm.rag.validators.mode_2_negative import validate_mode_2_negative
 from llm.confidence_language_controller import build_language_controller_block
+from llm.rag.prompts.input_sanitizer import sanitize_user_query
 
 
 _ollama_base = os.getenv("COACH_OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
@@ -42,6 +43,8 @@ def call_llm(prompt: str) -> str:
 # ---------------------------------------------------------
 
 def generate_once(fen: str, stockfish_json: dict, user_query: str) -> tuple[str, dict]:
+    """Generate one explanation attempt. *user_query* must already be sanitized
+    by the caller (generate_validated_explanation is the authoritative point)."""
     esv = extract_engine_signal(stockfish_json, fen=fen)
 
     rag_docs = retrieve(esv, ALL_RAG_DOCUMENTS)
@@ -52,7 +55,7 @@ def generate_once(fen: str, stockfish_json: dict, user_query: str) -> tuple[str,
         engine_signal=esv,
         rag_docs=rag_docs,
         fen=fen,
-        user_query=user_query or "",
+        user_query=user_query,
     )
 
     explanation = call_llm(prompt)
@@ -69,10 +72,31 @@ def generate_validated_explanation(
     stockfish_json: dict,
     user_query: str | None = "",
 ):
+    # Authoritative sanitization point for the LLM pipeline.
+    #
+    # Forward-looking: generate_validated_explanation is not yet wired to an
+    # HTTP endpoint — the /explain route currently uses SafeExplainer.  When
+    # user_query is plumbed through to the LLM, this guard ensures injection
+    # is blocked before any LLM call.
+    #
+    # server.py schema validation is an independent early-rejection layer
+    # (returns HTTP 422 before reaching here).  Both call sites are
+    # intentional defence-in-depth; sanitize_user_query is idempotent for
+    # clean inputs so the double-call is harmless.
+    try:
+        clean_query = sanitize_user_query(user_query or "")
+    except ValueError:
+        # Injection detected — return safe fallback without calling the LLM.
+        esv = extract_engine_signal(stockfish_json, fen=fen)
+        return (
+            "I cannot process this request.",
+            esv,
+        )
+
     last_error = None
 
     for _ in range(MAX_RETRIES + 1):
-        explanation, esv = generate_once(fen, stockfish_json, user_query or "")
+        explanation, esv = generate_once(fen, stockfish_json, clean_query)
 
         try:
             validate_mode_2_negative(explanation)
@@ -81,7 +105,7 @@ def generate_validated_explanation(
             last_error = str(e)
 
             # Retry hint appended to query
-            user_query = (user_query or "") + (
+            clean_query = clean_query + (
                 "\n\nIMPORTANT: Follow MODE-2 rules strictly. "
                 "Do NOT speculate, invent moves, or mention engine intentions."
             )
