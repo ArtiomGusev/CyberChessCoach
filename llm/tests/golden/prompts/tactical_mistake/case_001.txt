@@ -90,7 +90,7 @@ If a request violates these rules:
 End of system instructions.
 
 ENGINE SIGNAL:
-evaluation: {'type': 'cp', 'band': 'decisive_advantage', 'side': 'white'}
+evaluation: {'type': 'cp', 'band': 'decisive_advantage', 'side': 'black'}
 eval_delta: decrease
 last_move_quality: mistake
 tactical_flags: ['hanging_piece']

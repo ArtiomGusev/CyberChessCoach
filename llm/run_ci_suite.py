@@ -20,6 +20,7 @@ TEST_TARGETS = [
     "llm/rag/tests/test_run_mode_2_mate_sanitization.py",
     "llm/rag/tests/test_explanation_score.py",
     "llm/rag/tests/unit/test_input_sanitizer.py",
+    "llm/tests/test_engine_response_format.py",
     "llm/rag/tests/unit/test_telemetry_event.py",
     "llm/tests/test_cache_keys.py",
     "llm/tests/test_ci_pipeline.py",
@@ -48,6 +49,11 @@ COVERAGE_TARGETS = [
     "llm.rag.validators.mode_2_structure",
     "llm.rag.validators.sanitize",
     "llm.rag.prompts.input_sanitizer",
+    "llm.rag.engine_signal.extract_engine_signal",
+    # llm.seca.engines.stockfish.pool is intentionally excluded from coverage targets:
+    # the majority of its lines require a live Stockfish process and Redis, which are
+    # unavailable in the unit-test environment. The pure logic (FenMoveCache, movetime
+    # resolution, fallback) is tested via test_engine_response_format.py.
 ]
 
 

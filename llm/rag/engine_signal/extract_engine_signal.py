@@ -71,7 +71,11 @@ def extract_engine_signal(
     else:
         band = "decisive_advantage"
 
-    side = "white" if value < 0 else "black"
+    # Schema contract: value is centipawns from White's perspective.
+    # Positive  → White is ahead  → white has the advantage.
+    # Negative  → Black is ahead  → black has the advantage.
+    # Zero      → equal; attribute to black by convention (band="equal" is primary).
+    side = "white" if value > 0 else "black"
 
     delta = stockfish_json.get("eval_delta", 0)
     if delta >= 50:
