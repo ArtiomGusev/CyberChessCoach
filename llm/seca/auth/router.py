@@ -119,8 +119,10 @@ def logout(
     db: DBSession = Depends(get_db),
 ):
     token = authorization.replace("Bearer ", "")
-    payload = decode_token(token)
-
+    try:
+        payload = decode_token(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
     AuthService(db).logout(payload["session_id"])
     return {"status": "logged_out"}
 

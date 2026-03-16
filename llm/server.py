@@ -438,6 +438,26 @@ class LiveMoveRequest(BaseModel):
     uci: str
     player_id: str = "demo"
 
+    @field_validator("fen")
+    @classmethod
+    def validate_fen(cls, v: str) -> str:
+        return _validate_fen_field(v)
+
+    @field_validator("uci")
+    @classmethod
+    def validate_uci(cls, v: str) -> str:
+        # UCI moves are 4–5 chars: source square (2) + target square (2) + optional promotion (1)
+        if not (4 <= len(v) <= 5):
+            raise ValueError("uci move must be 4–5 characters")
+        return v
+
+    @field_validator("player_id")
+    @classmethod
+    def validate_player_id(cls, v: str) -> str:
+        if len(v) > 100:
+            raise ValueError("player_id too long (max 100 chars)")
+        return v
+
 
 class StartGameRequest(BaseModel):
     player_id: str
@@ -450,6 +470,41 @@ class OutcomeRequest(BaseModel):
     blunder_rate: float
     tactic_success: bool
     confidence_delta: float
+
+    @field_validator("explanation_id")
+    @classmethod
+    def validate_explanation_id(cls, v: str) -> str:
+        if len(v) > 200:
+            raise ValueError("explanation_id too long (max 200 chars)")
+        return v
+
+    @field_validator("moves_analyzed")
+    @classmethod
+    def validate_moves_analyzed(cls, v: int) -> int:
+        if not (0 <= v <= 10_000):
+            raise ValueError("moves_analyzed must be 0–10000")
+        return v
+
+    @field_validator("avg_cpl")
+    @classmethod
+    def validate_avg_cpl(cls, v: float) -> float:
+        if not (-3_000.0 <= v <= 3_000.0):
+            raise ValueError("avg_cpl must be in [-3000, 3000]")
+        return v
+
+    @field_validator("blunder_rate")
+    @classmethod
+    def validate_blunder_rate(cls, v: float) -> float:
+        if not (0.0 <= v <= 1.0):
+            raise ValueError("blunder_rate must be in [0.0, 1.0]")
+        return v
+
+    @field_validator("confidence_delta")
+    @classmethod
+    def validate_confidence_delta(cls, v: float) -> float:
+        if not (-1.0 <= v <= 1.0):
+            raise ValueError("confidence_delta must be in [-1.0, 1.0]")
+        return v
 
 
 class CurriculumRecommendRequest(BaseModel):
@@ -527,7 +582,7 @@ def health():
 
 
 @app.get("/debug/engine")
-def engine_debug():
+def engine_debug(_: None = Depends(verify_api_key)):
     if engine_pool is None:
         return {"pool_size": 0}
     return {"pool_size": engine_pool.qsize()}
@@ -670,7 +725,7 @@ def move(
 # ------------------------------------------------------------------
 
 @app.post("/live/move")
-def live_move(req: LiveMoveRequest):
+def live_move(req: LiveMoveRequest, _: None = Depends(verify_api_key)):
     # TODO: wire LiveCoach and realtime analyzer pipeline
     return {
         "status": "not_implemented",
@@ -683,7 +738,8 @@ def live_move(req: LiveMoveRequest):
 # ------------------------------------------------------------------
 
 @app.post("/analyze")
-def analyze(req: AnalyzeRequest):
+@limiter.limit("30/minute")
+def analyze(req: AnalyzeRequest, request: Request, _: None = Depends(verify_api_key)):
     return {"engine_signal": build_engine_signal(req)}
 
 
@@ -732,7 +788,8 @@ def explain(req: AnalyzeRequest, _: str = Depends(verify_api_key)):
 
 
 @app.post("/explanation_outcome")
-def report_outcome(req: OutcomeRequest):
+@limiter.limit("20/minute")
+def report_outcome(req: OutcomeRequest, request: Request, _: None = Depends(verify_api_key)):
     tracker.record_outcome(**req.dict())
 
     score = tracker.compute_learning_score(req.explanation_id)

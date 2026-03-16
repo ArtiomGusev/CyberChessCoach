@@ -42,6 +42,7 @@ TEST_TARGETS = [
     "llm/tests/test_chat_pipeline.py",
     "llm/tests/test_historical_pipeline.py",
     "llm/tests/test_engine_eval_benchmark.py",
+    "llm/tests/test_api_security.py",
 ]
 
 COVERAGE_TARGETS = [
