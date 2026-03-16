@@ -38,6 +38,7 @@ TEST_TARGETS = [
     "llm/tests/test_coaching_pipeline_regression.py",
     "llm/tests/test_api_contract_validation.py",
     "llm/tests/test_explain_schema_validation.py",
+    "llm/tests/test_mistake_analytics.py",
 ]
 
 COVERAGE_TARGETS = [
@@ -58,6 +59,8 @@ COVERAGE_TARGETS = [
     "llm.rag.engine_signal.extract_engine_signal",
     "llm.seca.analytics.logger",
     "llm.seca.analytics.events",
+    "llm.seca.analytics.mistake_stats",
+    "llm.seca.analytics.training_recommendations",
     "llm.seca.events.storage",
     # llm.seca.coach.live_controller and llm.seca.coach.executor are excluded from
     # --cov targets: llm.seca.coach.__init__ imports engine.py which loads numpy via

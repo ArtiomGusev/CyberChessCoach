@@ -14,3 +14,6 @@ class EventType:
     # engagement
     SESSION_STARTED = "session_started"
     SESSION_ENDED = "session_ended"
+
+    # mistake analytics
+    MISTAKE_PATTERN_RECORDED = "mistake_pattern_recorded"
