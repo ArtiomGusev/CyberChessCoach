@@ -36,6 +36,7 @@ TEST_TARGETS = [
     "llm/tests/test_seca_layer_boundaries.py",
     "llm/tests/test_coaching_pipeline_regression.py",
     "llm/tests/test_api_contract_validation.py",
+    "llm/tests/test_explain_schema_validation.py",
 ]
 
 COVERAGE_TARGETS = [
@@ -51,6 +52,7 @@ COVERAGE_TARGETS = [
     "llm.rag.validators.mode_2_negative",
     "llm.rag.validators.mode_2_structure",
     "llm.rag.validators.sanitize",
+    "llm.rag.validators.explain_response_schema",
     "llm.rag.prompts.input_sanitizer",
     "llm.rag.engine_signal.extract_engine_signal",
     "llm.seca.analytics.logger",

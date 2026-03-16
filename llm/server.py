@@ -30,6 +30,10 @@ from llm.seca.engines.stockfish.pool import (
 )
 from llm.rag.engine_signal.extract_engine_signal import extract_engine_signal
 from llm.explain_pipeline import generate_validated_explanation
+from llm.rag.validators.explain_response_schema import (
+    validate_explain_response,
+    ExplainSchemaError,
+)
 from llm.rag.prompts.input_sanitizer import sanitize_user_query
 from llm.seca.learning.outcome_tracker import ExplanationOutcomeTracker
 from llm.seca.learning.skill_update import SkillState
@@ -671,11 +675,13 @@ def explain(req: AnalyzeRequest, _: str = Depends(verify_api_key)):
     engine_signal = extract_engine_signal(req.stockfish_json, fen=req.fen)
     explanation = safe_explainer.explain(engine_signal)
 
-    return {
+    response = {
         "explanation": explanation,
         "engine_signal": engine_signal,
         "mode": "SAFE_V1",
     }
+    validate_explain_response(response)
+    return response
 
 
 @app.post("/explanation_outcome")

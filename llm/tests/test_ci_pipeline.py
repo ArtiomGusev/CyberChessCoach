@@ -359,6 +359,7 @@ def test_run_ci_suite_builds_expected_pytest_command(monkeypatch, tmp_path):
     assert "llm/tests/test_ci_pipeline.py" in run_ci_suite.TEST_TARGETS
     assert "llm/tests/test_api_contract_validation.py" in run_ci_suite.TEST_TARGETS
     assert "llm/tests/test_coaching_pipeline_regression.py" in run_ci_suite.TEST_TARGETS
+    assert "llm/tests/test_explain_schema_validation.py" in run_ci_suite.TEST_TARGETS
 
 
 def test_python_tests_job_includes_mandatory_explicit_steps():
@@ -382,6 +383,9 @@ def test_python_tests_job_includes_mandatory_explicit_steps():
 
     regression_step = _step_named(python_tests_job, "Run coaching pipeline regression tests")
     assert "test_coaching_pipeline_regression.py" in regression_step["run"]
+
+    schema_step = _step_named(python_tests_job, "Run explain schema validation tests")
+    assert "test_explain_schema_validation.py" in schema_step["run"]
 
     # Full suite with coverage must still follow as the authoritative CI gate
     suite_step = _step_named(python_tests_job, "Run pytest suite with coverage")

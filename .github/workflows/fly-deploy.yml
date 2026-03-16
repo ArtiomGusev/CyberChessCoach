@@ -75,6 +75,9 @@ jobs:
       - name: Run coaching pipeline regression tests
         run: python -m pytest -q llm/tests/test_coaching_pipeline_regression.py
 
+      - name: Run explain schema validation tests
+        run: python -m pytest -q llm/tests/test_explain_schema_validation.py
+
       - name: Run pytest suite with coverage
         run: python llm/run_ci_suite.py
 

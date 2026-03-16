@@ -8,6 +8,7 @@ from llm.rag.documents import ALL_RAG_DOCUMENTS
 from llm.rag.prompts.mode_2.render import render_mode_2_prompt
 from llm.rag.prompts.system_v2_mode_2 import SYSTEM_PROMPT
 from llm.rag.validators.mode_2_negative import validate_mode_2_negative
+from llm.rag.validators.explain_response_schema import EngineSignalSchema, ExplainSchemaError
 from llm.confidence_language_controller import build_language_controller_block
 from llm.rag.prompts.input_sanitizer import sanitize_user_query
 
@@ -100,6 +101,10 @@ def generate_validated_explanation(
 
         try:
             validate_mode_2_negative(explanation)
+            # Validate engine signal structural integrity before returning.
+            # The ESV is produced by extract_engine_signal(); if the schema
+            # check fails here it is a programming error (never from LLM text).
+            EngineSignalSchema.model_validate(esv)
             return explanation, esv  # ✅ success
         except AssertionError as e:
             last_error = str(e)
