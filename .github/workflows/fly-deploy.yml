@@ -78,6 +78,24 @@ jobs:
       - name: Run explain schema validation tests
         run: python -m pytest -q llm/tests/test_explain_schema_validation.py
 
+      - name: Run engine regression tests
+        run: |
+          python -m pytest -q --tb=short \
+            llm/tests/test_engine_response_format.py \
+            llm/tests/test_engine_eval_lru_cache.py \
+            llm/tests/test_engine_eval_limits.py \
+            llm/tests/test_engine_eval_benchmark.py \
+            llm/tests/test_engine_eval_fallback_cache.py \
+            llm/tests/test_stockfish_adapter_isolation.py \
+            llm/tests/test_elite_engine_service.py \
+            llm/tests/test_elite_engine_service_resolve_limits.py
+
+      - name: Run API security tests
+        run: python -m pytest -q --tb=short llm/tests/test_api_security.py
+
+      - name: Run regression pipeline
+        run: python llm/run_regression_suite.py
+
       - name: Run pytest suite with coverage
         run: python llm/run_ci_suite.py
 
@@ -208,9 +226,13 @@ jobs:
       - name: Install Android SDK platform 36
         run: sdkmanager "platforms;android-36"
 
-      - name: Generate packaged manifests and run unit tests
+      - name: Run Android host JVM unit tests
         working-directory: android
-        run: ./gradlew test processDebugManifestForPackage processReleaseManifestForPackage --no-daemon
+        run: ./gradlew test --no-daemon
+
+      - name: Generate and validate packaged manifests
+        working-directory: android
+        run: ./gradlew processDebugManifestForPackage processReleaseManifestForPackage --no-daemon
 
       - name: Verify packaged manifest includes INTERNET permission
         shell: bash

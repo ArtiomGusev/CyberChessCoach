@@ -93,11 +93,15 @@ def test_ci_workflow_hardens_checkout_and_supply_chain_controls():  # pylint: di
         "GRADLE_USER_HOME": "${{ github.workspace }}/.gradle",
         "ANDROID_USER_HOME": "${{ github.workspace }}/.android",
     }
-    android_step = _step_named(android_build, "Generate packaged manifests and run unit tests")
-    assert android_step["working-directory"] == "android"
+    android_test_step = _step_named(android_build, "Run Android host JVM unit tests")
+    assert android_test_step["working-directory"] == "android"
+    assert android_test_step["run"] == "./gradlew test --no-daemon"
+
+    android_manifest_step = _step_named(android_build, "Generate and validate packaged manifests")
+    assert android_manifest_step["working-directory"] == "android"
     assert (
-        android_step["run"]
-        == "./gradlew test processDebugManifestForPackage processReleaseManifestForPackage --no-daemon"
+        android_manifest_step["run"]
+        == "./gradlew processDebugManifestForPackage processReleaseManifestForPackage --no-daemon"
     )
     verify_manifest_step = _step_named(
         android_build, "Verify packaged manifest includes INTERNET permission"
@@ -387,6 +391,16 @@ def test_python_tests_job_includes_mandatory_explicit_steps():
     schema_step = _step_named(python_tests_job, "Run explain schema validation tests")
     assert "test_explain_schema_validation.py" in schema_step["run"]
 
+    engine_regression_step = _step_named(python_tests_job, "Run engine regression tests")
+    assert "test_engine_eval_benchmark.py" in engine_regression_step["run"]
+    assert "test_engine_eval_lru_cache.py" in engine_regression_step["run"]
+
+    api_security_step = _step_named(python_tests_job, "Run API security tests")
+    assert "test_api_security.py" in api_security_step["run"]
+
+    regression_pipeline_step = _step_named(python_tests_job, "Run regression pipeline")
+    assert "run_regression_suite.py" in regression_pipeline_step["run"]
+
     # Full suite with coverage must still follow as the authoritative CI gate
     suite_step = _step_named(python_tests_job, "Run pytest suite with coverage")
     assert "run_ci_suite.py" in suite_step["run"]
@@ -394,8 +408,12 @@ def test_python_tests_job_includes_mandatory_explicit_steps():
     # Ordering: explicit category steps must precede the full suite
     step_names = [step.get("name") for step in python_tests_job["steps"]]
     golden_idx = step_names.index("Run golden tests (Category A — mandatory)")
+    engine_regression_idx = step_names.index("Run engine regression tests")
+    regression_pipeline_idx = step_names.index("Run regression pipeline")
     suite_idx = step_names.index("Run pytest suite with coverage")
     assert golden_idx < suite_idx, "Category A golden tests must run before the full suite"
+    assert engine_regression_idx < suite_idx, "Engine regression tests must run before the full suite"
+    assert regression_pipeline_idx < suite_idx, "Regression pipeline must run before the full suite"
 
 
 def test_run_quality_gate_runs_all_steps_by_default(monkeypatch, tmp_path):
