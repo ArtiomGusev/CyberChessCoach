@@ -27,6 +27,7 @@ TEST_TARGETS = [
     "llm/tests/test_elite_engine_service.py",
     "llm/tests/test_elite_engine_service_resolve_limits.py",
     "llm/tests/test_engine_eval_fallback_cache.py",
+    "llm/tests/test_engine_eval_lru_cache.py",
     "llm/tests/test_engine_eval_limits.py",
     "llm/tests/test_fen_move_cache_key.py",
     "llm/tests/test_host_app.py",
