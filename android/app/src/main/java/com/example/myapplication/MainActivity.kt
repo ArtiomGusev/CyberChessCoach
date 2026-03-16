@@ -29,6 +29,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var coachText: TextView
     private lateinit var coachDock: LinearLayout
     private lateinit var statusPulse: View
+    private lateinit var scoreRow: LinearLayout
+    private lateinit var txtEngineScore: TextView
+    private lateinit var txtMistakeCategory: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,6 +45,9 @@ class MainActivity : AppCompatActivity() {
         coachText = findViewById(R.id.txtCoach)
         coachDock = findViewById(R.id.txtCoachContainer)
         statusPulse = findViewById(R.id.statusPulse)
+        scoreRow = findViewById(R.id.scoreRow)
+        txtEngineScore = findViewById(R.id.txtEngineScore)
+        txtMistakeCategory = findViewById(R.id.txtMistakeCategory)
 
         val btnReset = findViewById<Button>(R.id.btnReset)
         val btnUndo = findViewById<Button>(R.id.btnUndo)
@@ -84,7 +90,10 @@ class MainActivity : AppCompatActivity() {
                 viewModel.reset()
                 chessBoard.resetBoard()
             }
-            coachText.text = "🧠 New game. Control the center!"
+            coachText.text = "♟ New game. Control the center!"
+            scoreRow.visibility = View.GONE
+            txtEngineScore.text = ""
+            txtMistakeCategory.text = ""
             drawerLayout.closeDrawer(GravityCompat.END)
         }
 
@@ -127,6 +136,26 @@ class MainActivity : AppCompatActivity() {
 
         chessBoard.coachListener = { comment -> coachText.text = comment }
         chessBoard.promotionListener = { r, c -> showPromotionDialog(r, c) }
+
+        chessBoard.quickCoachListener = { update ->
+            // Show engine score badge
+            txtEngineScore.text = update.scoreText
+
+            // Show mistake category badge with severity colour
+            txtMistakeCategory.text = update.classification.label()
+            val categoryColor = when (update.classification) {
+                MistakeClassification.BLUNDER    -> 0xFFFF4444.toInt()
+                MistakeClassification.MISTAKE    -> 0xFFFF8800.toInt()
+                MistakeClassification.INACCURACY -> 0xFFFFDD00.toInt()
+                MistakeClassification.GOOD       -> 0xFF00FFFF.toInt()
+            }
+            txtMistakeCategory.setTextColor(categoryColor)
+            scoreRow.visibility = View.VISIBLE
+
+            // Show explanation or fallback when position is solid
+            coachText.text = update.explanation
+                ?: "Solid move — tap for deeper analysis"
+        }
     }
 
     private fun startPulseAnimation() {

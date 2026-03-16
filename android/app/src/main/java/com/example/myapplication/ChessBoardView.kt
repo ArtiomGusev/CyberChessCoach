@@ -44,6 +44,8 @@ class ChessBoardView @JvmOverloads constructor(
     var onMovePlayed: ((Int, Int, Int, Int) -> Unit)? = null
     var coachListener: ((String) -> Unit)? = null
     var promotionListener: ((Int, Int) -> Unit)? = null
+    /** Emits a structured [QuickCoachUpdate] after each AI move. */
+    var quickCoachListener: ((QuickCoachUpdate) -> Unit)? = null
 
     private data class MoveRecord(
         val sr: Int, val sc: Int, val tr: Int, val tc: Int,
@@ -179,9 +181,11 @@ class ChessBoardView @JvmOverloads constructor(
             return
         }
 
+        val capturedPiece = board[tr][tc]
         executeMove(fr, fc, tr, tc)
         whiteToMove = !whiteToMove
         invalidate()
+        quickCoachListener?.invoke(QuickCoachLogic.buildUpdate(capturedPiece, board))
     }
 
     fun undoMove(): Boolean? {

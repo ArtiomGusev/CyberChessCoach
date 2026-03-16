@@ -57,6 +57,48 @@
                     android:alpha="0.3"
                     android:layerType="software"/>
 
+                <!-- SCORE + CATEGORY BADGES (hidden until first AI move) -->
+                <LinearLayout
+                    android:id="@+id/scoreRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    android:paddingTop="6dp"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/txtEngineScore"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="#00FFFF"
+                        android:textSize="11sp"
+                        android:typeface="monospace"
+                        android:paddingStart="6dp"
+                        android:paddingEnd="6dp"
+                        android:paddingTop="2dp"
+                        android:paddingBottom="2dp"
+                        android:background="#1A004040"/>
+
+                    <TextView
+                        android:id="@+id/txtMistakeCategory"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textSize="10sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.08"
+                        android:textAllCaps="true"
+                        android:layout_marginStart="8dp"
+                        android:paddingStart="6dp"
+                        android:paddingEnd="6dp"
+                        android:paddingTop="2dp"
+                        android:paddingBottom="2dp"/>
+
+                </LinearLayout>
+
+                <!-- STATUS PULSE + COACHING EXPLANATION / FALLBACK -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
