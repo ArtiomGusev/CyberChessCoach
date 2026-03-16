@@ -205,6 +205,8 @@ python llm/run_ci_suite.py
 python -m pytest -q llm/rag/tests/golden/test_retriever.py
 python -m pytest -q llm/rag/tests/golden/test_prompt_snapshot.py
 python -m pytest -q llm/rag/tests/contracts/test_fake_llm.py
+python -m pytest -q llm/tests/test_api_contract_validation.py
+python -m pytest -q llm/tests/test_coaching_pipeline_regression.py
 
 Before release (local)
 python -m pytest -q llm/rag/tests/llm/test_ollama_smoke.py
@@ -219,7 +221,14 @@ python llm/run_ci_suite.py
 python -m pytest -q llm/rag/tests/golden/test_retriever.py
 python -m pytest -q llm/rag/tests/golden/test_prompt_snapshot.py
 python -m pytest -q llm/rag/tests/contracts/test_fake_llm.py
+python -m pytest -q llm/tests/test_api_contract_validation.py
+python -m pytest -q llm/tests/test_coaching_pipeline_regression.py
 
+
+The golden tests, LLM contract tests, API contract validation, and coaching pipeline
+regression tests each run as explicit named steps in the python-tests CI job
+(fly-deploy.yml) so that failures are immediately visible in the GitHub Actions UI.
+The full suite (run_ci_suite.py) follows as the authoritative coverage gate.
 
 CI quality gates also enforce:
 
@@ -342,6 +351,8 @@ Relationship to Other Tests
 Test Type	Frequency
 Golden tests	Every commit
 Contract tests	Every commit
+API contract validation	Every commit
+Coaching pipeline regression	Every commit
 Regression tests	On change events
 Quality tests	On demand
 Enforcement Rule

@@ -357,6 +357,41 @@ def test_run_ci_suite_builds_expected_pytest_command(monkeypatch, tmp_path):
         }
     ]
     assert "llm/tests/test_ci_pipeline.py" in run_ci_suite.TEST_TARGETS
+    assert "llm/tests/test_api_contract_validation.py" in run_ci_suite.TEST_TARGETS
+    assert "llm/tests/test_coaching_pipeline_regression.py" in run_ci_suite.TEST_TARGETS
+
+
+def test_python_tests_job_includes_mandatory_explicit_steps():
+    """Verify the python-tests CI job has explicit named steps for each mandatory test category.
+
+    TESTING.md CI Policy requires these to be distinct named steps so failures are
+    immediately visible in the GitHub Actions UI rather than buried in the full suite log.
+    """
+    workflow = _load_workflow("fly-deploy.yml")
+    python_tests_job = workflow["jobs"]["python-tests"]
+
+    golden_step = _step_named(python_tests_job, "Run golden tests (Category A — mandatory)")
+    assert "test_retriever.py" in golden_step["run"]
+    assert "test_prompt_snapshot.py" in golden_step["run"]
+
+    contract_step = _step_named(python_tests_job, "Run LLM contract tests (Category B — mandatory)")
+    assert "test_fake_llm.py" in contract_step["run"]
+
+    api_contract_step = _step_named(python_tests_job, "Run API contract validation")
+    assert "test_api_contract_validation.py" in api_contract_step["run"]
+
+    regression_step = _step_named(python_tests_job, "Run coaching pipeline regression tests")
+    assert "test_coaching_pipeline_regression.py" in regression_step["run"]
+
+    # Full suite with coverage must still follow as the authoritative CI gate
+    suite_step = _step_named(python_tests_job, "Run pytest suite with coverage")
+    assert "run_ci_suite.py" in suite_step["run"]
+
+    # Ordering: explicit category steps must precede the full suite
+    step_names = [step.get("name") for step in python_tests_job["steps"]]
+    golden_idx = step_names.index("Run golden tests (Category A — mandatory)")
+    suite_idx = step_names.index("Run pytest suite with coverage")
+    assert golden_idx < suite_idx, "Category A golden tests must run before the full suite"
 
 
 def test_run_quality_gate_runs_all_steps_by_default(monkeypatch, tmp_path):

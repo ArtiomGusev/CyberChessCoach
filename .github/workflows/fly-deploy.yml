@@ -63,6 +63,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r llm/requirements-ci.txt
 
+      - name: Run golden tests (Category A — mandatory)
+        run: python -m pytest -q llm/rag/tests/golden/test_retriever.py llm/rag/tests/golden/test_prompt_snapshot.py
+
+      - name: Run LLM contract tests (Category B — mandatory)
+        run: python -m pytest -q llm/rag/tests/contracts/test_fake_llm.py
+
+      - name: Run API contract validation
+        run: python -m pytest -q llm/tests/test_api_contract_validation.py
+
+      - name: Run coaching pipeline regression tests
+        run: python -m pytest -q llm/tests/test_coaching_pipeline_regression.py
+
       - name: Run pytest suite with coverage
         run: python llm/run_ci_suite.py
 
