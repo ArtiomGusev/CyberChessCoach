@@ -63,6 +63,7 @@ class EventStorage:
     # Load recent events
     # -------------------------
     def get_recent_games(self, player_id: str, limit: int = 20):
+        """Return the most recent GameEvent records for a specific player."""
         return (
             self.db.query(GameEvent)
             .filter_by(player_id=player_id)
@@ -70,7 +71,9 @@ class EventStorage:
             .limit(limit)
             .all()
         )
-    def get_recent_games(self, limit: int = 50):
+
+    def get_all_recent_games(self, limit: int = 50):
+        """Return the most recent GameEvent records across all players."""
         return (
             self.db.query(GameEvent)
             .order_by(GameEvent.created_at.desc())
