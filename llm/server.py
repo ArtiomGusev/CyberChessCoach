@@ -4,6 +4,7 @@ import chess
 import time
 import threading
 from functools import lru_cache
+from typing import Literal
 from fastapi import FastAPI, Header, HTTPException, Depends, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -46,6 +47,10 @@ from llm.seca.skill.pipeline import SkillPipeline
 from llm.seca.world_model.safe_stub import SafeWorldModel
 from llm.seca.explainer.safe_explainer import SafeExplainer
 from llm.seca.safety.freeze import enforce
+from llm.seca.coach.chat_pipeline import (
+    generate_chat_reply,
+    ChatTurn as _ChatPipelineTurn,
+)
 from llm.seca.storage.repo import (
     create_game,
     log_move,
@@ -466,6 +471,48 @@ class GameFinishClosedLoopRequest(BaseModel):
     game_id: int
 
 
+class ChatTurnModel(BaseModel):
+    """A single turn in a coaching conversation."""
+
+    role: Literal["user", "assistant"]
+    content: str
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, v: str) -> str:
+        if len(v) > 2000:
+            raise ValueError("message content too long (max 2000 chars)")
+        return sanitize_user_query(v) if v else v
+
+
+class ChatRequest(BaseModel):
+    """Request body for POST /chat."""
+
+    fen: str
+    messages: list[ChatTurnModel]
+    player_profile: dict | None = None
+    past_mistakes: list[str] | None = None
+
+    @field_validator("fen")
+    @classmethod
+    def validate_fen(cls, v: str) -> str:
+        return _validate_fen_field(v)
+
+    @field_validator("messages")
+    @classmethod
+    def validate_messages(cls, v: list) -> list:
+        if len(v) > 50:
+            raise ValueError("too many messages in history (max 50)")
+        return v
+
+    @field_validator("past_mistakes")
+    @classmethod
+    def validate_past_mistakes(cls, v: list | None) -> list | None:
+        if v is not None and len(v) > 20:
+            raise ValueError("past_mistakes list too long (max 20)")
+        return v
+
+
 def build_engine_signal(req: AnalyzeRequest):
     return extract_engine_signal(req.stockfish_json, fen=req.fen)
 
@@ -691,5 +738,39 @@ def report_outcome(req: OutcomeRequest):
     score = tracker.compute_learning_score(req.explanation_id)
 
     return {"learning_score": score}
+
+
+# ------------------------------------------------------------------
+# Chat endpoint (long-form coaching conversation)
+# ------------------------------------------------------------------
+
+@app.post("/chat")
+@limiter.limit("10/minute")
+def chat(
+    req: ChatRequest,
+    request: Request,
+    _: str = Depends(verify_api_key),
+):
+    """Long-form coaching conversation endpoint.
+
+    Accepts the current FEN, full conversation history, and optional
+    player context.  Returns a deterministic coaching reply that always
+    references the engine evaluation.  No RL adaptation occurs.
+    """
+    turns = [
+        _ChatPipelineTurn(role=t.role, content=t.content)
+        for t in req.messages
+    ]
+    result = generate_chat_reply(
+        fen=req.fen,
+        messages=turns,
+        player_profile=req.player_profile,
+        past_mistakes=req.past_mistakes,
+    )
+    return {
+        "reply": result.reply,
+        "engine_signal": result.engine_signal,
+        "mode": result.mode,
+    }
 
 

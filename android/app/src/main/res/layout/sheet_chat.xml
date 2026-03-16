@@ -7,29 +7,68 @@
     android:padding="16dp"
     android:background="#0B0F14">
 
-    <!-- MINI BOARD PREVIEW (Visible when keyboard is up) -->
+    <!-- MINI BOARD PREVIEW -->
     <com.example.myapplication.ChessBoardView
         android:id="@+id/miniBoard"
         android:layout_width="120dp"
         android:layout_height="120dp"
         android:layout_gravity="center_horizontal"
-        android:layout_marginBottom="12dp"/>
+        android:layout_marginBottom="8dp"/>
 
-    <androidx.core.widget.NestedScrollView
-        android:id="@+id/scrollView"
+    <!-- ENGINE CONTEXT HEADER (hidden until first backend reply) -->
+    <LinearLayout
+        android:id="@+id/engineContextHeader"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
+        android:paddingTop="5dp"
+        android:paddingBottom="5dp"
+        android:background="#0D1A1A"
+        android:layout_marginBottom="6dp"
+        android:visibility="gone">
+
+        <!-- Cyan neon left accent bar -->
+        <View
+            android:layout_width="3dp"
+            android:layout_height="match_parent"
+            android:background="#00FFFF"
+            android:alpha="0.7"
+            android:layout_marginEnd="8dp"/>
+
+        <TextView
+            android:id="@+id/txtEngineContext"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#00FFFF"
+            android:textSize="11sp"
+            android:typeface="monospace"
+            android:letterSpacing="0.05"
+            android:alpha="0.9"/>
+
+    </LinearLayout>
+
+    <!-- NEON DIVIDER -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#00FFFF"
+        android:alpha="0.15"
+        android:layout_marginBottom="6dp"/>
+
+    <!-- MESSAGE LIST (RecyclerView — stable, efficient rendering) -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recyclerMessages"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:fillViewport="true">
+        android:clipToPadding="false"
+        android:paddingBottom="4dp"
+        android:scrollbars="vertical"/>
 
-        <LinearLayout
-            android:id="@+id/messagesLayout"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"/>
-
-    </androidx.core.widget.NestedScrollView>
-
+    <!-- INPUT ROW -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -44,13 +83,19 @@
             android:backgroundTint="#0B0F14"
             android:hint="Ask something about this position…"
             android:textColor="#00FFFF"
-            android:textColorHint="#EAEAEA" />
+            android:textColorHint="#EAEAEA"
+            android:inputType="textMultiLine|textCapSentences"
+            android:maxLines="3"/>
 
         <Button
             android:id="@+id/btnSend"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Send"/>
+            android:text="Send"
+            android:textColor="#000000"
+            android:backgroundTint="#00FFFF"
+            android:layout_marginStart="8dp"/>
+
     </LinearLayout>
 
 </LinearLayout>

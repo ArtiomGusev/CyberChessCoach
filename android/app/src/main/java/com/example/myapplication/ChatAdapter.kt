@@ -20,6 +20,12 @@ class ChatAdapter : RecyclerView.Adapter<ChatAdapter.VH>() {
         notifyItemInserted(messages.size - 1)
     }
 
+    fun clear() {
+        val count = messages.size
+        messages.clear()
+        notifyItemRangeRemoved(0, count)
+    }
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
         val tv = TextView(parent.context).apply {
             setPadding(24, 16, 24, 16)

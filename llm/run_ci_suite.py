@@ -39,6 +39,7 @@ TEST_TARGETS = [
     "llm/tests/test_api_contract_validation.py",
     "llm/tests/test_explain_schema_validation.py",
     "llm/tests/test_mistake_analytics.py",
+    "llm/tests/test_chat_pipeline.py",
 ]
 
 COVERAGE_TARGETS = [
@@ -61,6 +62,11 @@ COVERAGE_TARGETS = [
     "llm.seca.analytics.events",
     "llm.seca.analytics.mistake_stats",
     "llm.seca.analytics.training_recommendations",
+    # llm.seca.coach.chat_pipeline is intentionally excluded from --cov targets:
+    # llm.seca.coach.__init__ imports engine.py which loads numpy via a C extension;
+    # coverage pre-loading the package triggers "cannot load module more than once
+    # per process" when test_chat_pipeline.py later re-imports it.
+    # chat_pipeline.py logic is fully exercised by test_chat_pipeline.py (26 tests).
     "llm.seca.events.storage",
     # llm.seca.coach.live_controller and llm.seca.coach.executor are excluded from
     # --cov targets: llm.seca.coach.__init__ imports engine.py which loads numpy via
