@@ -1,4 +1,5 @@
 fastapi==0.128.1
+starlette==0.50.0
 uvicorn==0.40.0
 orjson==3.11.7
 pyyaml==6.0.3

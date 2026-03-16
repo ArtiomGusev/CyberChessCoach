@@ -1,6 +1,7 @@
 services:
   api:
     build: .
+    user: "10001:10001"
     environment:
       COACH_OLLAMA_URL: ${COACH_OLLAMA_URL:-http://host.docker.internal:11434}
       COACH_OLLAMA_MODEL: ${COACH_OLLAMA_MODEL:-qwen2.5:7b-instruct-q2_K}
