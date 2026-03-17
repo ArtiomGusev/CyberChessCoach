@@ -498,14 +498,14 @@ jobs:
       - name: Fail on published app image vulnerabilities
         if: steps.trivy-app-image.outcome == 'failure'
         run: |
-          echo "Trivy found HIGH/CRITICAL vulnerabilities in the published app image."
-          # exit 1
+          echo "::warning::Trivy found issues, but we are proceeding to deploy."
+          # exit 1  
 
       - name: Fail on published llm API image vulnerabilities
         if: steps.trivy-api-image.outcome == 'failure'
         run: |
-          echo "Trivy found HIGH/CRITICAL vulnerabilities in the published llm API image."
-          # exit 1
+          echo "::warning::Trivy found issues in API, but we are proceeding to deploy."
+          # exit 1  
 
   deploy:
     name: Deploy to Fly
