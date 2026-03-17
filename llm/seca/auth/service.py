@@ -1,4 +1,5 @@
 import hashlib
+from datetime import datetime
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session as DBSession
 
@@ -79,6 +80,10 @@ class AuthService:
 
         token_hash = hashlib.sha256(token.encode()).hexdigest()
         if token_hash != session.token_hash:
+            return None
+
+        # CWE-613: enforce server-side session expiry
+        if session.expires_at is not None and session.expires_at < datetime.utcnow():
             return None
 
         return session.player

@@ -42,6 +42,7 @@ jobs:
         uses: github/codeql-action/init@v4
         with:
           languages: python
+          config-file: .github/codeql-config.yml
 
       - name: Analyze with CodeQL
         uses: github/codeql-action/analyze@v4
@@ -62,6 +63,7 @@ jobs:
         uses: github/codeql-action/init@v4
         with:
           languages: javascript
+          config-file: .github/codeql-config.yml
 
       - name: Analyze with CodeQL
         uses: github/codeql-action/analyze@v4

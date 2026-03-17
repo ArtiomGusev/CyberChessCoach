@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 from sqlalchemy.orm import Session as DBSession
 
 from llm.seca.auth.router import get_db, get_current_player
+from llm.seca.shared_limiter import limiter
 from .storage import EventStorage
 from llm.seca.skills.updater import SkillUpdater
 from llm.seca.brain.models import RatingUpdate, ConfidenceUpdate
@@ -67,6 +68,7 @@ class GameFinishRequest(BaseModel):
 
 
 @router.post("/finish")
+@limiter.limit("5/minute")
 def finish_game(
     req: GameFinishRequest,
     player=Depends(get_current_player),
