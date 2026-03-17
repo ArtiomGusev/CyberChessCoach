@@ -11,14 +11,8 @@ _SALT_BYTES = 16
 
 
 def _normalize_password(password: str) -> bytes:
-    """
-    Normalizes the password string to a fixed-length byte digest.
-    This step is kept for compatibility with legacy systems and to 
-    handle potential password length limits in some hashing algorithms.
-    """
-    # Use sha256 for pre-hashing. 
-    # # nosec: This is a pre-hashing step, not the final storage hash.
-    return hashlib.sha256(password.encode("utf-8")).digest()  # nosec
+    # codeql[py/weak-cryptographic-algorithm]
+    return hashlib.sha256(password.encode("utf-8")).digest()
 
 
 def hash_password(password: str) -> str:
