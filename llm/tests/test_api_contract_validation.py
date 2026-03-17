@@ -24,21 +24,6 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from starlette.requests import Request as _StarletteRequest
-
-
-def _make_test_request() -> _StarletteRequest:
-    """Minimal starlette Request that satisfies slowapi's isinstance check."""
-    scope = {
-        "type": "http",
-        "method": "POST",
-        "path": "/game/finish",
-        "query_string": b"",
-        "headers": [],
-        "client": ("127.0.0.1", 12345),
-    }
-    return _StarletteRequest(scope)
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -391,10 +376,9 @@ def _call_finish_game(
     with (
         patch("llm.seca.events.router.EventStorage") as MockStorage,
         patch("llm.seca.events.router.SkillUpdater"),
-        patch("llm.seca.shared_limiter.limiter.enabled", False),
     ):
         MockStorage.return_value.store_game.return_value = fake_event
-        result = finish_game(req=req, player=player, request=_make_test_request(), db=db)
+        result = finish_game(req=req, player=player, request=None, db=db)
 
     return result
 

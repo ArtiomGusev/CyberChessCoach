@@ -68,26 +68,12 @@ def get_current_player(
 # ---------------------------
 # Schemas
 # ---------------------------
-import re
-from pydantic import BaseModel, field_validator
-
-# RFC-5321-compatible simple email regex (no Unicode/IDN needed here)
-_EMAIL_RE = re.compile(
-    r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$'
-)
+from pydantic import BaseModel
 
 
 class RegisterRequest(BaseModel):
     email: str
     password: str
-
-    @field_validator("email")
-    @classmethod
-    def validate_email_format(cls, v: str) -> str:
-        cleaned = v.strip()
-        if not _EMAIL_RE.match(cleaned):
-            raise ValueError("invalid email format")
-        return cleaned
 
 
 class LoginRequest(BaseModel):

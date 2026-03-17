@@ -1,4 +1,3 @@
-import logging
 import os
 import shutil
 import chess
@@ -7,8 +6,6 @@ import threading
 from functools import lru_cache
 from typing import Literal
 from fastapi import FastAPI, Header, HTTPException, Depends, Request, BackgroundTasks
-
-_logger = logging.getLogger(__name__)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
@@ -69,12 +66,6 @@ API_KEY = os.getenv("SECA_API_KEY")
 ENV = os.getenv("SECA_ENV", "dev")
 IS_PROD = ENV in {"prod", "production"}
 DEBUG = not IS_PROD
-
-if API_KEY is None and not IS_PROD:
-    _logger.warning(
-        "SECA_API_KEY is not set — all protected endpoints are unauthenticated "
-        "(dev mode). Set SECA_API_KEY in production."
-    )
 
 app = FastAPI(title="SECA Chess Coach API")
 app.state.limiter = limiter
