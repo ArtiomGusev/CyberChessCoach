@@ -518,7 +518,6 @@ jobs:
       - dependency-security
       - node-security
       - docker-images
-      - image-security
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
