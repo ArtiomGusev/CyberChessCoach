@@ -46,3 +46,5 @@ engines/stockfish.exe
 
 # ========= LOCAL TOOLS =========
 tools/run_autonomous.sh
+
+.fake
