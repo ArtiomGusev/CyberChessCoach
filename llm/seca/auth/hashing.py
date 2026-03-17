@@ -10,27 +10,17 @@ _ITERATIONS = 600000
 _SALT_BYTES = 16
 
 
-def _normalize_password(password: str) -> bytes:
-    """
-    Normalizes the password string to a fixed-length byte digest.
-    This step is kept for compatibility with legacy systems and to 
-    handle potential password length limits in some hashing algorithms.
-    """
-    # Use sha256 for pre-hashing. 
-    # # nosec: This is a pre-hashing step, not the final storage hash.
-    return hashlib.sha256(password.encode("utf-8")).digest()  # nosec
-
-
 def hash_password(password: str) -> str:
     """
     Creates a secure, salted hash of the password using PBKDF2-HMAC-SHA256.
     Returns a string in the format: $scheme$iterations$salt$hash
     """
-    normalized = _normalize_password(password)
+    # Use the raw UTF-8 encoded password as input to PBKDF2.
+    password_bytes = password.encode("utf-8")
     salt = os.urandom(_SALT_BYTES)
     
     # Generate the derived key
-    dk = hashlib.pbkdf2_hmac("sha256", normalized, salt, _ITERATIONS)
+    dk = hashlib.pbkdf2_hmac("sha256", password_bytes, salt, _ITERATIONS)
     
     # Encode salt and derived key to Base64 for text storage
     salt_b64 = base64.b64encode(salt).decode()
@@ -56,8 +46,9 @@ def verify_password(password: str, password_hash: str) -> bool:
     except (ValueError, IndexError, base64.binascii.Error):
         return False
         
-    normalized = _normalize_password(password)
-    dk = hashlib.pbkdf2_hmac("sha256", normalized, salt, iterations)
+    # Use the same UTF-8 encoded password as input to PBKDF2.
+    password_bytes = password.encode("utf-8")
+    dk = hashlib.pbkdf2_hmac("sha256", password_bytes, salt, iterations)
     
     # Use hmac.compare_digest to prevent timing attacks
     return hmac.compare_digest(dk, expected)
