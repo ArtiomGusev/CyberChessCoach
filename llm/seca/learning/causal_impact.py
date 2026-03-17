@@ -35,6 +35,7 @@ class SimpleCausalDataset:
 # Extremely simple ATE estimator (placeholder for real causal model)
 # ==================================================================
 
+
 class MeanDifferenceATE:
     def fit(self, X, t, y):
         treated = y[t > 0.5]
@@ -54,6 +55,7 @@ class MeanDifferenceATE:
 # ==================================================================
 # Public engine used by SECA
 # ==================================================================
+
 
 class CausalTrainingImpactEngine:
     """

@@ -1,5 +1,6 @@
 import subprocess
 
+
 class OllamaLLM:
     def __init__(self, model, temperature=None):
         self.model = model

@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+
 @dataclass
 class CoachingPolicy:
     explanation_style: str = "balanced"

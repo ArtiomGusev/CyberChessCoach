@@ -1,5 +1,6 @@
 # llm/confidence_language_controller.py
 
+
 def compute_confidence(esv: dict) -> str:
     if esv["evaluation"]["type"] == "mate":
         return "high"
@@ -40,6 +41,7 @@ def compute_tone(player_elo: int | None, confidence: str, urgency: str) -> str:
 # STYLE INJECTION INTO PROMPT
 # ---------------------------------------------------------
 
+
 def build_style_instruction(tone: str, urgency: str, confidence: str) -> str:
     tone_map = {
         "supportive": "Use encouraging and simple language.",
@@ -71,6 +73,7 @@ def build_style_instruction(tone: str, urgency: str, confidence: str) -> str:
 # ---------------------------------------------------------
 # MAIN ENTRY
 # ---------------------------------------------------------
+
 
 def build_language_controller_block(esv: dict, player_elo: int | None = None) -> str:
     confidence = compute_confidence(esv)

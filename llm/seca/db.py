@@ -3,6 +3,7 @@ from sqlalchemy.orm import sessionmaker
 
 try:
     from llm.seca.auth.models import Base
+
     # Register models before create_all
     import llm.seca.events.models  # noqa: F401
     import llm.seca.brain.models  # noqa: F401
@@ -25,12 +26,8 @@ Base.metadata.create_all(bind=engine)
 
 # Lightweight migration for new columns
 with engine.connect() as conn:
-    rows = conn.execute(
-        text("PRAGMA table_info(players)")
-    ).fetchall()
+    rows = conn.execute(text("PRAGMA table_info(players)")).fetchall()
     columns = {r[1] for r in rows}
     if "player_embedding" not in columns:
-        conn.execute(
-            text("ALTER TABLE players ADD COLUMN player_embedding TEXT DEFAULT '[]'")
-        )
+        conn.execute(text("ALTER TABLE players ADD COLUMN player_embedding TEXT DEFAULT '[]'"))
         conn.commit()

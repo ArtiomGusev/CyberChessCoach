@@ -54,8 +54,8 @@ class LinUCB:
         return LinUCB(n_actions, n_features)
 
 
-N_ACTIONS = 6          # number of training strategies
-N_FEATURES = 4         # context vector size
+N_ACTIONS = 6  # number of training strategies
+N_FEATURES = 4  # context vector size
 STRATEGIES = [
     "tactics",
     "calculation",

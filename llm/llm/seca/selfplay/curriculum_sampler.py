@@ -7,6 +7,7 @@ from typing import Dict, List
 # Data structure returned by sampler
 # ------------------------------------------------------------
 
+
 @dataclass
 class CurriculumPosition:
     fen: str
@@ -56,6 +57,7 @@ THEME_FENS: Dict[str, List[str]] = {
 # Helper functions
 # ------------------------------------------------------------
 
+
 def choose_theme_from_weaknesses(weaknesses: Dict[str, float]) -> str:
     """
     Pick the most severe weakness → corresponding theme.
@@ -91,7 +93,7 @@ def choose_opponent_rating(player_rating: float, confidence: float) -> float:
     """
     Curriculum difficulty rule:
 
-    Low confidence  → easier opponent  
+    Low confidence  → easier opponent
     High confidence → stronger opponent
     """
 
@@ -106,6 +108,7 @@ def choose_opponent_rating(player_rating: float, confidence: float) -> float:
 # ------------------------------------------------------------
 # Main sampler API
 # ------------------------------------------------------------
+
 
 def sample_curriculum_position(
     rating: float,

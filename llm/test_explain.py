@@ -7,8 +7,8 @@ if __name__ == "__main__":
             "evaluation": {"type": "cp", "value": -180},
             "eval_delta": -150,
             "errors": {"last_move_quality": "mistake"},
-            "tactical_flags": ["hanging_piece"]
-        }
+            "tactical_flags": ["hanging_piece"],
+        },
     }
 
     result = explain_position(payload)

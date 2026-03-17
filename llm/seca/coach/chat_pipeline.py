@@ -31,6 +31,7 @@ Constraints
   sourced from or overridden by any user-provided text.
 - SafeExplainer produces the base evaluation sentence deterministically.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -68,11 +69,12 @@ _DELTA_HINT: dict[str, str] = {
 # Data structures
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class ChatTurn:
     """A single turn in the conversation (user or assistant)."""
 
-    role: str    # "user" | "assistant"
+    role: str  # "user" | "assistant"
     content: str
 
 
@@ -99,6 +101,7 @@ class ChatReply:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _format_engine_context(engine_signal: dict) -> str:
     """Produce a one-line engine evaluation summary sentence.
@@ -142,18 +145,13 @@ def _build_context_block(
         if skill:
             parts.append(f"Player skill level: {skill}.")
         if mistakes:
-            tags = [
-                (m.get("tag", str(m)) if isinstance(m, dict) else str(m))
-                for m in mistakes[:3]
-            ]
+            tags = [(m.get("tag", str(m)) if isinstance(m, dict) else str(m)) for m in mistakes[:3]]
             parts.append(f"Recurring mistake areas: {', '.join(tags)}.")
         if strengths:
             parts.append(f"Strengths: {', '.join(str(s) for s in strengths[:2])}.")
 
     if past_mistakes:
-        parts.append(
-            f"Recent training focus: {', '.join(past_mistakes[:3])}."
-        )
+        parts.append(f"Recent training focus: {', '.join(past_mistakes[:3])}.")
 
     return " ".join(parts)
 
@@ -200,8 +198,7 @@ def _build_reply(
         phase = engine_signal.get("phase", "middlegame")
         phase_hint = _PHASE_HINT.get(phase, "")
         parts.append(
-            f'On your question "{query}": '
-            f"Consider the engine evaluation above. {phase_hint}"
+            f'On your question "{query}": ' f"Consider the engine evaluation above. {phase_hint}"
         )
 
     return " ".join(parts)
@@ -210,6 +207,7 @@ def _build_reply(
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def generate_chat_reply(
     fen: str,

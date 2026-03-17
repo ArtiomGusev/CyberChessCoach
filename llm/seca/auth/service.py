@@ -45,6 +45,7 @@ class AuthService:
 
         # 1️⃣ create session_id manually BEFORE DB insert
         import uuid, hashlib
+
         session_id = str(uuid.uuid4())
 
         # 2️⃣ create JWT using this session_id

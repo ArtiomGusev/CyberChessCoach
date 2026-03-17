@@ -10,10 +10,7 @@ def build():
     df = pd.read_csv(DATA_PATH)
 
     df["future_gain"] = (
-        df["rating_after"]
-        .rolling(HORIZON, min_periods=1)
-        .sum()
-        .shift(-HORIZON + 1)
+        df["rating_after"].rolling(HORIZON, min_periods=1).sum().shift(-HORIZON + 1)
         - df["rating_before"]
     )
 

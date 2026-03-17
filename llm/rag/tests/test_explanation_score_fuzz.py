@@ -44,7 +44,11 @@ def test_fuzz_scores_monotonic_between_high_and_low_samples():
         band = random.choice(BANDS)
         # pick a random subset of flags
         flags = [f for i, f in enumerate(FLAGS) if random.random() < 0.6]
-        engine_signal = {"evaluation": {"band": band}, "tactical_flags": flags, "last_move_quality": "mistake"}
+        engine_signal = {
+            "evaluation": {"band": band},
+            "tactical_flags": flags,
+            "last_move_quality": "mistake",
+        }
         text = make_high_quality_text(band, flags)
         sc = score_explanation(text=text, engine_signal=engine_signal)
         assert 0 <= sc <= 10, f"Score out of bounds: {sc}"
@@ -70,7 +74,9 @@ def test_fuzz_scores_monotonic_between_high_and_low_samples():
         details = "\n".join([f"score={s}: text={t!r} engine={e!r}" for s, t, e in worst])
         import pytest
 
-        pytest.fail(f"High-quality mean {high_mean} < MIN_QUALITY_SCORE ({MIN_QUALITY_SCORE}). Worst high examples:\n{details}")
+        pytest.fail(
+            f"High-quality mean {high_mean} < MIN_QUALITY_SCORE ({MIN_QUALITY_SCORE}). Worst high examples:\n{details}"
+        )
 
     # Low-quality mean should be strictly less than high-quality mean by at least 1
     if (high_mean - low_mean) < 1.0:
@@ -91,9 +97,21 @@ def test_fuzz_no_exceptions_for_random_texts():
     random.seed(RNG_SEED + 1)
     for _ in range(SAMPLES * 2):
         # randomly compose a text from fragments
-        fragments = ["White", "Black", "has advantage", "because", "should", "consider", "hanging piece", "decisive"]
+        fragments = [
+            "White",
+            "Black",
+            "has advantage",
+            "because",
+            "should",
+            "consider",
+            "hanging piece",
+            "decisive",
+        ]
         text = " ".join(random.choices(fragments, k=random.randint(1, 10)))
-        engine_signal = {"evaluation": {"band": random.choice(BANDS)}, "tactical_flags": random.sample(FLAGS, k=random.randint(0, len(FLAGS)))}
+        engine_signal = {
+            "evaluation": {"band": random.choice(BANDS)},
+            "tactical_flags": random.sample(FLAGS, k=random.randint(0, len(FLAGS))),
+        }
         try:
             sc = score_explanation(text=text, engine_signal=engine_signal)
         except Exception as e:
@@ -104,4 +122,6 @@ def test_fuzz_no_exceptions_for_random_texts():
         if not (0 <= sc <= 10):
             import pytest
 
-            pytest.fail(f"Score out of bounds for random text: {sc} (text={text!r} engine={engine_signal!r})")
+            pytest.fail(
+                f"Score out of bounds for random text: {sc} (text={text!r} engine={engine_signal!r})"
+            )

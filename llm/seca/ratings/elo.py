@@ -7,6 +7,7 @@ from dataclasses import dataclass
 # CONFIG
 # -------------------------------
 
+
 def k_factor(rating: int) -> int:
     """Stage-adaptive K."""
     if rating < 1200:
@@ -19,6 +20,7 @@ def k_factor(rating: int) -> int:
 # -------------------------------
 # CORE MATH
 # -------------------------------
+
 
 def expected_score(r_a: float, r_b: float) -> float:
     """Logistic Elo expectation."""
@@ -52,9 +54,10 @@ def update_rating(
 # RESULT ENUM
 # -------------------------------
 
+
 @dataclass
 class GameResult:
-    score: float          # 1 / 0.5 / 0
+    score: float  # 1 / 0.5 / 0
     opponent_rating: int
     confidence: float = 1.0
 

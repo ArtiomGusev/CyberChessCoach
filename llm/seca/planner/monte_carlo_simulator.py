@@ -54,18 +54,12 @@ class MonteCarloTrainingSimulator:
     # Evaluate first action
     # -------------------------
     def evaluate_action(self, start_state: list[float], action) -> float:
-        rewards = [
-            self.rollout(start_state, action)
-            for _ in range(self.simulations)
-        ]
+        rewards = [self.rollout(start_state, action) for _ in range(self.simulations)]
         return sum(rewards) / len(rewards)
 
     # -------------------------
     # Best action
     # -------------------------
     def best_action(self, start_state: list[float]):
-        scores = {
-            a: self.evaluate_action(start_state, a)
-            for a in self.actions
-        }
+        scores = {a: self.evaluate_action(start_state, a) for a in self.actions}
         return max(scores, key=scores.get)

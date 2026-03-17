@@ -1,9 +1,7 @@
 import uuid
 from datetime import datetime, timedelta
 
-from sqlalchemy import (
-    Column, String, DateTime, Float, ForeignKey, Text
-)
+from sqlalchemy import Column, String, DateTime, Float, ForeignKey, Text
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()

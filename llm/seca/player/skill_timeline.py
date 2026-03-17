@@ -33,7 +33,4 @@ def build_skill_points(games: List[GameRecord]) -> List[SkillPoint]:
     smooth = smooth_skill(raw_skill)
 
     # rating placeholder (filled later)
-    return [
-        SkillPoint(date=g.date, skill=s, rating=0.0)
-        for g, s in zip(games, smooth)
-    ]
+    return [SkillPoint(date=g.date, skill=s, rating=0.0) for g, s in zip(games, smooth)]

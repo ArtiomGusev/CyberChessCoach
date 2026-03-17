@@ -66,9 +66,7 @@ class SECALearner:
 
         # Debug output
         try:
-            ate = self.causal.estimator.ate(
-                self.causal.dataset.to_arrays()[0]
-            )
+            ate = self.causal.estimator.ate(self.causal.dataset.to_arrays()[0])
             print(">>> Causal model updated. ATE:", ate)
         except Exception:
             print(">>> Causal model updated (ATE unavailable)")

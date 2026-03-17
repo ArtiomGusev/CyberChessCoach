@@ -34,8 +34,8 @@ class AdaptiveOpponent:
         options = {
             "Threads": self.config.threads,
             "Hash": self.config.hash_mb,
-            "MultiPV": 1,          # single best move only
-            "Skill Level": 20,     # disable randomness from skill noise
+            "MultiPV": 1,  # single best move only
+            "Skill Level": 20,  # disable randomness from skill noise
         }
         try:
             self.engine.configure(options)
@@ -81,8 +81,7 @@ class AdaptiveOpponent:
         self.engine.configure({"Clear Hash": None})
 
         result = self.engine.play(
-            board,
-            chess.engine.Limit(depth=self.config.depth)  # FIXED DEPTH ONLY
+            board, chess.engine.Limit(depth=self.config.depth)  # FIXED DEPTH ONLY
         )
 
         best_move = result.move

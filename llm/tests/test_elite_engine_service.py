@@ -91,7 +91,11 @@ def test_opening_book_prefers_repo_root_book_path(monkeypatch):
         def close(self):
             return None
 
-    expected = str((Path(opening_book_module.__file__).resolve().parent.parent / "books" / "performance.bin").resolve())
+    expected = str(
+        (
+            Path(opening_book_module.__file__).resolve().parent.parent / "books" / "performance.bin"
+        ).resolve()
+    )
 
     monkeypatch.delenv("OPENING_BOOK_PATH", raising=False)
     monkeypatch.setattr(

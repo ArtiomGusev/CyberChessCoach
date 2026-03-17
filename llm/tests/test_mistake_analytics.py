@@ -33,6 +33,7 @@ Invariants pinned
 19. LAYER_BOUNDARY: mistake_stats.py does not import brain/coach/skills/engine modules.
 20. LAYER_BOUNDARY: training_recommendations.py does not import brain/coach/skills/engine modules.
 """
+
 from __future__ import annotations
 
 import ast
@@ -61,6 +62,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_imports(module_path: Path) -> set[str]:
     source = module_path.read_text(encoding="utf-8")
     tree = ast.parse(source)
@@ -79,6 +81,7 @@ def _get_imports(module_path: Path) -> set[str]:
 # 1. MistakeCategory constants
 # ---------------------------------------------------------------------------
 
+
 class TestMistakeCategory:
 
     def test_all_categories_are_non_empty_strings(self):
@@ -86,9 +89,9 @@ class TestMistakeCategory:
             assert isinstance(cat, str) and cat, f"Category is empty: {cat!r}"
 
     def test_all_categories_are_unique(self):
-        assert len(MistakeCategory.ALL) == len(set(MistakeCategory.ALL)), (
-            "Duplicate category constant detected"
-        )
+        assert len(MistakeCategory.ALL) == len(
+            set(MistakeCategory.ALL)
+        ), "Duplicate category constant detected"
 
     def test_expected_four_categories(self):
         assert len(MistakeCategory.ALL) == 4
@@ -104,6 +107,7 @@ class TestMistakeCategory:
 # 2. _derive_category_scores
 # ---------------------------------------------------------------------------
 
+
 class TestDeriveCategoryScores:
 
     def test_opening_maps_to_opening_preparation(self):
@@ -118,8 +122,8 @@ class TestDeriveCategoryScores:
         scores = _derive_category_scores({"middlegame": 0.10})
         pos = scores.get(MistakeCategory.POSITIONAL_PLAY, 0)
         tac = scores.get(MistakeCategory.TACTICAL_VISION, 0)
-        assert pos == pytest.approx(0.06)   # 0.10 × 0.6
-        assert tac == pytest.approx(0.04)   # 0.10 × 0.4
+        assert pos == pytest.approx(0.06)  # 0.10 × 0.6
+        assert tac == pytest.approx(0.04)  # 0.10 × 0.4
 
     def test_middlegame_positional_score_exceeds_tactical(self):
         scores = _derive_category_scores({"middlegame": 0.20})
@@ -149,6 +153,7 @@ class TestDeriveCategoryScores:
 # ---------------------------------------------------------------------------
 # 3. aggregate_from_weakness_dicts
 # ---------------------------------------------------------------------------
+
 
 class TestAggregateFromWeaknessDicts:
 
@@ -249,6 +254,7 @@ class TestAggregateFromWeaknessDicts:
 # 4. _priority_from_ratio
 # ---------------------------------------------------------------------------
 
+
 class TestPriorityFromRatio:
 
     def test_ratio_exactly_one_is_low(self):
@@ -275,6 +281,7 @@ class TestPriorityFromRatio:
 # ---------------------------------------------------------------------------
 # 5. generate_training_recommendations
 # ---------------------------------------------------------------------------
+
 
 class TestGenerateTrainingRecommendations:
 
@@ -304,9 +311,9 @@ class TestGenerateTrainingRecommendations:
             recs = generate_training_recommendations(stats)
             assert len(recs) == 1
             assert recs[0].category == category
-            assert recs[0].priority == "low", (
-                f"Score exactly at threshold should be 'low', got {recs[0].priority!r}"
-            )
+            assert (
+                recs[0].priority == "low"
+            ), f"Score exactly at threshold should be 'low', got {recs[0].priority!r}"
 
     def test_score_at_twice_threshold_returns_high_priority(self):
         for category, (threshold, _) in _CATEGORY_RULES.items():
@@ -314,9 +321,9 @@ class TestGenerateTrainingRecommendations:
             scores[category] = threshold * 2.0
             stats = self._stats_with_scores(scores)
             recs = generate_training_recommendations(stats)
-            assert recs[0].priority == "high", (
-                f"Score at 2× threshold should be 'high' for {category}"
-            )
+            assert (
+                recs[0].priority == "high"
+            ), f"Score at 2× threshold should be 'high' for {category}"
 
     def test_score_at_125x_threshold_returns_medium(self):
         for category, (threshold, _) in _CATEGORY_RULES.items():
@@ -324,27 +331,27 @@ class TestGenerateTrainingRecommendations:
             scores[category] = threshold * 1.25
             stats = self._stats_with_scores(scores)
             recs = generate_training_recommendations(stats)
-            assert recs[0].priority == "medium", (
-                f"Score at 1.25× threshold should be 'medium' for {category}"
-            )
+            assert (
+                recs[0].priority == "medium"
+            ), f"Score at 1.25× threshold should be 'medium' for {category}"
 
     def test_results_sorted_high_before_medium_before_low(self):
         t_opening = _CATEGORY_RULES[MistakeCategory.OPENING_PREPARATION][0]
         t_tactical = _CATEGORY_RULES[MistakeCategory.TACTICAL_VISION][0]
         t_endgame = _CATEGORY_RULES[MistakeCategory.ENDGAME_TECHNIQUE][0]
         scores = {
-            MistakeCategory.OPENING_PREPARATION: t_opening * 1.1,   # low
-            MistakeCategory.TACTICAL_VISION:     t_tactical * 2.5,  # high
-            MistakeCategory.POSITIONAL_PLAY:     0.0,
-            MistakeCategory.ENDGAME_TECHNIQUE:   t_endgame * 1.3,   # medium
+            MistakeCategory.OPENING_PREPARATION: t_opening * 1.1,  # low
+            MistakeCategory.TACTICAL_VISION: t_tactical * 2.5,  # high
+            MistakeCategory.POSITIONAL_PLAY: 0.0,
+            MistakeCategory.ENDGAME_TECHNIQUE: t_endgame * 1.3,  # medium
         }
         stats = self._stats_with_scores(scores)
         recs = generate_training_recommendations(stats)
 
         priorities = [r.priority for r in recs]
-        assert priorities == sorted(priorities, key=lambda p: {"high": 0, "medium": 1, "low": 2}[p]), (
-            f"Recommendations not sorted by priority: {priorities}"
-        )
+        assert priorities == sorted(
+            priorities, key=lambda p: {"high": 0, "medium": 1, "low": 2}[p]
+        ), f"Recommendations not sorted by priority: {priorities}"
         assert recs[0].priority == "high"
 
     def test_each_focus_has_non_empty_rationale(self):
@@ -359,9 +366,9 @@ class TestGenerateTrainingRecommendations:
         stats = self._stats_with_scores(scores)
         recs = generate_training_recommendations(stats)
         for rec in recs:
-            assert rec.category in MistakeCategory.ALL, (
-                f"Unknown category in recommendation: {rec.category!r}"
-            )
+            assert (
+                rec.category in MistakeCategory.ALL
+            ), f"Unknown category in recommendation: {rec.category!r}"
 
     def test_focus_is_frozen_dataclass(self):
         f = TrainingFocus(category="x", priority="low", rationale="r")
@@ -371,14 +378,16 @@ class TestGenerateTrainingRecommendations:
     def test_determinism_same_stats_same_order(self):
         scores = {
             MistakeCategory.OPENING_PREPARATION: 0.15,
-            MistakeCategory.TACTICAL_VISION:     0.10,
-            MistakeCategory.POSITIONAL_PLAY:     0.07,
-            MistakeCategory.ENDGAME_TECHNIQUE:   0.09,
+            MistakeCategory.TACTICAL_VISION: 0.10,
+            MistakeCategory.POSITIONAL_PLAY: 0.07,
+            MistakeCategory.ENDGAME_TECHNIQUE: 0.09,
         }
         stats = self._stats_with_scores(scores)
         recs1 = generate_training_recommendations(stats)
         recs2 = generate_training_recommendations(stats)
-        assert [(r.category, r.priority) for r in recs1] == [(r.category, r.priority) for r in recs2]
+        assert [(r.category, r.priority) for r in recs1] == [
+            (r.category, r.priority) for r in recs2
+        ]
 
     def test_real_aggregation_pipeline_produces_recommendations(self):
         """
@@ -392,9 +401,9 @@ class TestGenerateTrainingRecommendations:
         recs = generate_training_recommendations(stats)
 
         categories = [r.category for r in recs]
-        assert MistakeCategory.OPENING_PREPARATION in categories, (
-            f"Expected OPENING_PREPARATION in recommendations, got {categories}"
-        )
+        assert (
+            MistakeCategory.OPENING_PREPARATION in categories
+        ), f"Expected OPENING_PREPARATION in recommendations, got {categories}"
         opening_recs = [r for r in recs if r.category == MistakeCategory.OPENING_PREPARATION]
         assert opening_recs[0].priority == "high"
 
@@ -417,6 +426,7 @@ class TestGenerateTrainingRecommendations:
 # 6. EventType.MISTAKE_PATTERN_RECORDED
 # ---------------------------------------------------------------------------
 
+
 class TestMistakePatternEventType:
 
     def test_event_type_exists(self):
@@ -437,6 +447,7 @@ class TestMistakePatternEventType:
 # 7. Layer boundary: new analytics modules must not import brain/coach/engine
 # ---------------------------------------------------------------------------
 
+
 class TestAnalyticsNewModulesLayerBoundary:
     """
     mistake_stats.py and training_recommendations.py must stay within the
@@ -450,21 +461,18 @@ class TestAnalyticsNewModulesLayerBoundary:
         assert path.exists(), f"{rel_path} not found"
         imports = _get_imports(path)
         return {
-            imp for imp in imports
-            if any(pattern in imp for pattern in self._FORBIDDEN_PATTERNS)
+            imp for imp in imports if any(pattern in imp for pattern in self._FORBIDDEN_PATTERNS)
         }
 
     def test_mistake_stats_no_brain_imports(self):
         violations = self._check_file("llm/seca/analytics/mistake_stats.py")
-        assert not violations, (
-            f"mistake_stats.py imports forbidden modules: {violations}"
-        )
+        assert not violations, f"mistake_stats.py imports forbidden modules: {violations}"
 
     def test_training_recommendations_no_brain_imports(self):
         violations = self._check_file("llm/seca/analytics/training_recommendations.py")
-        assert not violations, (
-            f"training_recommendations.py imports forbidden modules: {violations}"
-        )
+        assert (
+            not violations
+        ), f"training_recommendations.py imports forbidden modules: {violations}"
 
     def test_mistake_stats_no_sqlalchemy_imports(self):
         """Pure-Python analytics helpers must not import SQLAlchemy."""

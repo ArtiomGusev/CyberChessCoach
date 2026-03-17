@@ -30,9 +30,7 @@ class EnginePool:
     def __init__(self, size: int = 4, stockfish_path: str | None = None):
         self.size = max(1, size)
         self.stockfish_path = stockfish_path or STOCKFISH_PATH
-        self._queue: asyncio.Queue[chess.engine.UciProtocol] = asyncio.Queue(
-            maxsize=self.size
-        )
+        self._queue: asyncio.Queue[chess.engine.UciProtocol] = asyncio.Queue(maxsize=self.size)
         self._engines: List[Tuple[asyncio.SubprocessTransport, chess.engine.UciProtocol]] = []
         self._started = False
         self._threads = max(1, int(os.getenv("ENGINE_THREADS", "1")))

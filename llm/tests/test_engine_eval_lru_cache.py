@@ -37,6 +37,7 @@ _SlowPool           — hands out one _SlowFakeEngine on try_acquire(),
                       then None; used for latency test.
 _EmptyPool          — try_acquire() always None; acquire() raises.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -61,6 +62,7 @@ _FEN_E4_E5 = "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2"
 # Test doubles
 # ---------------------------------------------------------------------------
 
+
 class _FakeEngine:
     _SCORE = 42
     _BEST_MOVE = "e2e4"
@@ -76,6 +78,7 @@ class _FakeEngine:
 
 class _SlowFakeEngine:
     """Simulates a slow engine: each analyse() call sleeps 50 ms."""
+
     _SCORE = 99
     _BEST_MOVE = "d2d4"
     _SLEEP_S = 0.05
@@ -141,6 +144,7 @@ class _EmptyPool:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_evaluator(pool, *, acquire_timeout_ms: int = 0) -> EngineEvaluator:
     ev = EngineEvaluator(pool)
     ev.acquire_timeout_ms = acquire_timeout_ms
@@ -150,6 +154,7 @@ def _make_evaluator(pool, *, acquire_timeout_ms: int = 0) -> EngineEvaluator:
 # ---------------------------------------------------------------------------
 # 1. Cache key format
 # ---------------------------------------------------------------------------
+
 
 class TestCacheKeyFormat:
     """Pin the string format of EngineEvaluator._cache_key."""
@@ -199,10 +204,12 @@ class TestCacheKeyFormat:
 # 2. FEN isolation — different positions never share a cache entry
 # ---------------------------------------------------------------------------
 
+
 class TestFenIsolation:
 
     def test_different_fens_get_separate_cache_entries(self):
         """Cache hit for position A must not be served for position B."""
+
         async def _run():
             ev = _make_evaluator(_EmptyPool())
             # Populate cache with startpos fallback.
@@ -214,12 +221,13 @@ class TestFenIsolation:
         m_start, m_e4 = asyncio.run(_run())
 
         assert m_start["engine_result_cache_hit"] is False
-        assert m_e4["engine_result_cache_hit"] is False, (
-            "Cache hit for startpos must not bleed into a different FEN"
-        )
+        assert (
+            m_e4["engine_result_cache_hit"] is False
+        ), "Cache hit for startpos must not bleed into a different FEN"
 
     def test_three_positions_each_cache_independently(self):
         """Three distinct FENs each require a fresh evaluation on first call."""
+
         async def _run():
             ev = _make_evaluator(_EmptyPool())
             _, m1 = await ev.evaluate_with_metrics(fen=_STARTPOS, nodes=100)
@@ -243,10 +251,12 @@ class TestFenIsolation:
 # 3. Real-engine cache hit — payload integrity
 # ---------------------------------------------------------------------------
 
+
 class TestRealEngineCacheHit:
 
     def test_cache_hit_returns_identical_payload(self):
         """Score and best_move from the cached real-engine result match the original."""
+
         async def _run():
             pool = _TrackingPool()
             ev = _make_evaluator(pool)
@@ -267,6 +277,7 @@ class TestRealEngineCacheHit:
 
     def test_cache_hit_does_not_call_engine_again(self):
         """Pool.try_acquire() is called only once when the second call hits the cache."""
+
         async def _run():
             pool = _TrackingPool()
             ev = _make_evaluator(pool)
@@ -284,6 +295,7 @@ class TestRealEngineCacheHit:
 
     def test_multiple_calls_all_served_from_cache(self):
         """Calls 2–5 for the same position are all served by the LRU cache."""
+
         async def _run():
             pool = _TrackingPool()
             ev = _make_evaluator(pool)
@@ -309,6 +321,7 @@ class TestRealEngineCacheHit:
 # 4. FEN normalization — moves= produces same cache entry as FEN=
 # ---------------------------------------------------------------------------
 
+
 class TestFenNormalization:
 
     def test_moves_list_hits_cache_populated_by_fen(self):
@@ -318,13 +331,12 @@ class TestFenNormalization:
         explicit FEN should resolve to the same normalized position and reach
         the same cache slot.
         """
+
         async def _run():
             pool = _TrackingPool()
             ev = _make_evaluator(pool)
             # First call: supply moves list.
-            r1, m1 = await ev.evaluate_with_metrics(
-                fen=_STARTPOS, moves=["e2e4"], nodes=50
-            )
+            r1, m1 = await ev.evaluate_with_metrics(fen=_STARTPOS, moves=["e2e4"], nodes=50)
             # Second call: supply the resulting FEN directly.
             r2, m2 = await ev.evaluate_with_metrics(fen=_FEN_E4, nodes=50)
             return r1, m1, r2, m2
@@ -332,15 +344,16 @@ class TestFenNormalization:
         r1, m1, r2, m2 = asyncio.run(_run())
 
         assert m1["engine_result_cache_hit"] is False, "First call should be a cold miss"
-        assert m2["engine_result_cache_hit"] is True, (
-            "FEN equivalent to moves=['e2e4'] must hit the same cache entry"
-        )
+        assert (
+            m2["engine_result_cache_hit"] is True
+        ), "FEN equivalent to moves=['e2e4'] must hit the same cache entry"
         assert r2["score"] == r1["score"]
 
 
 # ---------------------------------------------------------------------------
 # 5. LRU eviction — capacity enforcement
 # ---------------------------------------------------------------------------
+
 
 class TestLruEviction:
 
@@ -355,14 +368,15 @@ class TestLruEviction:
         Verify cache state by inspecting _result_cache directly so that
         the verification calls do not re-insert misses and pollute the state.
         """
+
         async def _run():
             ev = _make_evaluator(_EmptyPool())
             ev.result_cache_size = 2
 
-            await ev.evaluate_with_metrics(fen=_STARTPOS, nodes=100)   # miss → [STARTPOS]
-            await ev.evaluate_with_metrics(fen=_FEN_E4, nodes=100)     # miss → [STARTPOS, FEN_E4]
-            await ev.evaluate_with_metrics(fen=_STARTPOS, nodes=100)   # hit  → [FEN_E4, STARTPOS]
-            await ev.evaluate_with_metrics(fen=_FEN_E4_E5, nodes=100) # miss → evicts FEN_E4
+            await ev.evaluate_with_metrics(fen=_STARTPOS, nodes=100)  # miss → [STARTPOS]
+            await ev.evaluate_with_metrics(fen=_FEN_E4, nodes=100)  # miss → [STARTPOS, FEN_E4]
+            await ev.evaluate_with_metrics(fen=_STARTPOS, nodes=100)  # hit  → [FEN_E4, STARTPOS]
+            await ev.evaluate_with_metrics(fen=_FEN_E4_E5, nodes=100)  # miss → evicts FEN_E4
 
             # Build the expected keys for each position.
             key_start = ev._cache_key(_STARTPOS, None, 100)
@@ -374,18 +388,17 @@ class TestLruEviction:
 
         cached_keys, key_start, key_e4, key_e4e5 = asyncio.run(_run())
 
-        assert key_e4 not in cached_keys, (
-            "_FEN_E4 was the LRU entry and must be evicted from the cache"
-        )
-        assert key_start in cached_keys, (
-            "STARTPOS was promoted to MRU and must survive eviction"
-        )
-        assert key_e4e5 in cached_keys, (
-            "_FEN_E4_E5 was just inserted and must be present in the cache"
-        )
+        assert (
+            key_e4 not in cached_keys
+        ), "_FEN_E4 was the LRU entry and must be evicted from the cache"
+        assert key_start in cached_keys, "STARTPOS was promoted to MRU and must survive eviction"
+        assert (
+            key_e4e5 in cached_keys
+        ), "_FEN_E4_E5 was just inserted and must be present in the cache"
 
     def test_mru_entry_survives_eviction(self):
         """After filling and then accessing a position, it survives subsequent evictions."""
+
         async def _run():
             ev = _make_evaluator(_EmptyPool())
             ev.result_cache_size = 1  # cache holds exactly one entry
@@ -399,14 +412,15 @@ class TestLruEviction:
         m1, m_start_evicted = asyncio.run(_run())
 
         assert m1["engine_result_cache_hit"] is True
-        assert m_start_evicted["engine_result_cache_hit"] is False, (
-            "After inserting a new entry into a size-1 cache, the previous entry is evicted"
-        )
+        assert (
+            m_start_evicted["engine_result_cache_hit"] is False
+        ), "After inserting a new entry into a size-1 cache, the previous entry is evicted"
 
 
 # ---------------------------------------------------------------------------
 # 6. Cache hit latency — performance regression guard
 # ---------------------------------------------------------------------------
+
 
 class TestCacheHitLatency:
 
@@ -456,6 +470,7 @@ class TestCacheHitLatency:
         The metrics dict from a cache hit must report engine_wait_ms=0.0 and
         engine_eval_ms=0.0. These are the documented values for the fast path.
         """
+
         async def _run():
             pool = _TrackingPool()
             ev = _make_evaluator(pool)
@@ -466,9 +481,9 @@ class TestCacheHitLatency:
         m = asyncio.run(_run())
 
         assert m["engine_result_cache_hit"] is True
-        assert m["engine_wait_ms"] == 0.0, (
-            f"engine_wait_ms must be 0.0 on cache hit, got {m['engine_wait_ms']}"
-        )
-        assert m["engine_eval_ms"] == 0.0, (
-            f"engine_eval_ms must be 0.0 on cache hit, got {m['engine_eval_ms']}"
-        )
+        assert (
+            m["engine_wait_ms"] == 0.0
+        ), f"engine_wait_ms must be 0.0 on cache hit, got {m['engine_wait_ms']}"
+        assert (
+            m["engine_eval_ms"] == 0.0
+        ), f"engine_eval_ms must be 0.0 on cache hit, got {m['engine_eval_ms']}"

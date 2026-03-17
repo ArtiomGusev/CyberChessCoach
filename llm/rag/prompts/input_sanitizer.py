@@ -90,8 +90,7 @@ def sanitize_user_query(text: str) -> str:
             detected,
         )
         raise ValueError(
-            f"Prompt injection detected ({len(detected)} pattern(s) matched). "
-            "Request rejected."
+            f"Prompt injection detected ({len(detected)} pattern(s) matched). " "Request rejected."
         )
 
     # 3. Truncate

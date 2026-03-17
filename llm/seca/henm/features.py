@@ -29,7 +29,10 @@ def encode_board(fen: str) -> np.ndarray:
 
 
 def encode_scalar_features(elo: int, complexity: float) -> np.ndarray:
-    return np.array([
-        elo / 3000.0,
-        complexity / 10.0,
-    ], dtype=np.float32)
+    return np.array(
+        [
+            elo / 3000.0,
+            complexity / 10.0,
+        ],
+        dtype=np.float32,
+    )

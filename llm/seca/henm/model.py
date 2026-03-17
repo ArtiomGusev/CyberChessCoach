@@ -15,10 +15,8 @@ class HumanErrorNet(nn.Module):
             nn.Linear(input_dim, 512),
             nn.ReLU(),
             nn.Dropout(0.2),
-
             nn.Linear(512, 256),
             nn.ReLU(),
-
             nn.Linear(256, 4),  # best / inaccuracy / mistake / blunder
         )
 

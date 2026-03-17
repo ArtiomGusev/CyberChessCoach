@@ -73,9 +73,7 @@ class CoachExecutor:
         return CoachContent(
             title="Recovery break",
             description="Short rest to prevent fatigue and rating drop.",
-            payload={
-                "suggestion": "Take a 10-minute walk and return refreshed."
-            },
+            payload={"suggestion": "Take a 10-minute walk and return refreshed."},
         )
 
     # ---------------- DEFAULT ----------------

@@ -6,6 +6,7 @@ from typing import Dict, List, Optional
 # Data structures
 # ---------------------------
 
+
 @dataclass
 class GameSummary:
     rating_before: float
@@ -18,7 +19,7 @@ class GameSummary:
 
 @dataclass
 class CoachAction:
-    type: str                 # NONE / REFLECT / DRILL / PUZZLE / PLAN_UPDATE
+    type: str  # NONE / REFLECT / DRILL / PUZZLE / PLAN_UPDATE
     weakness: Optional[str] = None
     reason: str = ""
 
@@ -26,6 +27,7 @@ class CoachAction:
 # ---------------------------
 # Controller
 # ---------------------------
+
 
 class PostGameCoachController:
     def __init__(self):

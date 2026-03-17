@@ -90,18 +90,21 @@ def run_mode_2(llm, prompt: str, case_type: str) -> str:
     except AssertionError as err:
         pattern = _extract_pattern_from_error(err)
 
-
         # For FakeLLM, preserve immediate failure behavior (tests rely on it)
         if isinstance(llm, FakeLLM):
             raise
-
-        
 
         logger.debug("run_mode_2: initial validation failed, pattern=%s", pattern)
 
         # Helper to run a model rewrite with instructions
         def model_rewrite(instructions: str, text: str) -> str:
-            prompt2 = prompt + "\n\nREWRITE INSTRUCTIONS:\n" + instructions + "\n\nTEXT TO REWRITE:\n" + text
+            prompt2 = (
+                prompt
+                + "\n\nREWRITE INSTRUCTIONS:\n"
+                + instructions
+                + "\n\nTEXT TO REWRITE:\n"
+                + text
+            )
             return llm.generate(prompt2)
 
         # Helper sanitization and rewrite utilities
@@ -221,7 +224,15 @@ def run_mode_2(llm, prompt: str, case_type: str) -> str:
                     continue
 
             # If structural violation flagged, try structure rewrite then deterministic removal
-            structural_keywords = ["plan", "recommended move", "example move", "white can", "black can", "if it", "consider"]
+            structural_keywords = [
+                "plan",
+                "recommended move",
+                "example move",
+                "white can",
+                "black can",
+                "if it",
+                "consider",
+            ]
             if pattern and any(k in pattern for k in structural_keywords):
                 try:
                     candidate = rewrite_remove_structure(candidate)

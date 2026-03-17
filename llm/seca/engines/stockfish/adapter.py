@@ -10,17 +10,11 @@ class StockfishAdapter:
         self.engine = chess.engine.SimpleEngine.popen_uci(str(self.engine_path))
 
     def best_move(self, board: chess.Board) -> chess.Move:
-        result = self.engine.play(
-            board,
-            chess.engine.Limit(depth=self.depth)
-        )
+        result = self.engine.play(board, chess.engine.Limit(depth=self.depth))
         return result.move
 
     def evaluate(self, board: chess.Board) -> dict:
-        info = self.engine.analyse(
-            board,
-            chess.engine.Limit(depth=self.depth)
-        )
+        info = self.engine.analyse(board, chess.engine.Limit(depth=self.depth))
 
         score = info["score"].pov(board.turn)
 

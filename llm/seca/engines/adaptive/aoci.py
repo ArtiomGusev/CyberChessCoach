@@ -32,6 +32,7 @@ except Exception:  # pragma: no cover
 # Strength Model
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class OpponentStrength:
     """Represents adaptive opponent strength configuration."""
@@ -60,6 +61,7 @@ class OpponentStrength:
 # Engine Stub (replace with JNI / Stockfish bridge)
 # ---------------------------------------------------------------------------
 
+
 class EngineAdapter:
     """
     Minimal engine adapter.
@@ -78,6 +80,7 @@ class EngineAdapter:
 # HMPT Wrapper
 # ---------------------------------------------------------------------------
 
+
 class HMPTWrapper:
     """Loads and queries HMPT human‑move model."""
 
@@ -95,6 +98,7 @@ class HMPTWrapper:
 # ---------------------------------------------------------------------------
 # Adaptive Opponent Controller
 # ---------------------------------------------------------------------------
+
 
 class AdaptiveOpponent:
     """

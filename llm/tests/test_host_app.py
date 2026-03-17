@@ -152,7 +152,9 @@ def test_eval_position_defaults_to_fast_nodes_when_limits_missing(monkeypatch):
             )
 
         monkeypatch.setattr(host_app, "engine_eval", _Evaluator())
-        monkeypatch.setattr(host_app.engine_service, "evaluate_with_metrics", _evaluate_with_metrics)
+        monkeypatch.setattr(
+            host_app.engine_service, "evaluate_with_metrics", _evaluate_with_metrics
+        )
 
         result = await host_app.eval_position(host_app.EngineEvalRequest(fen="startpos"))
 
@@ -187,7 +189,9 @@ def test_eval_position_supports_moves_payload(monkeypatch):
             )
 
         monkeypatch.setattr(host_app, "engine_eval", _Evaluator())
-        monkeypatch.setattr(host_app.engine_service, "evaluate_with_metrics", _evaluate_with_metrics)
+        monkeypatch.setattr(
+            host_app.engine_service, "evaluate_with_metrics", _evaluate_with_metrics
+        )
 
         payload = host_app.EngineEvalRequest(
             moves=["e2e4", "e7e5", "g1f3"],
@@ -227,7 +231,9 @@ def test_evaluate_position_records_miss_metrics(monkeypatch):
                 },
             )
 
-        monkeypatch.setattr(host_app.engine_service, "evaluate_with_metrics", _evaluate_with_metrics)
+        monkeypatch.setattr(
+            host_app.engine_service, "evaluate_with_metrics", _evaluate_with_metrics
+        )
 
         result = await host_app._evaluate_position(
             fen="startpos",
@@ -285,7 +291,9 @@ def test_evaluate_position_does_not_record_cache_hits(monkeypatch):
                 },
             )
 
-        monkeypatch.setattr(host_app.engine_service, "evaluate_with_metrics", _evaluate_with_metrics)
+        monkeypatch.setattr(
+            host_app.engine_service, "evaluate_with_metrics", _evaluate_with_metrics
+        )
 
         result = await host_app._evaluate_position(
             fen="startpos",

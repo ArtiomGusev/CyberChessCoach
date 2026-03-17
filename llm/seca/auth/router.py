@@ -22,14 +22,10 @@ SessionLocal = sessionmaker(bind=engine)
 
 Base.metadata.create_all(bind=engine)
 with engine.connect() as conn:
-    rows = conn.execute(
-        text("PRAGMA table_info(players)")
-    ).fetchall()
+    rows = conn.execute(text("PRAGMA table_info(players)")).fetchall()
     columns = {r[1] for r in rows}
     if "player_embedding" not in columns:
-        conn.execute(
-            text("ALTER TABLE players ADD COLUMN player_embedding TEXT DEFAULT '[]'")
-        )
+        conn.execute(text("ALTER TABLE players ADD COLUMN player_embedding TEXT DEFAULT '[]'"))
         conn.commit()
 
 router = APIRouter(prefix="/auth", tags=["auth"])

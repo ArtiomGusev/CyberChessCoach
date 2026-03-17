@@ -285,9 +285,7 @@ class TestExplainResponseContentValidation:
     def test_safe_v1_content_rules_not_applied(self):
         # SafeExplainer produces "best move is e2e4" – content validators
         # are intentionally NOT applied to SAFE_V1 mode.
-        r = _safe_response(
-            explanation="Best move is e2e4. Position is slightly better."
-        )
+        r = _safe_response(explanation="Best move is e2e4. Position is slightly better.")
         result = validate_explain_response(r)
         assert result.mode == "SAFE_V1"
 
@@ -315,7 +313,9 @@ class TestEngineSignalImmutability:
             "phase": "middlegame",
             "errors": {"last_move_quality": "inaccuracy"},
         }
-        esv = extract_engine_signal(stockfish_json, fen="rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1")
+        esv = extract_engine_signal(
+            stockfish_json, fen="rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
+        )
         # Must validate without error
         validated = EngineSignalSchema.model_validate(esv)
         assert validated.evaluation.type == "cp"
@@ -350,7 +350,10 @@ class TestEngineSignalImmutability:
         }
         validated = validate_explain_response(r)
         # Deep equality: schema-validated dict must match original ESV
-        assert validated.engine_signal.model_dump() == EngineSignalSchema.model_validate(esv).model_dump()
+        assert (
+            validated.engine_signal.model_dump()
+            == EngineSignalSchema.model_validate(esv).model_dump()
+        )
 
     def test_engine_signal_integer_band_rejected(self):
         # band must be a string enum, not a numeric score.
@@ -384,12 +387,20 @@ class TestEngineSignalImmutability:
 
 class TestEmbeddedExplainResponseSchema:
     def test_valid_embedded_high_confidence_passes(self):
-        r = {"explanation": "The pawn structure is slightly imbalanced.", "confidence": "high", "tags": []}
+        r = {
+            "explanation": "The pawn structure is slightly imbalanced.",
+            "confidence": "high",
+            "tags": [],
+        }
         result = validate_embedded_explain_response(r)
         assert result.confidence == "high"
 
     def test_valid_embedded_low_confidence_passes(self):
-        r = {"explanation": "Evaluation unclear from available data.", "confidence": "low", "tags": ["partial"]}
+        r = {
+            "explanation": "Evaluation unclear from available data.",
+            "confidence": "low",
+            "tags": ["partial"],
+        }
         result = validate_embedded_explain_response(r)
         assert result.confidence == "low"
 

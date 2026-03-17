@@ -10,8 +10,8 @@ from llm.rag.prompts.mode_2.render_v1 import render_mode_2_prompt
 ROOT = Path(__file__).resolve().parents[3]
 
 SYSTEM_PROMPT = (
-    ROOT / "rag" / "prompts" / "mode_2" / "system_v1.txt"
-).read_text(encoding="utf-8").strip()
+    (ROOT / "rag" / "prompts" / "mode_2" / "system_v1.txt").read_text(encoding="utf-8").strip()
+)
 
 
 def load_json(path: Path):
@@ -29,9 +29,7 @@ def test_all_golden_prompt_snapshots():
         category = case_path.parent.name
         case_id = case_path.stem
 
-        golden_prompt_path = (
-            prompts_dir / category / f"{case_id}.txt"
-        )
+        golden_prompt_path = prompts_dir / category / f"{case_id}.txt"
 
         case = load_json(case_path)
 
@@ -59,9 +57,5 @@ def test_all_golden_prompt_snapshots():
             print(repr(expected))
             raise AssertionError(f"Snapshot mismatch for {case_path}")
 
-
     if failures:
-        raise AssertionError(
-            "Golden prompt snapshot failures:\n" +
-            json.dumps(failures, indent=2)
-        )
+        raise AssertionError("Golden prompt snapshot failures:\n" + json.dumps(failures, indent=2))

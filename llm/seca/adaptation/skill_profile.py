@@ -6,10 +6,10 @@ class SkillProfile:
     rating: float
     confidence: float
 
-    explanation_depth: float      # 0–1
-    concept_complexity: float     # 0–1
-    opponent_strength: float      # 0–1
-    opponent_human_error: float   # 0–1
+    explanation_depth: float  # 0–1
+    concept_complexity: float  # 0–1
+    opponent_strength: float  # 0–1
+    opponent_human_error: float  # 0–1
 
 
 def build_skill_profile(rating: float, confidence: float) -> SkillProfile:
@@ -24,7 +24,7 @@ def build_skill_profile(rating: float, confidence: float) -> SkillProfile:
         rating=rating,
         confidence=confidence,
         explanation_depth=r,
-        concept_complexity=r ** 1.2,
+        concept_complexity=r**1.2,
         opponent_strength=r,
         opponent_human_error=1.0 - r,
     )

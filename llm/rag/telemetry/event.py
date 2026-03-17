@@ -1,6 +1,7 @@
 from dataclasses import dataclass, asdict
 from typing import List
 
+
 @dataclass
 class Mode2TelemetryEvent:
     success: bool

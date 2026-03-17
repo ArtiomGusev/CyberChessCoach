@@ -25,8 +25,8 @@ router = APIRouter(prefix="/game", tags=["game"])
 
 class GameFinishRequest(BaseModel):
     pgn: str
-    result: str        # win / loss / draw
-    accuracy: float    # 0..1
+    result: str  # win / loss / draw
+    accuracy: float  # 0..1
     weaknesses: dict
     player_id: str | None = None
 
@@ -122,9 +122,11 @@ def finish_game(
 
         try:
             from llm.seca.brain.bandit.online_update import update_after_game
+
             update_after_game(context, action_index=0, reward=reward)
             from llm.seca.brain.bandit.trainer import train_bandit
             from llm.seca.brain.neural_policy.train import train_policy
+
             train_bandit()
             train_policy()
         except Exception:
@@ -200,7 +202,6 @@ def finish_game(
             payload={},
         )
 
-
     if SAFE_MODE:
         learning_result = {"status": "safe_mode"}
     else:
@@ -216,13 +217,11 @@ def finish_game(
         "new_rating": rating_after,
         "confidence": confidence_after,
         "learning": learning_result,
-
         "coach_action": {
             "type": coach_action.type,
             "weakness": coach_action.weakness,
             "reason": coach_action.reason,
         },
-
         "coach_content": {
             "title": coach_content.title,
             "description": coach_content.description,

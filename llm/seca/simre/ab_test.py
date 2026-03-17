@@ -1,5 +1,6 @@
 # seca/simre/ab_test.py
 
+
 def run_ab_test(players, base_policy, new_policy, evaluator):
     results = {"A": [], "B": []}
 
@@ -11,6 +12,7 @@ def run_ab_test(players, base_policy, new_policy, evaluator):
         results[group].append(gain)
 
     import numpy as np
+
     mean_A = np.mean(results["A"])
     mean_B = np.mean(results["B"])
 

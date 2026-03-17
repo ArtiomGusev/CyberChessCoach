@@ -18,11 +18,7 @@ class LSFM(nn.Module):
 
         self.game_encoder = GameEncoder(input_dim, d_model)
 
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=d_model,
-            nhead=heads,
-            batch_first=True
-        )
+        encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=heads, batch_first=True)
         self.transformer = nn.TransformerEncoder(encoder_layer, layers)
 
         self.pool = nn.AdaptiveAvgPool1d(1)

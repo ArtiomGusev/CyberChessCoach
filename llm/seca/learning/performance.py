@@ -3,8 +3,8 @@ from dataclasses import dataclass
 
 @dataclass
 class GamePerformance:
-    score: float        # 0–1 overall performance
-    accuracy: float     # move quality proxy
+    score: float  # 0–1 overall performance
+    accuracy: float  # move quality proxy
     blunder_rate: float
 
 

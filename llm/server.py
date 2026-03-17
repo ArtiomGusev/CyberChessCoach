@@ -13,6 +13,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from llm.seca.shared_limiter import limiter
 from dotenv import load_dotenv
 from pydantic import BaseModel, field_validator
+
 try:
     from .player_api import router as player_router
 except ImportError:
@@ -21,6 +22,7 @@ except ImportError:
 from llm.seca.auth.router import router as auth_router
 from llm.seca.events.router import router as game_router
 from llm.seca.curriculum.router import router as curriculum_router
+
 # register SECA models
 import llm.seca.events.models
 
@@ -89,13 +91,16 @@ class _LimitBodySize(BaseHTTPMiddleware):
         if cl:
             try:
                 if int(cl) > _MAX_BODY_BYTES:
-                    return JSONResponse(status_code=413, content={"error": "Request body too large"})
+                    return JSONResponse(
+                        status_code=413, content={"error": "Request body too large"}
+                    )
             except ValueError:
                 return JSONResponse(status_code=400, content={"error": "Invalid Content-Length"})
         return await call_next(request)
 
 
 app.add_middleware(_LimitBodySize)
+
 
 # ---- Security response headers -------------------------------------------
 @app.middleware("http")
@@ -129,6 +134,8 @@ def verify_api_key(x_api_key: str = Header(None)):
         return  # dev mode only — never allowed in prod
     if x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Unauthorized")
+
+
 app.include_router(player_router)
 app.include_router(auth_router)
 app.include_router(game_router)
@@ -576,6 +583,7 @@ def build_engine_signal(req: AnalyzeRequest):
 # Health
 # ------------------------------------------------------------------
 
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -587,9 +595,11 @@ def engine_debug(_: None = Depends(verify_api_key)):
         return {"pool_size": 0}
     return {"pool_size": engine_pool.qsize()}
 
+
 # ------------------------------------------------------------------
 # Move endpoint (pooled stockfish)
 # ------------------------------------------------------------------
+
 
 @app.post("/move")
 @limiter.limit("30/minute")
@@ -684,7 +694,7 @@ def move(
     san = board.san(mv)
     ply = board.fullmove_number * 2 - (0 if board.turn else 1)
     log_move(
-        game_id="demo",   # temporary until session system
+        game_id="demo",  # temporary until session system
         ply=ply,
         fen=normalized_fen,
         uci=mv.uci(),
@@ -724,6 +734,7 @@ def move(
 # Live move endpoint (realtime coaching)
 # ------------------------------------------------------------------
 
+
 @app.post("/live/move")
 def live_move(req: LiveMoveRequest, _: None = Depends(verify_api_key)):
     # TODO: wire LiveCoach and realtime analyzer pipeline
@@ -736,6 +747,7 @@ def live_move(req: LiveMoveRequest, _: None = Depends(verify_api_key)):
 # ------------------------------------------------------------------
 # Analyze endpoint (engine signal only)
 # ------------------------------------------------------------------
+
 
 @app.post("/analyze")
 @limiter.limit("30/minute")
@@ -773,6 +785,7 @@ def start_game(req: StartGameRequest, _: str = Depends(verify_api_key)):
 # Explain endpoint (LLM layer comes next)
 # ------------------------------------------------------------------
 
+
 @app.post("/explain")
 def explain(req: AnalyzeRequest, _: str = Depends(verify_api_key)):
     engine_signal = extract_engine_signal(req.stockfish_json, fen=req.fen)
@@ -801,6 +814,7 @@ def report_outcome(req: OutcomeRequest, request: Request, _: None = Depends(veri
 # Chat endpoint (long-form coaching conversation)
 # ------------------------------------------------------------------
 
+
 @app.post("/chat")
 @limiter.limit("10/minute")
 def chat(
@@ -814,10 +828,7 @@ def chat(
     player context.  Returns a deterministic coaching reply that always
     references the engine evaluation.  No RL adaptation occurs.
     """
-    turns = [
-        _ChatPipelineTurn(role=t.role, content=t.content)
-        for t in req.messages
-    ]
+    turns = [_ChatPipelineTurn(role=t.role, content=t.content) for t in req.messages]
     result = generate_chat_reply(
         fen=req.fen,
         messages=turns,
@@ -829,5 +840,3 @@ def chat(
         "engine_signal": result.engine_signal,
         "mode": result.mode,
     }
-
-

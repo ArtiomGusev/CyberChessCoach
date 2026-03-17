@@ -5,6 +5,7 @@ SAFE_FALLBACK = (
     "but a detailed explanation is currently unavailable."
 )
 
+
 def safe_mode_2_output(llm_output: str) -> str:
     """
     Returns text that is ALWAYS safe for UI.

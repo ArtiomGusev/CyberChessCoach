@@ -32,9 +32,11 @@ def test_aggressive_sanitization_applies():
 
     # Ensure we attempted rewrites up to the retry budget
     from llm.rag.llm.config import MAX_MODE_2_RETRIES
+
     assert len(llm.calls) >= 1 + MAX_MODE_2_RETRIES
     # And that we didn't exceed it
     assert len(llm.calls) <= 1 + MAX_MODE_2_RETRIES
+
 
 def test_retries_exhaustion_raises_for_forced_mate():
     # When case_type is forced_mate, validators require 'cannot be avoided' or 'inevitable'.
@@ -43,6 +45,7 @@ def test_retries_exhaustion_raises_for_forced_mate():
     llm = StubbornLLM(bad)
 
     from llm.rag.llm.config import MAX_MODE_2_RETRIES
+
     with pytest.raises(AssertionError):
         run_mode_2(llm=llm, prompt="PROMPT", case_type="forced_mate")
 
@@ -51,6 +54,7 @@ def test_retries_exhaustion_raises_for_forced_mate():
     # And that we didn't exceed it
     assert len(llm.calls) <= 1 + MAX_MODE_2_RETRIES
 
+
 def test_explain_position_confidence_low_for_low_score(tmp_path, monkeypatch):
     # Use the FakeLLM missing_data_violation output which should produce a low score
     monkeypatch.setenv("LLM_MODEL", "fake:missing_data_violation")
@@ -58,6 +62,7 @@ def test_explain_position_confidence_low_for_low_score(tmp_path, monkeypatch):
     # Re-import the embedded module to pick up the env var (safe in tests)
     import importlib
     import llm.rag.deploy.embedded as embedded
+
     importlib.reload(embedded)
 
     payload = {

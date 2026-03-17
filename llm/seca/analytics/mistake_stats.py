@@ -30,6 +30,7 @@ The split for middlegame reflects that blunders (tactical) and mistakes
 (positional) both occur there. The 0.4 / 0.6 weights are fixed constants;
 no learning or probability update happens here.
 """
+
 from __future__ import annotations
 
 from collections import defaultdict
@@ -39,6 +40,7 @@ from dataclasses import dataclass, field
 # ---------------------------------------------------------------------------
 # Categories
 # ---------------------------------------------------------------------------
+
 
 class MistakeCategory:
     """String constants for the four training-focus categories."""
@@ -63,23 +65,24 @@ class MistakeCategory:
 # Each (phase, category) pair has a fixed contribution weight.
 # Weights for categories that share a phase must be <= 1.0 each.
 _PHASE_CATEGORY_WEIGHTS: dict[tuple[str, str], float] = {
-    ("opening",     MistakeCategory.OPENING_PREPARATION): 1.0,
-    ("middlegame",  MistakeCategory.POSITIONAL_PLAY):     0.6,
-    ("middlegame",  MistakeCategory.TACTICAL_VISION):     0.4,
-    ("endgame",     MistakeCategory.ENDGAME_TECHNIQUE):   1.0,
+    ("opening", MistakeCategory.OPENING_PREPARATION): 1.0,
+    ("middlegame", MistakeCategory.POSITIONAL_PLAY): 0.6,
+    ("middlegame", MistakeCategory.TACTICAL_VISION): 0.4,
+    ("endgame", MistakeCategory.ENDGAME_TECHNIQUE): 1.0,
 }
 
 # Grouped by phase for quick lookup.
 _PHASE_TO_CATEGORIES: dict[str, list[str]] = {
-    "opening":    [MistakeCategory.OPENING_PREPARATION],
+    "opening": [MistakeCategory.OPENING_PREPARATION],
     "middlegame": [MistakeCategory.POSITIONAL_PLAY, MistakeCategory.TACTICAL_VISION],
-    "endgame":    [MistakeCategory.ENDGAME_TECHNIQUE],
+    "endgame": [MistakeCategory.ENDGAME_TECHNIQUE],
 }
 
 
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class MistakeStats:
@@ -112,6 +115,7 @@ class MistakeStats:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _derive_category_scores(phase_rates: dict[str, float]) -> dict[str, float]:
     """
     Map phase-level rates to category scores using the fixed weight table.
@@ -131,6 +135,7 @@ def _derive_category_scores(phase_rates: dict[str, float]) -> dict[str, float]:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def aggregate_from_weakness_dicts(weakness_dicts: list[dict]) -> MistakeStats:
     """

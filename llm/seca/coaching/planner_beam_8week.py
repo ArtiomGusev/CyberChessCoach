@@ -14,6 +14,7 @@ from llm.seca.learning.player_embedding import embedding_from_json, zeros_embedd
 # Data structures
 # --------------------------------------------------
 
+
 @dataclass
 class PlayerState:
     rating: float
@@ -32,6 +33,7 @@ class Trajectory:
 # --------------------------------------------------
 # Planner
 # --------------------------------------------------
+
 
 class BeamPlanner8Week:
     def __init__(
@@ -88,9 +90,7 @@ class BeamPlanner8Week:
         Beam search over 8 weeks.
         """
 
-        beam: List[Trajectory] = [
-            Trajectory(actions=[], states=[start], score=0.0)
-        ]
+        beam: List[Trajectory] = [Trajectory(actions=[], states=[start], score=0.0)]
 
         for _ in range(self.horizon):
 
@@ -132,7 +132,11 @@ def best_8_week_plan(player_id: str, world_model, actions: List[str]) -> Traject
         weakness_keys = sorted(skill_vector.keys())
         weaknesses = np.array([skill_vector.get(k, 0.0) for k in weakness_keys], dtype=np.float32)
 
-        z_player = embedding_from_json(player.player_embedding) if hasattr(player, "player_embedding") else zeros_embedding()
+        z_player = (
+            embedding_from_json(player.player_embedding)
+            if hasattr(player, "player_embedding")
+            else zeros_embedding()
+        )
 
         state = PlayerState(
             rating=float(player.rating),

@@ -15,6 +15,7 @@ import chess
 # Minimal placeholder neural model
 # --------------------------------------------------
 
+
 class _StubHMPT(nn.Module):
     """
     Temporary untrained network.
@@ -32,6 +33,7 @@ class _StubHMPT(nn.Module):
 # --------------------------------------------------
 # Main inference interface used by SECA
 # --------------------------------------------------
+
 
 class HMPTInference:
     """
@@ -92,6 +94,7 @@ class HMPTInference:
 # --------------------------------------------------
 # Convenience factory (used by AdaptiveOpponent)
 # --------------------------------------------------
+
 
 def load_hmpt(model_path: Optional[str] = None) -> HMPTInference:
     """

@@ -14,7 +14,9 @@ ROOT = Path(__file__).resolve().parents[3]
 CASES_DIR = ROOT / "tests" / "golden" / "cases"
 
 
-@pytest.mark.skipif(os.getenv("RUN_REPR_CI") != "1", reason="Optional CI LLM test; set RUN_REPR_CI=1 to enable")
+@pytest.mark.skipif(
+    os.getenv("RUN_REPR_CI") != "1", reason="Optional CI LLM test; set RUN_REPR_CI=1 to enable"
+)
 def test_representative_case_ci():
     """Run a single representative case against the real LLM.
 

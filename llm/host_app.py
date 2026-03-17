@@ -19,6 +19,7 @@ load_dotenv()
 try:
     import orjson  # noqa: F401
     from fastapi.responses import ORJSONResponse
+
     DefaultResponseClass = ORJSONResponse
 except ImportError:
     DefaultResponseClass = JSONResponse
@@ -69,6 +70,7 @@ if os.name == "nt" and hasattr(asyncio, "WindowsProactorEventLoopPolicy"):
 
 app = FastAPI(default_response_class=DefaultResponseClass)
 
+
 # Global Exception Handler for Security (CWE-209)
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -77,6 +79,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={"detail": "An internal server error occurred."},
     )
+
 
 # Initialize Services
 engine_pool = EnginePool(size=int(os.getenv("ENGINE_POOL_SIZE", "2")))
@@ -174,9 +177,7 @@ async def debug_book():
 
 @app.post("/engine/eval")
 async def eval_position(payload: EngineEvalRequest):
-    movetime, nodes = _resolve_request_limits(
-        movetime=payload.movetime_ms, nodes=payload.nodes
-    )
+    movetime, nodes = _resolve_request_limits(movetime=payload.movetime_ms, nodes=payload.nodes)
     return await _evaluate_position(
         fen=payload.fen,
         moves=payload.moves,
@@ -237,9 +238,7 @@ async def debug_engine():
 
 @app.post("/debug/engine-raw")
 async def engine_raw(payload: EngineEvalRequest):
-    movetime, nodes = _resolve_request_limits(
-        movetime=payload.movetime_ms, nodes=payload.nodes
-    )
+    movetime, nodes = _resolve_request_limits(movetime=payload.movetime_ms, nodes=payload.nodes)
     started = time.perf_counter()
     engine = await engine_pool.acquire()
     wait_ms = round((time.perf_counter() - started) * 1000, 3)
@@ -306,6 +305,7 @@ async def engine_predictions(fen: str):
 
 if __name__ == "__main__":
     import uvicorn
+
     # Use string to avoid import issues in some environments
     U_APP = "host_app:app" if __package__ in (None, "") else "llm.host_app:app"
     uvicorn.run(

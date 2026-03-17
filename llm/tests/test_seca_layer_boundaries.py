@@ -37,6 +37,7 @@ def _get_imports_from_source(module_path: Path) -> set[str]:
 # 1. Analytics layer — does not import brain/coach/skills modules
 # ---------------------------------------------------------------------------
 
+
 class TestAnalyticsLayerBoundary:
     """Analytics layer must be purely write-only: AnalyticsEvent records only."""
 
@@ -79,9 +80,9 @@ class TestAnalyticsLayerBoundary:
         logger = AnalyticsLogger(mock_db)
         logger.log(event_type="game_finished", player_id="p1", payload={"result": "win"})
 
-        assert mock_db.add.call_count == 1, (
-            f"Expected db.add called once, called {mock_db.add.call_count} times."
-        )
+        assert (
+            mock_db.add.call_count == 1
+        ), f"Expected db.add called once, called {mock_db.add.call_count} times."
         added_obj = mock_db.add.call_args[0][0]
         assert isinstance(added_obj, AnalyticsEvent), (
             f"Expected AnalyticsEvent to be added, got {type(added_obj).__name__}. "
@@ -121,7 +122,8 @@ _CHESS_ENGINE_PATTERNS = [
 def _has_chess_engine_import(imports: set[str]) -> set[str]:
     """Return imports that reference chess/stockfish engine modules (not sqlalchemy)."""
     return {
-        i for i in imports
+        i
+        for i in imports
         if any(pattern in i for pattern in _CHESS_ENGINE_PATTERNS)
         and not i.startswith("sqlalchemy")
     }
@@ -158,9 +160,7 @@ class TestAuthLayerBoundary:
             pytest.skip("auth/tokens.py not found")
         imports = _get_imports_from_source(path)
         bad = _has_chess_engine_import(imports)
-        assert not bad, (
-            f"auth/tokens.py imports chess engine modules: {bad}."
-        )
+        assert not bad, f"auth/tokens.py imports chess engine modules: {bad}."
 
     def test_all_auth_source_files_free_of_engine_imports(self):
         """Every .py file in llm/seca/auth/ must not import from llm.seca.engines.*"""
@@ -173,14 +173,13 @@ class TestAuthLayerBoundary:
             seca_engine_imports = {i for i in imports if "seca.engines" in i}
             if seca_engine_imports:
                 violations[path.name] = seca_engine_imports
-        assert not violations, (
-            f"Auth layer files import SECA engine modules: {violations}."
-        )
+        assert not violations, f"Auth layer files import SECA engine modules: {violations}."
 
 
 # ---------------------------------------------------------------------------
 # 3. Events layer — store_game() logs to analytics
 # ---------------------------------------------------------------------------
+
 
 class TestEventStorageLogging:
     """EventStorage.store_game() must call AnalyticsLogger with the correct arguments."""
@@ -233,9 +232,7 @@ class TestEventStorageLogging:
             call_kwargs = mock_instance.log.call_args
             # Support both positional and keyword call styles
             logged_event_type = (
-                call_kwargs.kwargs.get("event_type")
-                if call_kwargs.kwargs
-                else call_kwargs.args[0]
+                call_kwargs.kwargs.get("event_type") if call_kwargs.kwargs else call_kwargs.args[0]
             )
             assert logged_event_type == EventType.GAME_FINISHED, (
                 f"Expected EventType.GAME_FINISHED ('{EventType.GAME_FINISHED}'), "
@@ -261,9 +258,9 @@ class TestEventStorageLogging:
 
             call_kwargs = mock_instance.log.call_args
             logged_player_id = call_kwargs.kwargs.get("player_id")
-            assert logged_player_id == "player-42", (
-                f"Expected player_id='player-42', got {logged_player_id!r}"
-            )
+            assert (
+                logged_player_id == "player-42"
+            ), f"Expected player_id='player-42', got {logged_player_id!r}"
 
     def test_store_game_includes_result_in_payload(self):
         """store_game() must include the game result in the analytics payload."""
@@ -284,9 +281,9 @@ class TestEventStorageLogging:
 
             call_kwargs = mock_instance.log.call_args
             payload = call_kwargs.kwargs.get("payload") or {}
-            assert payload.get("result") == "win", (
-                f"Expected payload['result']='win', got {payload!r}"
-            )
+            assert (
+                payload.get("result") == "win"
+            ), f"Expected payload['result']='win', got {payload!r}"
 
     def test_store_game_includes_accuracy_in_payload(self):
         """store_game() must include accuracy in the analytics payload."""
@@ -307,15 +304,14 @@ class TestEventStorageLogging:
 
             call_kwargs = mock_instance.log.call_args
             payload = call_kwargs.kwargs.get("payload") or {}
-            assert "accuracy" in payload, (
-                f"Expected payload to contain 'accuracy', got {payload!r}"
-            )
+            assert "accuracy" in payload, f"Expected payload to contain 'accuracy', got {payload!r}"
             assert payload["accuracy"] == pytest.approx(0.62)
 
 
 # ---------------------------------------------------------------------------
 # 4. Brain models — do not import coach/skills/adaptation/analytics/engine
 # ---------------------------------------------------------------------------
+
 
 class TestBrainModelBoundary:
     """Brain models must only depend on auth.models (shared Base) and SQLAlchemy."""
@@ -361,6 +357,4 @@ class TestBrainModelBoundary:
         path = PROJECT_ROOT / "llm/seca/brain/models.py"
         imports = _get_imports_from_source(path)
         bad = _has_chess_engine_import(imports)
-        assert not bad, (
-            f"brain/models.py imports chess engine modules: {bad}."
-        )
+        assert not bad, f"brain/models.py imports chess engine modules: {bad}."

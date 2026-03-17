@@ -5,6 +5,7 @@ from pathlib import Path
 TELEMETRY_PATH = Path("telemetry/quality_scores.jsonl")
 TELEMETRY_PATH.parent.mkdir(exist_ok=True)
 
+
 def record_quality_score(
     *,
     score: int,

@@ -117,9 +117,9 @@ class TestEvaluationScoreConvention:
         }
         fen = "r2q1rk1/pp2bppp/2n1bn2/2pp4/3P4/2PBPN2/PP1N1PPP/R1BQ1RK1 w - - 0 9"
         esv = extract_engine_signal(stockfish_json, fen=fen)
-        assert esv["evaluation"]["side"] == "white", (
-            "positional_quiet: value=35 (White POV, White ahead) must yield side='white'"
-        )
+        assert (
+            esv["evaluation"]["side"] == "white"
+        ), "positional_quiet: value=35 (White POV, White ahead) must yield side='white'"
         assert esv["evaluation"]["band"] == "small_advantage"
 
     def test_black_advantage_golden_case_tactical_mistake(self):
@@ -135,9 +135,9 @@ class TestEvaluationScoreConvention:
         }
         fen = "r1bqkbnr/pppp1ppp/2n5/4p3/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq - 2 3"
         esv = extract_engine_signal(stockfish_json, fen=fen)
-        assert esv["evaluation"]["side"] == "black", (
-            "tactical_mistake: value=-180 (White POV, Black ahead) must yield side='black'"
-        )
+        assert (
+            esv["evaluation"]["side"] == "black"
+        ), "tactical_mistake: value=-180 (White POV, Black ahead) must yield side='black'"
         assert esv["evaluation"]["band"] == "decisive_advantage"
 
     def test_large_positive_value_is_decisive_advantage(self):
@@ -215,8 +215,14 @@ class TestEvalDeltaClassification:
 class TestEngineSignalSchema:
     def test_cp_signal_has_required_keys(self):
         esv = extract_engine_signal(_cp_signal(50))
-        for key in ("evaluation", "eval_delta", "last_move_quality",
-                    "tactical_flags", "position_flags", "phase"):
+        for key in (
+            "evaluation",
+            "eval_delta",
+            "last_move_quality",
+            "tactical_flags",
+            "position_flags",
+            "phase",
+        ):
             assert key in esv, f"Missing key: {key}"
 
     def test_evaluation_dict_has_required_keys(self):
@@ -226,8 +232,14 @@ class TestEngineSignalSchema:
 
     def test_mate_signal_has_required_keys(self):
         esv = extract_engine_signal(_mate_signal())
-        for key in ("evaluation", "eval_delta", "last_move_quality",
-                    "tactical_flags", "position_flags", "phase"):
+        for key in (
+            "evaluation",
+            "eval_delta",
+            "last_move_quality",
+            "tactical_flags",
+            "position_flags",
+            "phase",
+        ):
             assert key in esv, f"Missing key: {key}"
 
     def test_missing_stockfish_json_returns_defaults(self):
@@ -372,9 +384,7 @@ class TestBestMoveEncoding:
         class _FakeEngine:
             async def analyse(self, board, limit):
                 return {
-                    "score": chess.engine.PovScore(
-                        chess.engine.Mate(3), chess.WHITE
-                    ),
+                    "score": chess.engine.PovScore(chess.engine.Mate(3), chess.WHITE),
                     "pv": [chess.Move.from_uci("f4f7")],
                 }
 
@@ -446,19 +456,24 @@ class TestFenMoveCacheEncoding:
         """Same FEN reached via different move lines → separate cache entries."""
         cache = self._make_cache()
         fen = chess.STARTING_FEN
-        cache.set(fen=fen, mode="blitz", movetime_ms=25, target_elo=None,
-                  move_uci="e2e4", line_key="d2d4")
-        cache.set(fen=fen, mode="blitz", movetime_ms=25, target_elo=None,
-                  move_uci="d2d4", line_key="e2e4")
-        assert cache.get(fen=fen, mode="blitz", movetime_ms=25, target_elo=None,
-                         line_key="d2d4") == "e2e4"
-        assert cache.get(fen=fen, mode="blitz", movetime_ms=25, target_elo=None,
-                         line_key="e2e4") == "d2d4"
+        cache.set(
+            fen=fen, mode="blitz", movetime_ms=25, target_elo=None, move_uci="e2e4", line_key="d2d4"
+        )
+        cache.set(
+            fen=fen, mode="blitz", movetime_ms=25, target_elo=None, move_uci="d2d4", line_key="e2e4"
+        )
+        assert (
+            cache.get(fen=fen, mode="blitz", movetime_ms=25, target_elo=None, line_key="d2d4")
+            == "e2e4"
+        )
+        assert (
+            cache.get(fen=fen, mode="blitz", movetime_ms=25, target_elo=None, line_key="e2e4")
+            == "d2d4"
+        )
 
     def test_cache_miss_returns_none(self):
         cache = self._make_cache()
-        result = cache.get(fen=chess.STARTING_FEN, mode="blitz",
-                           movetime_ms=25, target_elo=None)
+        result = cache.get(fen=chess.STARTING_FEN, mode="blitz", movetime_ms=25, target_elo=None)
         assert result is None
 
     def test_movetime_ms_excluded_from_key_for_same_mode(self):

@@ -14,6 +14,7 @@ from llm.seca.world_model.model import SkillDynamicsModel
 # Dataset
 # ============================================================
 
+
 class SkillDataset(torch.utils.data.Dataset):
     def __init__(self, path: str):
         data = np.load(path)
@@ -33,9 +34,12 @@ class SkillDataset(torch.utils.data.Dataset):
             self.next_states[idx],
             self.rewards[idx],
         )
+
+
 # ============================================================
 # Neural Skill Dynamics World Model
 # ============================================================
+
 
 class ResidualBlock(nn.Module):
     def __init__(self, channels: int):
@@ -95,6 +99,7 @@ class SkillWorldModel(SkillDynamicsModel):
 # Training loop
 # ============================================================
 
+
 @dataclass
 class TrainConfig:
     dataset: str
@@ -106,6 +111,7 @@ class TrainConfig:
     hidden_dim: int | None = None
     device: str | None = None
     save_path: str = "skill_world_model.pt"
+
 
 def train(cfg):
     print(f"Loading dataset: {cfg.dataset}")
@@ -167,6 +173,7 @@ def train(cfg):
     torch.save(model.state_dict(), save_path)
 
     print(f"Saved model -> {save_path}")
+
 
 # ============================================================
 # CLI

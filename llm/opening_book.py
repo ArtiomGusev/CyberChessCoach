@@ -22,6 +22,7 @@ def _default_book_path() -> str:
         return str(ROOT_BOOK_PATH)
     return str(LEGACY_BOOK_PATH)
 
+
 def _env_bool(name: str, default: bool) -> bool:
     raw = os.getenv(name)
     if raw is None:

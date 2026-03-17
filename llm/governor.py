@@ -39,21 +39,13 @@ class AutonomousTrainingGovernor:
             return self.state
 
         # ---- adjust bandit learning rate ----
-        new_alpha = (
-            self.state.alpha_bandit
-            + self.k1 * delta_rating
-            - self.k2 * pred_error
-        )
+        new_alpha = self.state.alpha_bandit + self.k1 * delta_rating - self.k2 * pred_error
 
-        self.state.alpha_bandit = float(
-            np.clip(new_alpha, self.alpha_min, self.alpha_max)
-        )
+        self.state.alpha_bandit = float(np.clip(new_alpha, self.alpha_min, self.alpha_max))
 
         # ---- adjust curriculum difficulty ----
         diff = self.k3 * delta_rating + self.k4 * delta_conf
-        self.state.difficulty_step = float(
-            np.clip(diff, -self.d_max, self.d_max)
-        )
+        self.state.difficulty_step = float(np.clip(diff, -self.d_max, self.d_max))
 
         # ---- freeze detection ----
         if delta_rating < -50 and delta_conf < -0.1:
@@ -75,15 +67,9 @@ class MultiGovernor:
         freeze = any(o.learning_frozen for o in outputs.values())
 
         # ---- weighted merge ----
-        alpha = sum(
-            self.weights[name] * outputs[name].alpha_bandit
-            for name in outputs
-        )
+        alpha = sum(self.weights[name] * outputs[name].alpha_bandit for name in outputs)
 
-        difficulty = sum(
-            self.weights[name] * outputs[name].difficulty_step
-            for name in outputs
-        )
+        difficulty = sum(self.weights[name] * outputs[name].difficulty_step for name in outputs)
 
         return {
             "alpha_bandit": alpha,
@@ -109,8 +95,8 @@ class SafetyShield:
         # ---- difficulty smoothness ----
         diff_change = abs(proposal["difficulty_step"])
         if diff_change > self.delta_max:
-            safe["difficulty_step"] = (
-                self.delta_max * (1 if proposal["difficulty_step"] > 0 else -1)
+            safe["difficulty_step"] = self.delta_max * (
+                1 if proposal["difficulty_step"] > 0 else -1
             )
 
         # ---- bounded alpha ----
@@ -132,7 +118,8 @@ class HumanValueShield:
         skill_gap = abs(state["rating"] - proposal["target_difficulty"])
         if skill_gap > self.flow_band:
             safe["target_difficulty"] = state["rating"] + (
-                self.flow_band if proposal["target_difficulty"] > state["rating"]
+                self.flow_band
+                if proposal["target_difficulty"] > state["rating"]
                 else -self.flow_band
             )
 

@@ -9,14 +9,10 @@ DEFAULT_RATING = 1200.0
 # ---------------------------
 def load_rating_transitions(engine):
     with engine.connect() as conn:
-        tables = conn.execute(
-            text("SELECT name FROM sqlite_master WHERE type='table'")
-        ).fetchall()
+        tables = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()
     table_names = {t[0] for t in tables}
     if "game_events" not in table_names:
-        return pd.DataFrame(
-            columns=["player_id", "created_at", "result", "accuracy"]
-        )
+        return pd.DataFrame(columns=["player_id", "created_at", "result", "accuracy"])
 
     query = """
         SELECT
@@ -83,9 +79,7 @@ def detect_plan_usage(df: pd.DataFrame, window_days: int = 7):
     df = df.copy()
 
     df["prev_game_time"] = df.groupby("player_id")["created_at"].shift(1)
-    df["days_since_prev"] = (
-        df["created_at"] - df["prev_game_time"]
-    ).dt.days
+    df["days_since_prev"] = (df["created_at"] - df["prev_game_time"]).dt.days
 
     df["used_plan"] = df["days_since_prev"].fillna(999) <= window_days
     return df

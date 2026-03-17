@@ -56,6 +56,7 @@ Invariants pinned
 29. SEC_APIKEY_CORRECT_KEY_PASSES   verify_api_key passes with correct key.
 30. SEC_APIKEY_WRONG_KEY_401        verify_api_key raises HTTPException(401) on wrong key.
 """
+
 from __future__ import annotations
 
 import ast
@@ -73,7 +74,7 @@ from pydantic import ValidationError
 # ---------------------------------------------------------------------------
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-_SERVER_PY  = _REPO_ROOT / "llm" / "server.py"
+_SERVER_PY = _REPO_ROOT / "llm" / "server.py"
 _AUTH_ROUTER = _REPO_ROOT / "llm" / "seca" / "auth" / "router.py"
 
 
@@ -88,11 +89,7 @@ def _parse(path: Path) -> ast.Module:
 
 def _get_decorated_functions(tree: ast.Module) -> dict[str, ast.FunctionDef]:
     """Return {function_name: FunctionDef} for all top-level decorated defs."""
-    return {
-        node.name: node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef)
-    }
+    return {node.name: node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)}
 
 
 def _depends_on(func_def: ast.FunctionDef, target: str) -> bool:
@@ -119,15 +116,15 @@ class TestAstEndpointProtection:
 
     def setup_method(self):
         self._server = _parse(_SERVER_PY)
-        self._funcs  = _get_decorated_functions(self._server)
+        self._funcs = _get_decorated_functions(self._server)
 
     def test_analyze_has_verify_api_key(self):
         """SEC_ANALYZE_AUTH_APPLIED: /analyze endpoint has verify_api_key dependency."""
         func = self._funcs.get("analyze")
         assert func is not None, "analyze() function not found in server.py"
-        assert _depends_on(func, "verify_api_key"), (
-            "POST /analyze must have Depends(verify_api_key) — endpoint is unauthenticated"
-        )
+        assert _depends_on(
+            func, "verify_api_key"
+        ), "POST /analyze must have Depends(verify_api_key) — endpoint is unauthenticated"
 
     def test_explanation_outcome_has_verify_api_key(self):
         """SEC_OUTCOME_AUTH_APPLIED: /explanation_outcome has verify_api_key dependency."""
@@ -142,17 +139,17 @@ class TestAstEndpointProtection:
         """SEC_LIVEMOVE_AUTH_APPLIED: /live/move has verify_api_key dependency."""
         func = self._funcs.get("live_move")
         assert func is not None, "live_move() not found in server.py"
-        assert _depends_on(func, "verify_api_key"), (
-            "POST /live/move must have Depends(verify_api_key)"
-        )
+        assert _depends_on(
+            func, "verify_api_key"
+        ), "POST /live/move must have Depends(verify_api_key)"
 
     def test_debug_engine_has_verify_api_key(self):
         """SEC_DEBUG_ENGINE_AUTH_APPLIED: /debug/engine has verify_api_key dependency."""
         func = self._funcs.get("engine_debug")
         assert func is not None, "engine_debug() not found in server.py"
-        assert _depends_on(func, "verify_api_key"), (
-            "GET /debug/engine must have Depends(verify_api_key) — leaks engine pool info"
-        )
+        assert _depends_on(
+            func, "verify_api_key"
+        ), "GET /debug/engine must have Depends(verify_api_key) — leaks engine pool info"
 
 
 class TestAstLogoutProtection:
@@ -176,7 +173,9 @@ class TestAstLogoutProtection:
         # Walk the function body looking for a Try node that contains a
         # call to decode_token.
         def _contains_decode_token_call(nodes) -> bool:
-            for node in ast.walk(nodes if isinstance(nodes, ast.AST) else ast.Module(body=nodes, type_ignores=[])):
+            for node in ast.walk(
+                nodes if isinstance(nodes, ast.AST) else ast.Module(body=nodes, type_ignores=[])
+            ):
                 if isinstance(node, ast.Call):
                     func = node.func
                     if isinstance(func, ast.Name) and func.id == "decode_token":
@@ -189,10 +188,7 @@ class TestAstLogoutProtection:
             "decode_token() must be wrapped to prevent 500 on invalid tokens."
         )
 
-        found_wrapped = any(
-            _contains_decode_token_call(try_node.body)
-            for try_node in try_nodes
-        )
+        found_wrapped = any(_contains_decode_token_call(try_node.body) for try_node in try_nodes)
         assert found_wrapped, (
             "No try/except block in logout() wraps a decode_token() call. "
             "An invalid token returns 500 instead of 401."
@@ -461,9 +457,9 @@ def _stub_health():
 _stub_client = TestClient(_stub_app, raise_server_exceptions=False)
 
 _AUTH_HEADER = {"X-Api-Key": _TEST_API_KEY}
-_WRONG_AUTH  = {"X-Api-Key": "wrong-key"}
-_VALID_ANALYZE_BODY   = {"fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"}
-_VALID_OUTCOME_BODY   = {
+_WRONG_AUTH = {"X-Api-Key": "wrong-key"}
+_VALID_ANALYZE_BODY = {"fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"}
+_VALID_OUTCOME_BODY = {
     "explanation_id": "expl-1",
     "moves_analyzed": 5,
     "avg_cpl": 30.0,
@@ -512,9 +508,9 @@ class TestHttpAuthEnforcement:
     def test_health_endpoint_requires_no_key(self):
         """SEC_HTTP_HEALTH_OPEN: GET /health must remain open (no auth required)."""
         r = _stub_client.get("/health")
-        assert r.status_code == 200, (
-            f"GET /health should be publicly accessible; got {r.status_code}"
-        )
+        assert (
+            r.status_code == 200
+        ), f"GET /health should be publicly accessible; got {r.status_code}"
 
 
 # ===========================================================================
@@ -532,6 +528,7 @@ class TestVerifyApiKeyLogic:
     @staticmethod
     def _make_verify(api_key: str | None, is_prod: bool = False):
         """Return a callable that behaves like server.py:verify_api_key."""
+
         def _check(x_api_key: str | None = None):
             if api_key is None:
                 if is_prod:
@@ -539,12 +536,13 @@ class TestVerifyApiKeyLogic:
                 return  # dev mode
             if x_api_key != api_key:
                 raise HTTPException(status_code=401, detail="Unauthorized")
+
         return _check
 
     def test_dev_mode_no_key_set_passes(self):
         """SEC_APIKEY_DEV_NO_KEY_PASSES: verify_api_key passes when no API key is set (dev mode)."""
         check = self._make_verify(api_key=None, is_prod=False)
-        check(x_api_key=None)   # must not raise
+        check(x_api_key=None)  # must not raise
         check(x_api_key="anything")  # must not raise
 
     def test_correct_key_passes(self):

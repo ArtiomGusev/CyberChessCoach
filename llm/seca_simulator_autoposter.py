@@ -28,6 +28,7 @@ SLEEP_BETWEEN_GAMES = 0.5
 # Auth
 # =========================
 
+
 def login() -> str:
     r = requests.post(
         f"{API_URL}/auth/login",
@@ -74,6 +75,7 @@ def generate_weaknesses() -> dict:
 # =========================
 # Data model
 # =========================
+
 
 @dataclass
 class SimulatedGame:

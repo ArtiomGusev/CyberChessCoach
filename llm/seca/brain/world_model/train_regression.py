@@ -12,9 +12,7 @@ MODEL_PATH = "llm/seca/brain/world_model/world_model.pkl"
 
 def load_dataset():
     if not Path(DATASET_PATH).exists():
-        raise FileNotFoundError(
-            "Dataset not found. Run build_world_model_dataset.py first."
-        )
+        raise FileNotFoundError("Dataset not found. Run build_world_model_dataset.py first.")
     return pd.read_csv(DATASET_PATH)
 
 
@@ -26,9 +24,7 @@ def train_model(df: pd.DataFrame):
         X_train, y_train = X, y
         X_test, y_test = None, None
     else:
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42
-        )
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
     base_model = GradientBoostingRegressor(
         n_estimators=200,

@@ -6,6 +6,7 @@ from .db import get_conn
 # Player
 # -------------------------------------------------
 
+
 def ensure_player(player_id: str):
     conn = get_conn()
     conn.execute(
@@ -19,6 +20,7 @@ def ensure_player(player_id: str):
 # -------------------------------------------------
 # Game lifecycle
 # -------------------------------------------------
+
 
 def create_game(player_id: str) -> str:
     ensure_player(player_id)
@@ -50,6 +52,7 @@ def finish_game(game_id: str, result: str):
 # Moves
 # -------------------------------------------------
 
+
 def log_move(game_id: str, ply: int, fen: str, uci: str, san: str, eval: float | None):
     conn = get_conn()
     conn.execute(
@@ -66,6 +69,7 @@ def log_move(game_id: str, ply: int, fen: str, uci: str, san: str, eval: float |
 # -------------------------------------------------
 # Explanations
 # -------------------------------------------------
+
 
 def log_explanation(
     game_id: str,

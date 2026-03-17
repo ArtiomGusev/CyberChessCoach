@@ -16,9 +16,7 @@ DEFAULT_CONFIDENCE = 0.5
 
 def ensure_schema(engine):
     with engine.connect() as conn:
-        rows = conn.execute(
-            text("SELECT name FROM sqlite_master WHERE type='table'")
-        ).fetchall()
+        rows = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()
     tables = {r[0] for r in rows}
     if "game_events" not in tables:
         raise RuntimeError(
@@ -65,9 +63,7 @@ def apply_skill_update(rating: float, confidence: float, result: str, accuracy: 
     delta += (accuracy - 0.5) * 10
 
     rating_after = max(100.0, rating + delta)
-    confidence_after = min(
-        1.0, max(0.0, confidence + (accuracy - 0.5) * 0.1)
-    )
+    confidence_after = min(1.0, max(0.0, confidence + (accuracy - 0.5) * 0.1))
     return rating_after, confidence_after
 
 
@@ -85,9 +81,7 @@ def add_rating_confidence(df: pd.DataFrame) -> pd.DataFrame:
         r_before = ratings.get(player_id, DEFAULT_RATING)
         c_before = confidences.get(player_id, DEFAULT_CONFIDENCE)
 
-        r_after, c_after = apply_skill_update(
-            r_before, c_before, row.result, row.accuracy
-        )
+        r_after, c_after = apply_skill_update(r_before, c_before, row.result, row.accuracy)
 
         rating_before.append(r_before)
         rating_after.append(r_after)
@@ -154,13 +148,15 @@ def build_dataset():
     df = expand_weaknesses(df)
     df = compute_targets(df)
 
-    feature_cols = [
-        "rating_before",
-        "confidence_before",
-        "accuracy",
-    ] + [c for c in df.columns if c.startswith("weak_")] + [
-        f"z_{i}" for i in range(16)
-    ]
+    feature_cols = (
+        [
+            "rating_before",
+            "confidence_before",
+            "accuracy",
+        ]
+        + [c for c in df.columns if c.startswith("weak_")]
+        + [f"z_{i}" for i in range(16)]
+    )
 
     target_cols = ["delta_rating", "delta_confidence"]
 

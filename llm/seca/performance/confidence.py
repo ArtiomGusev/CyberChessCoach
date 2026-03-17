@@ -9,21 +9,23 @@ from typing import List
 # DATA STRUCTURES
 # -------------------------------
 
+
 @dataclass
 class GamePerformance:
     moves: int
     blunders: int
-    acpl: float                  # average centipawn loss
-    eval_series: List[float]     # evaluation per move
+    acpl: float  # average centipawn loss
+    eval_series: List[float]  # evaluation per move
     missed_tactics: int
     total_tactics: int
-    expected_score: float        # from Elo formula
-    actual_score: float          # 1 / 0.5 / 0
+    expected_score: float  # from Elo formula
+    actual_score: float  # 1 / 0.5 / 0
 
 
 # -------------------------------
 # METRIC HELPERS
 # -------------------------------
+
 
 def _blunder_rate(p: GamePerformance) -> float:
     return p.blunders / max(1, p.moves)
@@ -32,10 +34,7 @@ def _blunder_rate(p: GamePerformance) -> float:
 def _swing(p: GamePerformance) -> float:
     if len(p.eval_series) < 2:
         return 0.0
-    diffs = [
-        abs(p.eval_series[i] - p.eval_series[i - 1])
-        for i in range(1, len(p.eval_series))
-    ]
+    diffs = [abs(p.eval_series[i] - p.eval_series[i - 1]) for i in range(1, len(p.eval_series))]
     return sum(diffs) / len(diffs)
 
 
@@ -52,6 +51,7 @@ def _surprise(p: GamePerformance) -> float:
 # -------------------------------
 # QUALITY NORMALIZATION
 # -------------------------------
+
 
 def _q_acpl(acpl: float) -> float:
     return exp(-acpl / 100)
@@ -77,6 +77,7 @@ def _bonus(surprise: float) -> float:
 # MAIN CONFIDENCE FUNCTION
 # -------------------------------
 
+
 def compute_confidence(p: GamePerformance) -> float:
     """
     Returns confidence in range [0.5, 1.5]
@@ -93,13 +94,7 @@ def compute_confidence(p: GamePerformance) -> float:
     q_tactic = _q_tactic(tm)
     bonus = _bonus(sp)
 
-    quality = (
-        0.30 * q_acpl +
-        0.25 * q_blunder +
-        0.15 * q_swing +
-        0.20 * q_tactic +
-        0.10 * bonus
-    )
+    quality = 0.30 * q_acpl + 0.25 * q_blunder + 0.15 * q_swing + 0.20 * q_tactic + 0.10 * bonus
 
     # clamp
     return max(0.5, min(1.5, quality))

@@ -25,6 +25,7 @@ FALLBACK PATH (evaluator lacks resolve_limits):
   The test test_fallback_path_no_upper_ceiling pins this gap with an assertion
   that nodes == 999_999 to make it visible and reviewable.
 """
+
 import pytest
 
 try:
@@ -37,11 +38,13 @@ except ImportError:
 # Evaluator stubs
 # ---------------------------------------------------------------------------
 
+
 class _EvaluatorWithResolveLimits:
     """
     Evaluator stub that exposes resolve_limits with a ceiling of
     max_nodes=10_000 and max_movetime=500 ms.
     """
+
     default_nodes = 5000
 
     def resolve_limits(self, *, movetime, nodes):
@@ -62,6 +65,7 @@ class _EvaluatorWithoutResolveLimits:
     Evaluator stub that does NOT expose resolve_limits. Triggers the fallback
     path in EliteEngineService._resolve_limits.
     """
+
     default_nodes = 5000
     predictive_nodes = 5000
 
@@ -82,6 +86,7 @@ def _make_service_with(evaluator) -> EliteEngineService:
 # DELEGATION PATH tests
 # ---------------------------------------------------------------------------
 
+
 def test_delegation_path_nodes_clamped_to_evaluator_max():
     """
     When the evaluator has resolve_limits, an over-limit nodes value is
@@ -89,9 +94,7 @@ def test_delegation_path_nodes_clamped_to_evaluator_max():
     """
     service = _make_service_with(_EvaluatorWithResolveLimits())
     _, nodes = service._resolve_limits(movetime=None, nodes=50_000)
-    assert nodes == 10_000, (
-        f"Expected nodes clamped to evaluator max 10_000, got {nodes}"
-    )
+    assert nodes == 10_000, f"Expected nodes clamped to evaluator max 10_000, got {nodes}"
 
 
 def test_delegation_path_movetime_clamped_to_evaluator_max():
@@ -101,9 +104,7 @@ def test_delegation_path_movetime_clamped_to_evaluator_max():
     """
     service = _make_service_with(_EvaluatorWithResolveLimits())
     movetime, _ = service._resolve_limits(movetime=9999, nodes=None)
-    assert movetime == 500, (
-        f"Expected movetime clamped to evaluator max 500, got {movetime}"
-    )
+    assert movetime == 500, f"Expected movetime clamped to evaluator max 500, got {movetime}"
 
 
 def test_delegation_path_floor_clamping_nodes():
@@ -139,6 +140,7 @@ def test_delegation_path_default_nodes_when_both_none():
 # FALLBACK PATH tests (evaluator lacks resolve_limits)
 # ---------------------------------------------------------------------------
 
+
 def test_fallback_path_nodes_not_clamped_above():
     """
     On the fallback path, nodes is NOT subject to an upper ceiling.
@@ -146,9 +148,7 @@ def test_fallback_path_nodes_not_clamped_above():
     """
     service = _make_service_with(_EvaluatorWithoutResolveLimits())
     _, nodes = service._resolve_limits(movetime=None, nodes=50_000)
-    assert nodes == 50_000, (
-        f"Fallback path must not impose an upper ceiling on nodes. Got {nodes}"
-    )
+    assert nodes == 50_000, f"Fallback path must not impose an upper ceiling on nodes. Got {nodes}"
 
 
 def test_fallback_path_no_upper_ceiling():
@@ -214,6 +214,7 @@ def test_fallback_path_movetime_not_clamped_above():
 # ---------------------------------------------------------------------------
 # Both paths: None passthrough
 # ---------------------------------------------------------------------------
+
 
 def test_delegation_path_none_nodes_with_movetime():
     """nodes stays None when movetime is provided and nodes is not (delegation)."""

@@ -17,6 +17,7 @@ FORBIDDEN_ENGINE_SPECULATION = [
     r"\bwants to\b",
 ]
 
+
 class Mode2Violation(Exception):
     pass
 
@@ -34,30 +35,22 @@ def validate_mode_2_semantic(text: str, engine_signal: dict) -> None:
         forbidden = ["slight advantage", "better", "winning", "initiative", "pressure"]
         for word in forbidden:
             if word in lower:
-                raise Mode2Violation(
-                    f"Equal position described as advantage: '{word}'"
-                )
+                raise Mode2Violation(f"Equal position described as advantage: '{word}'")
 
     # Mate decisiveness
     if eval_type == "mate":
         if "inevitable" not in lower and "forced" not in lower:
-            raise Mode2Violation(
-                "Mate not described as forced/inevitable"
-            )
+            raise Mode2Violation("Mate not described as forced/inevitable")
 
     # Engine speculation
     forbidden_spec = ["likely", "probably", "might", "engine", "wants to"]
     for word in forbidden_spec:
         if word in lower:
-            raise Mode2Violation(
-                f"Speculative language detected: '{word}'"
-            )
+            raise Mode2Violation(f"Speculative language detected: '{word}'")
 
     # Invented tactics
     if not tactical_flags:
         invented = ["fork", "pin", "sacrifice", "attack", "threat"]
         for word in invented:
             if word in lower:
-                raise Mode2Violation(
-                    f"Invented tactic without flag: '{word}'"
-                )
+                raise Mode2Violation(f"Invented tactic without flag: '{word}'")

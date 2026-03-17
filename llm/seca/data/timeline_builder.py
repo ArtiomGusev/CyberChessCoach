@@ -13,5 +13,4 @@ def build_player_timeline(game_records):
         skill += delta_skill
         confidence = max(0.0, min(1.0, confidence + delta_skill * 0.01))
 
-
     return timeline

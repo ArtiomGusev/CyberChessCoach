@@ -9,6 +9,7 @@ import numpy as np
 # World state
 # ---------------------------------------------------------------------
 
+
 @dataclass
 class WorldState:
     """
@@ -18,12 +19,14 @@ class WorldState:
     - simple numeric vector
     - placeholder for neural model
     """
+
     vector: np.ndarray
 
 
 # ---------------------------------------------------------------------
 # Skill World Model
 # ---------------------------------------------------------------------
+
 
 class SkillWorldModel:
     """

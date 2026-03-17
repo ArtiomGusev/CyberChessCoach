@@ -23,7 +23,7 @@ class Runtime:
         self.opponent = AdaptiveOpponent()
 
         self.live_coach = LiveCoach(
-            move_analyzer=None,          # wired later
+            move_analyzer=None,  # wired later
             skill_updater=self.skill_pipeline,
             hint_policy=None,
             tone_adapter=None,

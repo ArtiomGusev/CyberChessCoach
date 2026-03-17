@@ -24,6 +24,7 @@ Invariants pinned by this test module:
    omitting line_key entirely (the default is None). The implementation
    normalises None to the string "-" before hashing.
 """
+
 import hashlib
 
 import pytest
@@ -42,6 +43,7 @@ def _make_cache() -> FenMoveCache:
 # Key format
 # ---------------------------------------------------------------------------
 
+
 def test_cache_key_starts_with_namespace():
     cache = _make_cache()
     key = cache._cache_key(
@@ -50,9 +52,7 @@ def test_cache_key_starts_with_namespace():
         movetime_ms=40,
         target_elo=None,
     )
-    assert key.startswith("fen_move:v2:"), (
-        f"Key must start with 'fen_move:v2:' but got: {key!r}"
-    )
+    assert key.startswith("fen_move:v2:"), f"Key must start with 'fen_move:v2:' but got: {key!r}"
 
 
 def test_cache_key_digest_is_64_hex_chars():
@@ -64,18 +64,19 @@ def test_cache_key_digest_is_64_hex_chars():
         target_elo=None,
     )
     prefix = "fen_move:v2:"
-    digest_part = key[len(prefix):]
-    assert len(digest_part) == 64, (
-        f"SHA-256 hex digest must be 64 chars, got {len(digest_part)}: {digest_part!r}"
-    )
-    assert all(c in "0123456789abcdef" for c in digest_part), (
-        f"Digest must be lowercase hex, got: {digest_part!r}"
-    )
+    digest_part = key[len(prefix) :]
+    assert (
+        len(digest_part) == 64
+    ), f"SHA-256 hex digest must be 64 chars, got {len(digest_part)}: {digest_part!r}"
+    assert all(
+        c in "0123456789abcdef" for c in digest_part
+    ), f"Digest must be lowercase hex, got: {digest_part!r}"
 
 
 # ---------------------------------------------------------------------------
 # Determinism
 # ---------------------------------------------------------------------------
+
 
 def test_cache_key_is_deterministic():
     cache = _make_cache()
@@ -107,22 +108,17 @@ def test_cache_key_same_across_separate_instances():
 # Sensitivity: key differs when inputs differ
 # ---------------------------------------------------------------------------
 
+
 def test_cache_key_differs_by_fen():
     cache = _make_cache()
-    key_start = cache._cache_key(
-        fen=_STARTPOS_FEN, mode="default", movetime_ms=40, target_elo=None
-    )
-    key_e4 = cache._cache_key(
-        fen=_FEN_AFTER_E4, mode="default", movetime_ms=40, target_elo=None
-    )
+    key_start = cache._cache_key(fen=_STARTPOS_FEN, mode="default", movetime_ms=40, target_elo=None)
+    key_e4 = cache._cache_key(fen=_FEN_AFTER_E4, mode="default", movetime_ms=40, target_elo=None)
     assert key_start != key_e4
 
 
 def test_cache_key_differs_by_mode():
     cache = _make_cache()
-    key_blitz = cache._cache_key(
-        fen=_STARTPOS_FEN, mode="blitz", movetime_ms=40, target_elo=None
-    )
+    key_blitz = cache._cache_key(fen=_STARTPOS_FEN, mode="blitz", movetime_ms=40, target_elo=None)
     key_analysis = cache._cache_key(
         fen=_STARTPOS_FEN, mode="analysis", movetime_ms=40, target_elo=None
     )
@@ -131,15 +127,9 @@ def test_cache_key_differs_by_mode():
 
 def test_cache_key_differs_by_target_elo():
     cache = _make_cache()
-    key_1200 = cache._cache_key(
-        fen=_STARTPOS_FEN, mode="default", movetime_ms=40, target_elo=1200
-    )
-    key_2000 = cache._cache_key(
-        fen=_STARTPOS_FEN, mode="default", movetime_ms=40, target_elo=2000
-    )
-    key_none = cache._cache_key(
-        fen=_STARTPOS_FEN, mode="default", movetime_ms=40, target_elo=None
-    )
+    key_1200 = cache._cache_key(fen=_STARTPOS_FEN, mode="default", movetime_ms=40, target_elo=1200)
+    key_2000 = cache._cache_key(fen=_STARTPOS_FEN, mode="default", movetime_ms=40, target_elo=2000)
+    key_none = cache._cache_key(fen=_STARTPOS_FEN, mode="default", movetime_ms=40, target_elo=None)
     assert key_1200 != key_2000
     assert key_1200 != key_none
     assert key_2000 != key_none
@@ -167,6 +157,7 @@ def test_cache_key_differs_by_line_key():
 # ---------------------------------------------------------------------------
 # INVARIANT: movetime_ms is excluded from the digest (documented design)
 # ---------------------------------------------------------------------------
+
 
 def test_cache_key_movetime_ms_excluded_from_digest():
     """
@@ -224,6 +215,7 @@ def test_cache_key_movetime_ms_excluded_with_line_key():
 # None line_key sentinel equals omitted line_key
 # ---------------------------------------------------------------------------
 
+
 def test_cache_key_none_line_key_equals_omitted_line_key():
     """
     Passing line_key=None must yield the same key as not passing line_key at
@@ -269,6 +261,7 @@ def test_cache_key_none_line_key_differs_from_real_line_key():
 # ---------------------------------------------------------------------------
 # Cross-check: manually reproduce the digest to verify implementation
 # ---------------------------------------------------------------------------
+
 
 def test_cache_key_digest_matches_manual_sha256():
     """Verify that the key is exactly sha256(f'{fen}|{mode}|{target_elo}|{line_key or "-"}')."""

@@ -7,6 +7,7 @@ from typing import Dict, Any
 # Skill state
 # ---------------------------------------------------------------------
 
+
 @dataclass
 class SkillState:
     """
@@ -16,12 +17,14 @@ class SkillState:
     - simple numeric dictionary
     - later → neural latent vector
     """
+
     values: Dict[str, float]
 
 
 # ---------------------------------------------------------------------
 # Skill pipeline
 # ---------------------------------------------------------------------
+
 
 class SkillPipeline:
     """

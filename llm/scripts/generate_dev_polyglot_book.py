@@ -60,7 +60,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Generate a small local Polyglot dev book.")
     parser.add_argument(
         "--output",
-        default=os.path.join(os.path.dirname(os.path.dirname(__file__)), "books", "performance.bin"),
+        default=os.path.join(
+            os.path.dirname(os.path.dirname(__file__)), "books", "performance.bin"
+        ),
         help="Output .bin path",
     )
     args = parser.parse_args()

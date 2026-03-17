@@ -8,9 +8,7 @@ from sqlalchemy import text
 # ---------------------------
 def load_game_events(engine):
     with engine.connect() as conn:
-        tables = conn.execute(
-            text("SELECT name FROM sqlite_master WHERE type='table'")
-        ).fetchall()
+        tables = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()
     table_names = {t[0] for t in tables}
     if "analytics_events" not in table_names:
         return pd.DataFrame(columns=["player_id", "created_at"])
@@ -34,9 +32,7 @@ def compute_retention(df: pd.DataFrame):
     first_seen = df.groupby("player_id")["created_at"].min()
     df = df.join(first_seen, on="player_id", rsuffix="_first")
 
-    df["days_since_first"] = (
-        df["created_at"] - df["created_at_first"]
-    ).dt.days
+    df["days_since_first"] = (df["created_at"] - df["created_at_first"]).dt.days
 
     metrics = {}
 

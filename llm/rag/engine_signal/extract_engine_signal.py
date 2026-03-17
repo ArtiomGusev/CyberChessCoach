@@ -1,5 +1,6 @@
 print(">>> USING extract_engine_signal FROM:", __file__)
 
+
 def side_from_fen(fen: str | None) -> str | None:
     if not fen:
         return None
@@ -7,6 +8,7 @@ def side_from_fen(fen: str | None) -> str | None:
         return "white" if fen.split()[1] == "w" else "black"
     except Exception:
         return None
+
 
 def extract_engine_signal(
     stockfish_json: dict | None,
@@ -92,9 +94,7 @@ def extract_engine_signal(
             "side": side,
         },
         "eval_delta": eval_delta,
-        "last_move_quality": stockfish_json.get("errors", {}).get(
-            "last_move_quality", "unknown"
-        ),
+        "last_move_quality": stockfish_json.get("errors", {}).get("last_move_quality", "unknown"),
         "tactical_flags": stockfish_json.get("tactical_flags", []),
         "position_flags": stockfish_json.get("position_flags", []),
         "phase": stockfish_json.get("phase", "middlegame"),

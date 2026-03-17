@@ -14,6 +14,7 @@ PLAYER_STORE: Dict[str, dict] = {}
 # Schemas
 # ------------------------------------------------------------------
 
+
 class PlayerCreateRequest(BaseModel):
     name: str
     initial_rating: int = 1200
@@ -42,6 +43,7 @@ router = APIRouter(prefix="/player", tags=["player"])
 # Create player
 # ------------------------------------------------------------------
 
+
 @router.post("/create", response_model=PlayerStateResponse)
 def create_player(req: PlayerCreateRequest):
     player_id = str(uuid.uuid4())
@@ -63,6 +65,7 @@ def create_player(req: PlayerCreateRequest):
 # ------------------------------------------------------------------
 # Update player
 # ------------------------------------------------------------------
+
 
 @router.post("/update/{player_id}", response_model=PlayerStateResponse)
 def update_player(player_id: str, req: PlayerUpdateRequest):
@@ -87,6 +90,7 @@ def update_player(player_id: str, req: PlayerUpdateRequest):
 # ------------------------------------------------------------------
 # Get player state
 # ------------------------------------------------------------------
+
 
 @router.get("/state/{player_id}", response_model=PlayerStateResponse)
 def get_player_state(player_id: str):

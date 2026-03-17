@@ -274,14 +274,10 @@ class StockfishEnginePool:
         try:
             engine = self._engines.get(timeout=timeout_ms / 1000.0)
         except queue.Empty as exc:
-            raise RuntimeError(
-                f"Stockfish queue wait exceeded {timeout_ms}ms"
-            ) from exc
+            raise RuntimeError(f"Stockfish queue wait exceeded {timeout_ms}ms") from exc
         try:
             self._apply_runtime_options(engine, target_elo=target_elo)
-            limit = chess.engine.Limit(
-                time=self.resolve_movetime_ms(mode, movetime_ms) / 1000.0
-            )
+            limit = chess.engine.Limit(time=self.resolve_movetime_ms(mode, movetime_ms) / 1000.0)
             result = engine.play(resolved_board, limit)
             if result.move is None:
                 raise RuntimeError("Stockfish returned no move")

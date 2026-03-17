@@ -45,6 +45,7 @@ else:
 
 # ---- Embedded public API ----
 
+
 def explain_position(payload: dict) -> dict:
     if "engine_json" not in payload:
         raise ValueError("payload must include engine_json")
@@ -109,5 +110,3 @@ def explain_position(payload: dict) -> dict:
         )
 
         emit(event)
-
-

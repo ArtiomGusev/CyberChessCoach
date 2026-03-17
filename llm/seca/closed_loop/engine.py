@@ -19,14 +19,10 @@ def clale_step(
     action = torch.tanh(logits)
 
     # real outcome
-    delta_real, z_real_next = compute_real_delta(
-        encoder, games_before, games_after
-    )
+    delta_real, z_real_next = compute_real_delta(encoder, games_before, games_after)
 
     # prediction error
-    loss, error = prediction_error(
-        sdwm, z_t, action, z_real_next
-    )
+    loss, error = prediction_error(sdwm, z_t, action, z_real_next)
 
     # update world model
     update_sdwm(sdwm, sdwm_opt, loss)

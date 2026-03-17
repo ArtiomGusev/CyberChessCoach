@@ -15,7 +15,4 @@ def select_tasks(skill: str, player: PlayerModel) -> list[TrainingTask]:
 
     target_difficulty = max(1, min(10, player.rating // 300))
 
-    return [
-        t for t in tasks
-        if abs(t.difficulty - target_difficulty) <= 2
-    ] or tasks[:1]
+    return [t for t in tasks if abs(t.difficulty - target_difficulty) <= 2] or tasks[:1]

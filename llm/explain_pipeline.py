@@ -24,6 +24,7 @@ MAX_RETRIES = 2
 # LLM CALL
 # ---------------------------------------------------------
 
+
 def call_llm(prompt: str) -> str:
     response = httpx.post(
         OLLAMA_URL,
@@ -42,6 +43,7 @@ def call_llm(prompt: str) -> str:
 # ---------------------------------------------------------
 # SINGLE EXPLANATION ATTEMPT
 # ---------------------------------------------------------
+
 
 def generate_once(fen: str, stockfish_json: dict, user_query: str) -> tuple[str, dict]:
     """Generate one explanation attempt. *user_query* must already be sanitized
@@ -67,6 +69,7 @@ def generate_once(fen: str, stockfish_json: dict, user_query: str) -> tuple[str,
 # ---------------------------------------------------------
 # VALIDATED EXPLANATION WITH RETRY
 # ---------------------------------------------------------
+
 
 def generate_validated_explanation(
     fen: str,

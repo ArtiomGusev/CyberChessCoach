@@ -15,6 +15,7 @@ HistoricalAnalysisPipeline
     Accepts player_id + list[GameEvent], decodes weaknesses_json, aggregates
     via aggregate_from_weakness_dicts, persists analytics, returns MistakeStats.
 """
+
 from __future__ import annotations
 
 import json

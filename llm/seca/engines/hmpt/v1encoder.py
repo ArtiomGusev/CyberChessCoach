@@ -7,6 +7,7 @@ import chess
 # Board Encoder
 # =============================
 
+
 class BoardEncoder(nn.Module):
     """
     Converts a chess.Board into a tensor of shape:
@@ -42,6 +43,7 @@ class BoardEncoder(nn.Module):
 # =============================
 # HMPT v1 Neural Policy Network
 # =============================
+
 
 class HMPTPolicyNet(nn.Module):
     """
@@ -80,6 +82,7 @@ class HMPTPolicyNet(nn.Module):
 # Move Mapping Utilities
 # =============================
 
+
 class MoveIndexer:
     """
     Maps chess.Move <-> index in [0, 4672).
@@ -107,6 +110,7 @@ class MoveIndexer:
 # =============================
 # HMPT Inference Wrapper
 # =============================
+
 
 class HMPTModel:
     """

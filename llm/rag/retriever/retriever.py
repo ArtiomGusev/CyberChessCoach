@@ -14,8 +14,6 @@ def retrieve(esv: dict, documents: list) -> list:
         if matches_conditions(esv, conditions):
             matched.append(doc)
 
-    matched.sort(
-        key=lambda d: PRIORITY_MAP.get(d.get("type", ""), 99)
-    )
+    matched.sort(key=lambda d: PRIORITY_MAP.get(d.get("type", ""), 99))
 
     return matched[:MAX_DOCS]

@@ -24,11 +24,7 @@ def train_model(samples, epochs=20, lr=1e-3, device="cpu"):
 
             p_ds, p_nc, p_nf = model(state, action)
 
-            loss = (
-                loss_fn(p_ds, ds)
-                + loss_fn(p_nc, nc)
-                + loss_fn(p_nf, nf)
-            )
+            loss = loss_fn(p_ds, ds) + loss_fn(p_nc, nc) + loss_fn(p_nf, nf)
 
             opt.zero_grad()
             loss.backward()

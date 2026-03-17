@@ -49,9 +49,7 @@ def test_llm_regression_contract():
         rag_docs = retrieve(esv, ALL_RAG_DOCUMENTS)
 
         prompt = render_mode_2_prompt(
-            system_prompt=(
-                ROOT / "rag/prompts/mode_2/system_v1.txt"
-            ).read_text(encoding="utf-8"),
+            system_prompt=(ROOT / "rag/prompts/mode_2/system_v1.txt").read_text(encoding="utf-8"),
             engine_signal=esv,
             rag_docs=rag_docs,
             fen=case["fen"],

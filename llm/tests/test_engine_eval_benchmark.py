@@ -56,6 +56,7 @@ Invariants pinned by this module
 15. BENCH_NO_STATE_MUTATION        evaluate_with_metrics does not mutate the
                                    caller's board state.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -74,12 +75,12 @@ except ImportError:
 # Benchmark corpus — canonical positions covering all game phases
 # ---------------------------------------------------------------------------
 
-PHASE_OPENING_START  = chess.STARTING_FEN
-PHASE_OPENING_E4     = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
-PHASE_OPENING_E4_E5  = "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2"
-PHASE_MIDDLEGAME     = "r1bqk2r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4"
-PHASE_ENDGAME_KP     = "8/8/8/8/3k4/8/3KP3/8 w - - 0 1"
-PHASE_TACTICAL       = "r1bqkb1r/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3"
+PHASE_OPENING_START = chess.STARTING_FEN
+PHASE_OPENING_E4 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
+PHASE_OPENING_E4_E5 = "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2"
+PHASE_MIDDLEGAME = "r1bqk2r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4"
+PHASE_ENDGAME_KP = "8/8/8/8/3k4/8/3KP3/8 w - - 0 1"
+PHASE_TACTICAL = "r1bqkb1r/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3"
 
 BENCHMARK_CORPUS: list[str] = [
     PHASE_OPENING_START,
@@ -94,11 +95,11 @@ BENCHMARK_CORPUS: list[str] = [
 # Latency SLOs (CI thresholds)
 # ---------------------------------------------------------------------------
 
-CACHE_HIT_BUDGET_MS = 5    # maximum overhead for a single cache-hit call
-FALLBACK_BUDGET_MS  = 5    # maximum overhead for a single fallback call
-BATCH_BUDGET_MS     = 30   # budget for the full 6-position corpus
-COLD_MIN_MS         = 45   # cold eval with slow engine must take at least this long
-COLD_MAX_CACHE_MS   = 10   # warm (cached) call must complete in under this time
+CACHE_HIT_BUDGET_MS = 5  # maximum overhead for a single cache-hit call
+FALLBACK_BUDGET_MS = 5  # maximum overhead for a single fallback call
+BATCH_BUDGET_MS = 30  # budget for the full 6-position corpus
+COLD_MIN_MS = 45  # cold eval with slow engine must take at least this long
+COLD_MAX_CACHE_MS = 10  # warm (cached) call must complete in under this time
 
 # ---------------------------------------------------------------------------
 # Test doubles
@@ -201,19 +202,13 @@ class TestBenchmarkCorpus:
         opening_fens = [PHASE_OPENING_START, PHASE_OPENING_E4, PHASE_OPENING_E4_E5]
         for fen in opening_fens:
             total = len(chess.Board(fen).piece_map())
-            assert total >= 28, (
-                f"Opening position should have >= 28 pieces; got {total}: {fen!r}"
-            )
+            assert total >= 28, f"Opening position should have >= 28 pieces; got {total}: {fen!r}"
 
         mid_pieces = len(chess.Board(PHASE_MIDDLEGAME).piece_map())
-        assert mid_pieces >= 20, (
-            f"Middlegame position should have >= 20 pieces; got {mid_pieces}"
-        )
+        assert mid_pieces >= 20, f"Middlegame position should have >= 20 pieces; got {mid_pieces}"
 
         eg_pieces = len(chess.Board(PHASE_ENDGAME_KP).piece_map())
-        assert eg_pieces <= 4, (
-            f"Endgame position should have <= 4 pieces; got {eg_pieces}"
-        )
+        assert eg_pieces <= 4, f"Endgame position should have <= 4 pieces; got {eg_pieces}"
 
 
 # ===========================================================================
@@ -225,6 +220,7 @@ class TestColdEvaluation:
 
     def test_cold_eval_returns_payload_for_each_position(self):
         """BENCH_COLD_RETURNS_PAYLOAD: Cold eval returns dict with 'score' and 'best_move'."""
+
         async def _run():
             results = []
             for fen in BENCHMARK_CORPUS:
@@ -240,7 +236,12 @@ class TestColdEvaluation:
 
     def test_metrics_structure_for_each_position(self):
         """BENCH_METRICS_STRUCTURE: evaluate_with_metrics returns all four standard keys."""
-        _REQUIRED = {"engine_wait_ms", "engine_eval_ms", "engine_fallback", "engine_result_cache_hit"}
+        _REQUIRED = {
+            "engine_wait_ms",
+            "engine_eval_ms",
+            "engine_fallback",
+            "engine_result_cache_hit",
+        }
 
         async def _run():
             metrics_list = []
@@ -257,6 +258,7 @@ class TestColdEvaluation:
 
     def test_cold_eval_is_not_a_cache_hit(self):
         """BENCH_COLD_NO_CACHE_HIT: First call for each corpus position is always a miss."""
+
         async def _run():
             hits = []
             for fen in BENCHMARK_CORPUS:
@@ -271,6 +273,7 @@ class TestColdEvaluation:
 
     def test_payload_type_contracts(self):
         """BENCH_PAYLOAD_TYPES: score is int or None; best_move is str or None."""
+
         async def _run():
             results = []
             for fen in BENCHMARK_CORPUS:
@@ -283,12 +286,12 @@ class TestColdEvaluation:
         for result in asyncio.run(_run()):
             score = result["score"]
             best_move = result["best_move"]
-            assert score is None or isinstance(score, int), (
-                f"score must be int or None; got {type(score).__name__}"
-            )
-            assert best_move is None or isinstance(best_move, str), (
-                f"best_move must be str or None; got {type(best_move).__name__}"
-            )
+            assert score is None or isinstance(
+                score, int
+            ), f"score must be int or None; got {type(score).__name__}"
+            assert best_move is None or isinstance(
+                best_move, str
+            ), f"best_move must be str or None; got {type(best_move).__name__}"
 
 
 # ===========================================================================
@@ -300,6 +303,7 @@ class TestCacheHitLatency:
 
     def test_single_cache_hit_under_budget(self):
         """BENCH_CACHE_HIT_OVERHEAD: Single cache-hit path < CACHE_HIT_BUDGET_MS ms."""
+
         async def _run():
             pool = _OneShotPool(_FakeEngine())
             ev = _make_evaluator(pool)
@@ -319,6 +323,7 @@ class TestCacheHitLatency:
 
     def test_full_corpus_cache_hits_under_batch_budget(self):
         """BENCH_CACHE_HIT_BATCH: Full corpus of cache hits < BATCH_BUDGET_MS ms."""
+
         async def _run():
             ev = _make_evaluator(_TrackingEmptyPool())
             for fen in BENCHMARK_CORPUS:
@@ -337,6 +342,7 @@ class TestCacheHitLatency:
 
     def test_cache_hit_metrics_report_zero_latency(self):
         """BENCH_CACHE_HIT_METRICS_ZERO: Cache hit reports engine_wait_ms=0.0 and engine_eval_ms=0.0."""
+
         async def _run():
             pool = _OneShotPool(_FakeEngine())
             ev = _make_evaluator(pool)
@@ -347,12 +353,12 @@ class TestCacheHitLatency:
         metrics = asyncio.run(_run())
 
         assert metrics["engine_result_cache_hit"] is True
-        assert metrics["engine_wait_ms"] == 0.0, (
-            f"engine_wait_ms must be 0.0 on cache hit; got {metrics['engine_wait_ms']}"
-        )
-        assert metrics["engine_eval_ms"] == 0.0, (
-            f"engine_eval_ms must be 0.0 on cache hit; got {metrics['engine_eval_ms']}"
-        )
+        assert (
+            metrics["engine_wait_ms"] == 0.0
+        ), f"engine_wait_ms must be 0.0 on cache hit; got {metrics['engine_wait_ms']}"
+        assert (
+            metrics["engine_eval_ms"] == 0.0
+        ), f"engine_eval_ms must be 0.0 on cache hit; got {metrics['engine_eval_ms']}"
 
 
 # ===========================================================================
@@ -364,6 +370,7 @@ class TestFallbackLatency:
 
     def test_single_fallback_under_budget(self):
         """BENCH_FALLBACK_OVERHEAD: Single fallback path < FALLBACK_BUDGET_MS ms."""
+
         async def _run():
             ev = _make_evaluator(_TrackingEmptyPool())
             t0 = time.perf_counter()
@@ -375,12 +382,12 @@ class TestFallbackLatency:
 
         assert metrics["engine_fallback"] is True
         assert elapsed_ms < FALLBACK_BUDGET_MS, (
-            f"Fallback path took {elapsed_ms:.2f} ms; "
-            f"SLO is {FALLBACK_BUDGET_MS} ms."
+            f"Fallback path took {elapsed_ms:.2f} ms; " f"SLO is {FALLBACK_BUDGET_MS} ms."
         )
 
     def test_full_corpus_fallback_under_batch_budget(self):
         """BENCH_FALLBACK_BATCH: Full corpus of fallback paths < BATCH_BUDGET_MS ms."""
+
         async def _run():
             ev = _make_evaluator(_TrackingEmptyPool())
             t0 = time.perf_counter()
@@ -391,12 +398,12 @@ class TestFallbackLatency:
         elapsed_ms = asyncio.run(_run())
 
         assert elapsed_ms < BATCH_BUDGET_MS, (
-            f"Full-corpus fallback batch took {elapsed_ms:.2f} ms; "
-            f"SLO is {BATCH_BUDGET_MS} ms."
+            f"Full-corpus fallback batch took {elapsed_ms:.2f} ms; " f"SLO is {BATCH_BUDGET_MS} ms."
         )
 
     def test_fallback_does_not_call_pool_acquire(self):
         """BENCH_FALLBACK_NO_POOL_CALL: Fallback with acquire_timeout_ms=0 never calls acquire()."""
+
         async def _run():
             pool = _TrackingEmptyPool()
             ev = _make_evaluator(pool, acquire_timeout_ms=0)
@@ -405,9 +412,9 @@ class TestFallbackLatency:
 
         acquired = asyncio.run(_run())
 
-        assert acquired is False, (
-            "Fallback path must not call pool.acquire() when acquire_timeout_ms is 0"
-        )
+        assert (
+            acquired is False
+        ), "Fallback path must not call pool.acquire() when acquire_timeout_ms is 0"
 
 
 # ===========================================================================
@@ -420,6 +427,7 @@ class TestRegressionSlowEngine:
     def test_cold_measurably_slower_than_cached(self):
         """BENCH_REGRESSION_SLOW_ENGINE: Cold call with 50 ms engine >= COLD_MIN_MS ms;
         warm call < COLD_MAX_CACHE_MS ms."""
+
         async def _run():
             pool = _OneShotPool(_SlowFakeEngine())
             ev = _make_evaluator(pool)
@@ -459,6 +467,7 @@ class TestUniqueThroughput:
     def test_unique_corpus_throughput(self):
         """BENCH_UNIQUE_THROUGHPUT: All 6 corpus positions evaluated (cache hits) in
         < BATCH_BUDGET_MS ms after the board cache is warm."""
+
         async def _run():
             ev = _make_evaluator(_TrackingEmptyPool())
             # First pass: populate board cache and result cache for all positions.
@@ -476,9 +485,9 @@ class TestUniqueThroughput:
         elapsed_ms, hit_flags = asyncio.run(_run())
 
         for i, hit in enumerate(hit_flags):
-            assert hit is True, (
-                f"Position {i} ({BENCHMARK_CORPUS[i]!r}) was not a cache hit on the second pass"
-            )
+            assert (
+                hit is True
+            ), f"Position {i} ({BENCHMARK_CORPUS[i]!r}) was not a cache hit on the second pass"
         assert elapsed_ms < BATCH_BUDGET_MS, (
             f"Unique-corpus throughput: {elapsed_ms:.2f} ms for "
             f"{len(BENCHMARK_CORPUS)} positions; SLO is {BATCH_BUDGET_MS} ms."
@@ -494,6 +503,7 @@ class TestNoStateMutation:
 
     def test_evaluate_does_not_mutate_caller_board(self):
         """BENCH_NO_STATE_MUTATION: evaluate_with_metrics does not mutate caller's board."""
+
         async def _run():
             pool = _OneShotPool(_FakeEngine())
             ev = _make_evaluator(pool)
@@ -507,9 +517,9 @@ class TestNoStateMutation:
 
         fen_before, fen_after, pm_before, pm_after = asyncio.run(_run())
 
-        assert fen_before == fen_after, (
-            "Board FEN changed after evaluate_with_metrics — position was mutated!"
-        )
-        assert pm_before == pm_after, (
-            "Board piece_map changed after evaluate_with_metrics — pieces were mutated!"
-        )
+        assert (
+            fen_before == fen_after
+        ), "Board FEN changed after evaluate_with_metrics — position was mutated!"
+        assert (
+            pm_before == pm_after
+        ), "Board piece_map changed after evaluate_with_metrics — pieces were mutated!"

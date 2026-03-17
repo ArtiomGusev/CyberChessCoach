@@ -10,9 +10,8 @@ ROOT = Path(".")
 CASES_DIR = ROOT / "tests/golden/cases"
 PROMPTS_DIR = ROOT / "tests/golden/prompts"
 
-SYSTEM_PROMPT = (ROOT / "rag/prompts/mode_2/system_v1.txt").read_text(
-    encoding="utf-8"
-)
+SYSTEM_PROMPT = (ROOT / "rag/prompts/mode_2/system_v1.txt").read_text(encoding="utf-8")
+
 
 def main():
     for case_path in CASES_DIR.rglob("case_*.json"):
@@ -39,6 +38,7 @@ def main():
 
         out_path.write_text(rendered.strip(), encoding="utf-8")
         print(f"Wrote snapshot: {out_path}")
+
 
 if __name__ == "__main__":
     main()

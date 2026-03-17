@@ -41,6 +41,7 @@ class EventStorage:
             self.db.commit()
         except Exception as e:
             import traceback
+
             print("\n=== LEARNING PIPELINE CRASH ===")
             traceback.print_exc()
             print("=== END CRASH ===\n")
@@ -74,10 +75,4 @@ class EventStorage:
 
     def get_all_recent_games(self, limit: int = 50):
         """Return the most recent GameEvent records across all players."""
-        return (
-            self.db.query(GameEvent)
-            .order_by(GameEvent.created_at.desc())
-            .limit(limit)
-            .all()
-        )
-
+        return self.db.query(GameEvent).order_by(GameEvent.created_at.desc()).limit(limit).all()

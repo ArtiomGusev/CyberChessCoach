@@ -412,7 +412,9 @@ def test_python_tests_job_includes_mandatory_explicit_steps():
     regression_pipeline_idx = step_names.index("Run regression pipeline")
     suite_idx = step_names.index("Run pytest suite with coverage")
     assert golden_idx < suite_idx, "Category A golden tests must run before the full suite"
-    assert engine_regression_idx < suite_idx, "Engine regression tests must run before the full suite"
+    assert (
+        engine_regression_idx < suite_idx
+    ), "Engine regression tests must run before the full suite"
     assert regression_pipeline_idx < suite_idx, "Regression pipeline must run before the full suite"
 
 

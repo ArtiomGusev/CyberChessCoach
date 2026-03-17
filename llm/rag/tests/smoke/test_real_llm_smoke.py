@@ -10,6 +10,7 @@ if not os.getenv("LLM_MODEL"):
 
 from llm.rag.deploy.embedded import explain_position
 
+
 @pytest.mark.smoke
 def test_real_llm_smoke():
     if not os.getenv("LLM_MODEL"):

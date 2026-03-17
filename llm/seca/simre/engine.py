@@ -1,5 +1,6 @@
 # seca/simre/engine.py
 
+
 class SIMRE:
     def __init__(self, policy, evaluator):
         self.policy = policy
@@ -11,9 +12,7 @@ class SIMRE:
         new_policy = hypothesis.modify_fn(self.policy)
 
         # run A/B test
-        mean_A, mean_B = run_ab_test(
-            players, self.policy, new_policy, self.evaluator
-        )
+        mean_A, mean_B = run_ab_test(players, self.policy, new_policy, self.evaluator)
 
         # choose winner
         winner = choose_winner(mean_A, mean_B)

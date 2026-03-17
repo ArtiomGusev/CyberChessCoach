@@ -18,6 +18,7 @@ threshold:
 Results are sorted high → medium → low, then by score descending within the
 same priority tier.  This ordering is deterministic for identical inputs.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -28,6 +29,7 @@ from .mistake_stats import MistakeCategory, MistakeStats
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class TrainingFocus:
@@ -90,6 +92,7 @@ _PRIORITY_ORDER: dict[str, int] = {"high": 0, "medium": 1, "low": 2}
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _priority_from_ratio(ratio: float) -> str:
     """
     Convert (score / threshold) ratio to a priority label.
@@ -107,6 +110,7 @@ def _priority_from_ratio(ratio: float) -> str:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def generate_training_recommendations(stats: MistakeStats) -> list[TrainingFocus]:
     """

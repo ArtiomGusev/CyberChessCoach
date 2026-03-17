@@ -10,7 +10,7 @@ def test_telemetry_event_shape():
         output_length=200,
         case_type="tactical_mistake",
         confidence="high",
-        model="test"
+        model="test",
     )
 
     d = event.to_dict()

@@ -30,8 +30,8 @@ def neural_transition(state, action, predictor):
     d_skill, conf, fatigue = predictor.predict(state, action)
 
     next_state = state.copy()
-    next_state[0] += d_skill      # skill index
-    next_state[1] = conf          # confidence index
-    next_state[2] = fatigue       # fatigue index
+    next_state[0] += d_skill  # skill index
+    next_state[1] = conf  # confidence index
+    next_state[2] = fatigue  # fatigue index
 
     return next_state

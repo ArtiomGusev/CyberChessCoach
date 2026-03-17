@@ -45,6 +45,7 @@ Invariants pinned
 28. STORAGE_METHODS_DISTINCT:  Both methods exist and are distinct callables.
 29. LAYER_BOUNDARY:            historical_pipeline does not import brain/coach/RL.
 """
+
 from __future__ import annotations
 
 import ast
@@ -94,6 +95,7 @@ def _make_event(weaknesses_json: str | None) -> SimpleNamespace:
 # 1–5  load_moves_from_pgn
 # ---------------------------------------------------------------------------
 
+
 class TestLoadMovesFromPgn:
 
     def test_scholars_mate_yields_seven_moves(self, tmp_path):
@@ -134,6 +136,7 @@ class TestLoadMovesFromPgn:
 # ---------------------------------------------------------------------------
 # 6–13  classify_delta boundary values
 # ---------------------------------------------------------------------------
+
 
 class TestClassifyDelta:
 
@@ -177,6 +180,7 @@ class TestClassifyDelta:
 # 14–20  _extract_weakness_dicts
 # ---------------------------------------------------------------------------
 
+
 class TestExtractWeaknessDicts:
 
     def test_no_events_returns_empty_list(self):
@@ -207,7 +211,7 @@ class TestExtractWeaknessDicts:
 
     def test_json_array_is_skipped(self):
         """EXTRACT_NON_DICT_JSON: JSON array is skipped (must be dict)."""
-        event = _make_event('[0.1, 0.2]')
+        event = _make_event("[0.1, 0.2]")
         assert HistoricalAnalysisPipeline._extract_weakness_dicts([event]) == []
 
     def test_multiple_events_all_valid(self):
@@ -226,6 +230,7 @@ class TestExtractWeaknessDicts:
 # ---------------------------------------------------------------------------
 # 21–25  HistoricalAnalysisPipeline.run
 # ---------------------------------------------------------------------------
+
 
 class TestHistoricalPipelineRun:
 
@@ -294,11 +299,13 @@ class TestHistoricalPipelineRun:
 # 26–28  EventStorage method fix
 # ---------------------------------------------------------------------------
 
+
 class TestEventStorageMethods:
 
     def test_get_recent_games_filters_by_player_id(self):
         """STORAGE_PLAYER_SCOPED: get_recent_games filters by player_id."""
         from llm.seca.events.storage import EventStorage
+
         db = MagicMock()
         storage = EventStorage(db)
         storage.get_recent_games(player_id="p1", limit=10)
@@ -310,6 +317,7 @@ class TestEventStorageMethods:
     def test_get_all_recent_games_has_no_player_filter(self):
         """STORAGE_GLOBAL: get_all_recent_games has no player_id filter."""
         from llm.seca.events.storage import EventStorage
+
         db = MagicMock()
         storage = EventStorage(db)
         storage.get_all_recent_games(limit=5)
@@ -322,6 +330,7 @@ class TestEventStorageMethods:
     def test_both_storage_methods_are_distinct(self):
         """STORAGE_METHODS_DISTINCT: Both methods exist and are distinct callables."""
         from llm.seca.events.storage import EventStorage
+
         assert hasattr(EventStorage, "get_recent_games")
         assert hasattr(EventStorage, "get_all_recent_games")
         assert EventStorage.get_recent_games is not EventStorage.get_all_recent_games
@@ -331,11 +340,14 @@ class TestEventStorageMethods:
 # 29  Layer boundary
 # ---------------------------------------------------------------------------
 
+
 class TestLayerBoundary:
 
     def test_historical_pipeline_has_no_forbidden_imports(self):
         """LAYER_BOUNDARY: historical_pipeline does not import brain/coach/RL modules."""
-        src = Path(__file__).resolve().parent.parent / "seca" / "analysis" / "historical_pipeline.py"
+        src = (
+            Path(__file__).resolve().parent.parent / "seca" / "analysis" / "historical_pipeline.py"
+        )
         tree = ast.parse(src.read_text(encoding="utf-8"))
         forbidden = {"brain", "coach", "rl", "reinforcement", "world_model", "online_learner"}
         for node in ast.walk(tree):
@@ -347,6 +359,6 @@ class TestLayerBoundary:
                     names = [node.module]
                 for name in names:
                     for token in forbidden:
-                        assert token not in name.lower(), (
-                            f"historical_pipeline imports forbidden module '{name}'"
-                        )
+                        assert (
+                            token not in name.lower()
+                        ), f"historical_pipeline imports forbidden module '{name}'"

@@ -24,7 +24,4 @@ class WeaknessVectorBuilder:
         if self.total_moves == 0:
             return {}
 
-        return {
-            phase: count / self.total_moves
-            for phase, count in self.counts.items()
-        }
+        return {phase: count / self.total_moves for phase, count in self.counts.items()}

@@ -11,6 +11,7 @@ This behavior is tested explicitly so that any future change to respect `fen`
 when moves are present triggers a review — callers in engine_eval.py and
 elite_engine_service.py depend on the current semantics.
 """
+
 import chess
 
 from llm.position_input import build_board, normalize_position
@@ -22,6 +23,7 @@ _FEN_AFTER_E4_E5 = "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2
 # ---------------------------------------------------------------------------
 # Basic single-argument behaviour
 # ---------------------------------------------------------------------------
+
 
 def test_build_board_from_fen_only():
     board = build_board(fen=_FEN_AFTER_E4)
@@ -56,6 +58,7 @@ def test_build_board_from_moves_only():
 # Empty / falsy moves fall through to FEN path
 # ---------------------------------------------------------------------------
 
+
 def test_build_board_empty_moves_list_respects_fen():
     board = build_board(fen=_FEN_AFTER_E4, moves=[])
     assert board.fen() == _FEN_AFTER_E4
@@ -75,6 +78,7 @@ def test_build_board_whitespace_only_moves_respects_fen():
 # ---------------------------------------------------------------------------
 # FEN is silently ignored when moves are non-empty — regression guard
 # ---------------------------------------------------------------------------
+
 
 def test_build_board_ignores_fen_when_moves_are_present():
     """
@@ -115,6 +119,7 @@ def test_build_board_fen_after_moves_reflects_move_sequence_not_input_fen():
 # normalize_position — returned FEN reflects actual board state
 # ---------------------------------------------------------------------------
 
+
 def test_normalize_position_returns_board_fen_not_input_fen():
     """
     When moves are present, normalize_position returns the FEN of the board
@@ -124,19 +129,17 @@ def test_normalize_position_returns_board_fen_not_input_fen():
     which from starting position yields the d4-opening position — clearly
     different from _FEN_AFTER_E4_E5.
     """
-    result_fen, moves_out, board = normalize_position(
-        fen=_FEN_AFTER_E4_E5, moves=["d2d4"]
-    )
+    result_fen, moves_out, board = normalize_position(fen=_FEN_AFTER_E4_E5, moves=["d2d4"])
     expected = chess.Board()
     expected.push_uci("d2d4")
     expected_fen = expected.fen()  # startpos + d4, not _FEN_AFTER_E4_E5
 
-    assert result_fen == expected_fen, (
-        "normalize_position must return the FEN of startpos+moves, not the input fen"
-    )
-    assert result_fen != _FEN_AFTER_E4_E5, (
-        "The returned FEN must differ from the (ignored) input FEN"
-    )
+    assert (
+        result_fen == expected_fen
+    ), "normalize_position must return the FEN of startpos+moves, not the input fen"
+    assert (
+        result_fen != _FEN_AFTER_E4_E5
+    ), "The returned FEN must differ from the (ignored) input FEN"
     assert moves_out == ["d2d4"]
     assert board.fen() == result_fen
 

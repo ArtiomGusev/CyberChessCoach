@@ -37,6 +37,7 @@ FORBIDDEN_MODULE_PARTS = [
 # Guards
 # ------------------------------------------------------------------
 
+
 def _scan_loaded_modules():
     """Scan already imported modules for forbidden adaptive components."""
     for name, module in sys.modules.items():
@@ -94,6 +95,7 @@ def _crash(reason: str):
 # ------------------------------------------------------------------
 # Public entrypoint
 # ------------------------------------------------------------------
+
 
 def enforce(world_model):
     """

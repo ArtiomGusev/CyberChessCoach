@@ -1,8 +1,6 @@
 import random
 
 
-
-
 def monte_carlo_plan(sim, state, horizon=20, trials=200):
     best_score = -1e9
     best_seq = None

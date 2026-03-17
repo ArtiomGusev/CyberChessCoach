@@ -146,9 +146,7 @@ def validate_explain_response(response: dict) -> ExplainResponse:
     # --- Content validation (only for LLM-generated modes) ---
     if validated.mode != "SAFE_V1":
         if not validated.explanation.strip():
-            raise ExplainSchemaError(
-                f"LLM explanation must be non-empty (mode={validated.mode!r})"
-            )
+            raise ExplainSchemaError(f"LLM explanation must be non-empty (mode={validated.mode!r})")
         from llm.rag.validators.mode_2_negative import validate_mode_2_negative
 
         try:

@@ -9,6 +9,6 @@ def prediction_error(sdwm, z_t, action, z_real_next):
     z_pred_next, _ = sdwm(z_t, action)
 
     error = z_real_next - z_pred_next
-    loss = torch.mean(error ** 2)
+    loss = torch.mean(error**2)
 
     return loss, error

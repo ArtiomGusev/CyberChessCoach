@@ -7,10 +7,7 @@ from llm.rag.retriever.retriever import retrieve
 # --- Load golden case ---
 ROOT = Path(__file__).resolve().parents[2]
 
-with open(
-    ROOT / "tests" / "golden" / "cases" / "tactical_mistake" / "case_001.json",
-    "r"
-) as f:
+with open(ROOT / "tests" / "golden" / "cases" / "tactical_mistake" / "case_001.json", "r") as f:
     case = json.load(f)
 
 # --- Build ESV ---

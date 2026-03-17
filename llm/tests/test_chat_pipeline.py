@@ -30,6 +30,7 @@ Invariants pinned
 19. LAYER_BOUNDARY:         chat_pipeline.py imports no sqlalchemy.
 20. ENGINE_SIGNAL_BAND_VALUES: band is one of the four valid strings.
 """
+
 from __future__ import annotations
 
 import ast
@@ -48,8 +49,14 @@ from llm.seca.coach.chat_pipeline import (
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 _VALID_BANDS = {"equal", "small_advantage", "clear_advantage", "decisive_advantage"}
-_REQUIRED_ESV_KEYS = {"evaluation", "eval_delta", "last_move_quality",
-                      "tactical_flags", "position_flags", "phase"}
+_REQUIRED_ESV_KEYS = {
+    "evaluation",
+    "eval_delta",
+    "last_move_quality",
+    "tactical_flags",
+    "position_flags",
+    "phase",
+}
 
 _STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 _MID_FEN = "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3"
@@ -58,6 +65,7 @@ _MID_FEN = "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3"
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _get_imports(module_path: Path) -> set[str]:
     source = module_path.read_text(encoding="utf-8")
@@ -80,6 +88,7 @@ def _make_turns(*pairs: tuple[str, str]) -> list[ChatTurn]:
 # ---------------------------------------------------------------------------
 # 1–5  Core return-value invariants
 # ---------------------------------------------------------------------------
+
 
 class TestChatReplyInvariants:
 
@@ -105,14 +114,15 @@ class TestChatReplyInvariants:
         band = result.engine_signal["evaluation"]["band"]
         band_word = band.replace("_", " ")
         # Any part of the band label should appear in the reply
-        assert any(w in result.reply for w in band_word.split()), (
-            f"Reply does not reference evaluation band '{band}': {result.reply!r}"
-        )
+        assert any(
+            w in result.reply for w in band_word.split()
+        ), f"Reply does not reference evaluation band '{band}': {result.reply!r}"
 
 
 # ---------------------------------------------------------------------------
 # 6–8  Message history handling
 # ---------------------------------------------------------------------------
+
 
 class TestMessageHistoryHandling:
 
@@ -134,13 +144,17 @@ class TestMessageHistoryHandling:
         )
         result = generate_chat_reply(_STARTING_FEN, turns)
         # Prior user question should be referenced
-        assert "develop" in result.reply.lower() or "earlier" in result.reply.lower() or \
-               "Following" in result.reply
+        assert (
+            "develop" in result.reply.lower()
+            or "earlier" in result.reply.lower()
+            or "Following" in result.reply
+        )
 
 
 # ---------------------------------------------------------------------------
 # 9–10  Player profile & past mistakes
 # ---------------------------------------------------------------------------
+
 
 class TestPlayerContext:
 
@@ -163,7 +177,8 @@ class TestPlayerContext:
     def test_past_mistakes_appear_in_reply(self):
         turns = _make_turns(("user", "Any training suggestions?"))
         result = generate_chat_reply(
-            _STARTING_FEN, turns,
+            _STARTING_FEN,
+            turns,
             past_mistakes=["opening_preparation", "endgame_technique"],
         )
         assert "opening_preparation" in result.reply or "opening" in result.reply.lower()
@@ -176,6 +191,7 @@ class TestPlayerContext:
 # ---------------------------------------------------------------------------
 # 11–12  _format_engine_context
 # ---------------------------------------------------------------------------
+
 
 class TestFormatEngineContext:
 
@@ -226,10 +242,12 @@ class TestFormatEngineContext:
 # 13  _build_context_block
 # ---------------------------------------------------------------------------
 
+
 class TestBuildContextBlock:
 
     def _neutral_signal(self) -> dict:
         from llm.rag.engine_signal.extract_engine_signal import extract_engine_signal
+
         return extract_engine_signal({}, fen=_STARTING_FEN)
 
     def test_no_profile_returns_engine_context_only(self):
@@ -252,6 +270,7 @@ class TestBuildContextBlock:
 # 14  Engine signal is never user-sourced
 # ---------------------------------------------------------------------------
 
+
 class TestEngineSignalIsolation:
 
     def test_engine_signal_does_not_contain_user_text(self):
@@ -259,9 +278,7 @@ class TestEngineSignalIsolation:
         turns = _make_turns(("user", sentinel))
         result = generate_chat_reply(_STARTING_FEN, turns)
         signal_str = str(result.engine_signal)
-        assert sentinel not in signal_str, (
-            "engine_signal must never reflect user-supplied content"
-        )
+        assert sentinel not in signal_str, "engine_signal must never reflect user-supplied content"
 
     def test_engine_signal_band_is_valid(self):
         result = generate_chat_reply(_STARTING_FEN, [])
@@ -272,6 +289,7 @@ class TestEngineSignalIsolation:
 # ---------------------------------------------------------------------------
 # 15  Determinism
 # ---------------------------------------------------------------------------
+
 
 class TestDeterminism:
 
@@ -292,6 +310,7 @@ class TestDeterminism:
 # 16–17  Immutability
 # ---------------------------------------------------------------------------
 
+
 class TestDataclassImmutability:
 
     def test_chat_turn_is_frozen(self):
@@ -308,6 +327,7 @@ class TestDataclassImmutability:
 # ---------------------------------------------------------------------------
 # 18–19  Layer boundary
 # ---------------------------------------------------------------------------
+
 
 class TestLayerBoundary:
 

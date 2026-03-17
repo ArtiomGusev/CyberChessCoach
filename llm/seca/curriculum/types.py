@@ -14,13 +14,13 @@ class SkillVector:
 @dataclass
 class Weakness:
     name: str
-    severity: float      # 0–1
-    confidence: float    # reliability of estimate
+    severity: float  # 0–1
+    confidence: float  # reliability of estimate
 
 
 @dataclass
 class TrainingTask:
     topic: str
     difficulty: float
-    format: str          # puzzle | explanation | game | drill
+    format: str  # puzzle | explanation | game | drill
     expected_gain: float

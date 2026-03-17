@@ -23,6 +23,7 @@ from typing import Any, Callable, Dict, Optional
 # Exceptions
 # ============================================================
 
+
 class SafetyViolation(Exception):
     """Raised when an action or update violates safety constraints."""
 
@@ -34,6 +35,7 @@ class UpdateRejected(Exception):
 # ============================================================
 # Data structures
 # ============================================================
+
 
 @dataclass
 class ActionContext:
@@ -55,6 +57,7 @@ class UpdateProposal:
 # ============================================================
 # Safety Kernel
 # ============================================================
+
 
 class SafetyKernel:
     """

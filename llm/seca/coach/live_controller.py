@@ -6,6 +6,7 @@ from typing import Dict, List, Optional
 # Data structures
 # ---------------------------
 
+
 @dataclass
 class GameSummary:
     rating_before: float
@@ -26,6 +27,7 @@ class CoachAction:
 # ---------------------------
 # Controller
 # ---------------------------
+
 
 class PostGameCoachController:
     def __init__(self):

@@ -14,6 +14,7 @@ Note: dynamic imports via importlib.import_module or __import__ are not
 detected by this approach. That path is considered out of scope because
 no live module in this codebase uses dynamic imports for engine adapters.
 """
+
 import ast
 import pathlib
 

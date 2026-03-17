@@ -27,13 +27,15 @@ class EventStorage:
     def _create_tables(self):
         cur = self.conn.cursor()
 
-        cur.execute("""
+        cur.execute(
+            """
         CREATE TABLE IF NOT EXISTS events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             type TEXT,
             payload TEXT
         )
-        """)
+        """
+        )
 
         self.conn.commit()
 

@@ -15,6 +15,7 @@ Covers the following areas under high-concurrency, adversarial, and boundary con
 
 All tests are deterministic and use fake engines — no live Stockfish required.
 """
+
 from __future__ import annotations
 
 import ast
@@ -237,9 +238,9 @@ class TestCacheStressConcurrency:
             return latencies
 
         latencies = asyncio.run(_run())
-        assert max(latencies) < BUDGET_MS, (
-            f"Cache-hit latency exceeded {BUDGET_MS} ms: max={max(latencies):.2f} ms"
-        )
+        assert (
+            max(latencies) < BUDGET_MS
+        ), f"Cache-hit latency exceeded {BUDGET_MS} ms: max={max(latencies):.2f} ms"
 
     def test_mru_entry_survives_repeated_eviction_pressure(self):
         """With cache_size=2, the MRU entry must survive after 10 new insertions."""
@@ -253,7 +254,7 @@ class TestCacheStressConcurrency:
             # Repeatedly access fens[1] (keeps it MRU) while inserting new entries
             for f in fens[2:12]:
                 await ev.evaluate_with_metrics(fen=fens[1], nodes=50)  # promote fens[1]
-                await ev.evaluate_with_metrics(fen=f, nodes=50)        # insert new
+                await ev.evaluate_with_metrics(fen=f, nodes=50)  # insert new
             # fens[1] was promoted to MRU before each eviction → must still be cached
             key_mru = ev._cache_key(fens[1], None, 50)
             return key_mru in ev._result_cache
@@ -304,6 +305,7 @@ class TestSchemaValidationStress:
             ExplainSchemaError,
             EngineSignalSchema,
         )
+
         self.validate = validate_explain_response
         self.SchemaError = ExplainSchemaError
         self.EngineSignalSchema = EngineSignalSchema
@@ -329,16 +331,16 @@ class TestSchemaValidationStress:
         the forbidden notation regex \b[KQRBN][a-h][1-8]\b.
         """
         forbidden = [
-            "White should advance the pawn.",         # speculative: "should"
-            "Black should retreat the knight.",        # speculative: "should"
-            "The engine wants to capture the bishop.", # engine reference
-            "The engine wants to play Nd5.",           # engine reference
+            "White should advance the pawn.",  # speculative: "should"
+            "Black should retreat the knight.",  # speculative: "should"
+            "The engine wants to capture the bishop.",  # engine reference
+            "The engine wants to play Nd5.",  # engine reference
             "The position leads to mate in 3 moves.",  # mate claim
-            "This is mate in 5.",                      # mate claim
+            "This is mate in 5.",  # mate claim
             "One must calculate the variation carefully.",  # calculation
-            "White can calculate a forced win.",       # calculation
-            "The knight on Nf3 controls key squares.", # notation: Nf3
-            "White's bishop on Bc4 is dominant.",      # notation: Bc4
+            "White can calculate a forced win.",  # calculation
+            "The knight on Nf3 controls key squares.",  # notation: Nf3
+            "White's bishop on Bc4 is dominant.",  # notation: Bc4
         ]
         for phrase in forbidden:
             r = _llm_r(explanation=phrase)
@@ -376,8 +378,10 @@ class TestSchemaValidationStress:
                         r = {
                             "explanation": "Structural explanation only.",
                             "engine_signal": _esig(
-                                eval_type=eval_type, band=band,
-                                side=side, phase=phase,
+                                eval_type=eval_type,
+                                band=band,
+                                side=side,
+                                phase=phase,
                             ),
                             "mode": "SAFE_V1",
                         }
@@ -428,6 +432,7 @@ class TestSchemaValidationStress:
         """Invalid band values must all be rejected at schema level."""
         invalid_bands = ["great", "dominant", "0", "winning", "", None, 42, True]
         from pydantic import ValidationError
+
         for band in invalid_bands:
             sig = _esig()
             sig["evaluation"]["band"] = band
@@ -453,8 +458,11 @@ class TestApiContractStress:
                 return (
                     {"score": _s, "best_move": "e2e4", "source": "engine"},
                     {
-                        "cache_hit": False, "source": "engine",
-                        "engine_wait_ms": 1.0, "engine_eval_ms": 5.0, "total_ms": 6.0,
+                        "cache_hit": False,
+                        "source": "engine",
+                        "engine_wait_ms": 1.0,
+                        "engine_eval_ms": 5.0,
+                        "total_ms": 6.0,
                     },
                 )
 
@@ -467,9 +475,7 @@ class TestApiContractStress:
             monkeypatch.setattr(host_app, "engine_eval", _FakeEv())
             monkeypatch.setattr(host_app.engine_service, "evaluate_with_metrics", _fake_eval)
 
-            result = asyncio.run(
-                host_app.eval_position(host_app.EngineEvalRequest(fen="startpos"))
-            )
+            result = asyncio.run(host_app.eval_position(host_app.EngineEvalRequest(fen="startpos")))
             assert result["score"] == extreme_score
             assert "score" in result and "best_move" in result and "source" in result
 
@@ -487,7 +493,9 @@ class TestApiContractStress:
             player = SimpleNamespace(id=1, rating=1500.0, confidence=0.70)
             db = MagicMock()
             db.refresh.side_effect = lambda obj: None
-            db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+            db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = (
+                []
+            )
             with (
                 patch("llm.seca.events.router.EventStorage") as MockStorage,
                 patch("llm.seca.events.router.SkillUpdater"),
@@ -495,7 +503,9 @@ class TestApiContractStress:
                 MockStorage.return_value.store_game.return_value = SimpleNamespace(id=1)
                 r = finish_game(
                     req=GameFinishRequest(pgn=pgn, result="win", accuracy=0.80, weaknesses={}),
-                    player=player, request=None, db=db,
+                    player=player,
+                    request=None,
+                    db=db,
                 )
             assert r["status"] == "stored", f"game/finish failed for PGN len={len(pgn)}"
 
@@ -520,15 +530,21 @@ class TestApiContractStress:
             player = SimpleNamespace(id=1, rating=1500.0, confidence=0.70)
             db = MagicMock()
             db.refresh.side_effect = lambda obj: None
-            db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+            db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = (
+                []
+            )
             with (
                 patch("llm.seca.events.router.EventStorage") as MockStorage,
                 patch("llm.seca.events.router.SkillUpdater"),
             ):
                 MockStorage.return_value.store_game.return_value = SimpleNamespace(id=1)
                 r = finish_game(
-                    req=GameFinishRequest(pgn="1. e4 *", result=result_type, accuracy=0.75, weaknesses={}),
-                    player=player, request=None, db=db,
+                    req=GameFinishRequest(
+                        pgn="1. e4 *", result=result_type, accuracy=0.75, weaknesses={}
+                    ),
+                    player=player,
+                    request=None,
+                    db=db,
                 )
             assert r["status"] == "stored"
 
@@ -537,9 +553,9 @@ class TestApiContractStress:
         import llm.server as server_module
 
         routes = {getattr(r, "path", None) for r in server_module.app.routes}
-        assert "/next-training/{player_id}" in routes, (
-            "Required route /next-training/{player_id} is missing from server.py"
-        )
+        assert (
+            "/next-training/{player_id}" in routes
+        ), "Required route /next-training/{player_id} is missing from server.py"
 
     def test_host_app_exposes_engine_eval_route(self):
         """host_app.py must expose /engine/eval."""
@@ -587,6 +603,7 @@ class TestGameAnalysisPipelineStress:
         from llm.seca.analysis.historical_pipeline import HistoricalAnalysisPipeline
         from llm.seca.analysis.pgn_loader import load_moves_from_pgn
         from llm.seca.analysis.mistake_classifier import classify_delta
+
         self.Pipeline = HistoricalAnalysisPipeline
         self.load_pgn = load_moves_from_pgn
         self.classify = classify_delta
@@ -596,9 +613,7 @@ class TestGameAnalysisPipelineStress:
 
     def test_1000_valid_events_aggregate_correctly(self):
         """1000 identical events must produce the correct phase averages."""
-        events = [
-            _make_event('{"opening": 0.10, "middlegame": 0.08, "endgame": 0.05}')
-        ] * 1000
+        events = [_make_event('{"opening": 0.10, "middlegame": 0.08, "endgame": 0.05}')] * 1000
         with patch("llm.seca.analysis.historical_pipeline.AnalyticsLogger") as ML:
             ML.return_value = MagicMock()
             stats = self._make_pipeline().run("stress_player", events)
@@ -620,9 +635,9 @@ class TestGameAnalysisPipelineStress:
             stats = self._make_pipeline().run("mixed_player", events)
         # pipeline._extract_weakness_dicts filters out malformed JSON, None, and empty
         # strings — only the 500 valid dicts reach aggregate_from_weakness_dicts.
-        assert stats.games_analyzed == 500, (
-            f"Expected 500 valid games aggregated; got {stats.games_analyzed}"
-        )
+        assert (
+            stats.games_analyzed == 500
+        ), f"Expected 500 valid games aggregated; got {stats.games_analyzed}"
         assert "opening" in stats.phase_rates
 
     def test_large_pgn_100_moves_parses_without_error(self, tmp_path):
@@ -642,7 +657,7 @@ class TestGameAnalysisPipelineStress:
             if i % 2 == 0:
                 move_text += f"{i // 2 + 1}. "
             move_text += san + " "
-        pgn = f"[Event \"Stress\"]\n[Result \"*\"]\n\n{move_text}*\n"
+        pgn = f'[Event "Stress"]\n[Result "*"]\n\n{move_text}*\n'
 
         pgn_file = tmp_path / "stress.pgn"
         pgn_file.write_text(pgn, encoding="utf-8")
@@ -663,12 +678,20 @@ class TestGameAnalysisPipelineStress:
     def test_classify_delta_boundary_sweep_exhaustive(self):
         """Sweep classify_delta at every documented boundary ±epsilon."""
         cases = [
-            (0.0, "ok"),   (49.0, "ok"),   (49.9, "ok"),
-            (50.0, "inaccuracy"), (50.1, "inaccuracy"),
-            (149.0, "inaccuracy"), (149.9, "inaccuracy"),
-            (150.0, "mistake"), (150.1, "mistake"),
-            (299.0, "mistake"), (299.9, "mistake"),
-            (300.0, "blunder"), (300.1, "blunder"), (9999.0, "blunder"),
+            (0.0, "ok"),
+            (49.0, "ok"),
+            (49.9, "ok"),
+            (50.0, "inaccuracy"),
+            (50.1, "inaccuracy"),
+            (149.0, "inaccuracy"),
+            (149.9, "inaccuracy"),
+            (150.0, "mistake"),
+            (150.1, "mistake"),
+            (299.0, "mistake"),
+            (299.9, "mistake"),
+            (300.0, "blunder"),
+            (300.1, "blunder"),
+            (9999.0, "blunder"),
         ]
         for delta, expected in cases:
             assert self.classify(delta) == expected, f"classify_delta({delta}) wrong"
@@ -706,8 +729,10 @@ class TestPlayerAnalyticsStress:
     @pytest.fixture(autouse=True)
     def _import(self):
         from llm.seca.analytics.mistake_stats import (
-            aggregate_from_weakness_dicts, MistakeCategory,
+            aggregate_from_weakness_dicts,
+            MistakeCategory,
         )
+
         self.aggregate = aggregate_from_weakness_dicts
         self.MistakeCategory = MistakeCategory
 
@@ -791,7 +816,9 @@ class TestTrainingRecommendationStress:
     @pytest.fixture(autouse=True)
     def _import(self):
         from llm.seca.analytics.training_recommendations import (
-            generate_training_recommendations, _CATEGORY_RULES, _priority_from_ratio,
+            generate_training_recommendations,
+            _CATEGORY_RULES,
+            _priority_from_ratio,
         )
         from llm.seca.analytics.mistake_stats import MistakeStats, MistakeCategory
 
@@ -815,9 +842,9 @@ class TestTrainingRecommendationStress:
         for category, (threshold, _) in self.rules.items():
             scores = {cat: 0.0 for cat in self.MistakeCategory.ALL}
             scores[category] = threshold * 0.5
-            assert self.generate(self._stats(scores)) == [], (
-                f"Score below threshold must not produce recs for {category}"
-            )
+            assert (
+                self.generate(self._stats(scores)) == []
+            ), f"Score below threshold must not produce recs for {category}"
 
     def test_threshold_sweep_at_exact_threshold_gives_low_priority(self):
         """Score exactly at threshold must produce exactly one low-priority rec."""
@@ -826,9 +853,9 @@ class TestTrainingRecommendationStress:
             scores[category] = threshold
             recs = self.generate(self._stats(scores))
             assert len(recs) == 1
-            assert recs[0].priority == "low", (
-                f"Score at threshold must be 'low' for {category}; got {recs[0].priority!r}"
-            )
+            assert (
+                recs[0].priority == "low"
+            ), f"Score at threshold must be 'low' for {category}; got {recs[0].priority!r}"
 
     def test_threshold_sweep_at_2x_gives_high_priority(self):
         """Score at 2× threshold must produce a high-priority recommendation."""
@@ -836,9 +863,9 @@ class TestTrainingRecommendationStress:
             scores = {cat: 0.0 for cat in self.MistakeCategory.ALL}
             scores[category] = threshold * 2.0
             recs = self.generate(self._stats(scores))
-            assert recs[0].priority == "high", (
-                f"Score at 2× threshold should be 'high' for {category}"
-            )
+            assert (
+                recs[0].priority == "high"
+            ), f"Score at 2× threshold should be 'high' for {category}"
 
     def test_all_4_categories_high_produces_4_sorted_high_recs(self):
         """When all 4 categories are at 2× threshold, produce 4 high-priority recs."""
@@ -851,15 +878,12 @@ class TestTrainingRecommendationStress:
         """100 random score configurations must always produce sorted priority order."""
         order = {"high": 0, "medium": 1, "low": 2}
         for _ in range(100):
-            scores = {
-                cat: t * random.uniform(0, 3.0)
-                for cat, (t, _) in self.rules.items()
-            }
+            scores = {cat: t * random.uniform(0, 3.0) for cat, (t, _) in self.rules.items()}
             recs = self.generate(self._stats(scores))
             for i in range(len(recs) - 1):
-                assert order[recs[i].priority] <= order[recs[i + 1].priority], (
-                    f"Priority order violated: {[r.priority for r in recs]}"
-                )
+                assert (
+                    order[recs[i].priority] <= order[recs[i + 1].priority]
+                ), f"Priority order violated: {[r.priority for r in recs]}"
 
     def test_determinism_100_identical_calls(self):
         """100 calls with the same stats must produce the same ordered result."""
@@ -878,9 +902,9 @@ class TestTrainingRecommendationStress:
         """All generated recommendations must include a non-empty rationale string."""
         scores = {cat: t * 1.5 for cat, (t, _) in self.rules.items()}
         for rec in self.generate(self._stats(scores)):
-            assert rec.rationale and rec.rationale.strip(), (
-                f"Empty rationale for category {rec.category!r}"
-            )
+            assert (
+                rec.rationale and rec.rationale.strip()
+            ), f"Empty rationale for category {rec.category!r}"
 
     def test_priority_from_ratio_boundary_sweep(self):
         """Exhaustive sweep of _priority_from_ratio at all documented breakpoints."""
@@ -894,9 +918,9 @@ class TestTrainingRecommendationStress:
             (100.0, "high"),
         ]
         for ratio, expected in cases:
-            assert self.priority_from_ratio(ratio) == expected, (
-                f"_priority_from_ratio({ratio}) → wrong result, expected {expected!r}"
-            )
+            assert (
+                self.priority_from_ratio(ratio) == expected
+            ), f"_priority_from_ratio({ratio}) → wrong result, expected {expected!r}"
 
     def test_clean_player_zero_games_no_recommendations(self):
         """A player with 0 games must get an empty recommendation list."""
@@ -934,6 +958,7 @@ class TestExtendedBenchmarkCorpus:
 
     def test_cold_eval_all_12_returns_score_and_best_move(self):
         """Cold evaluation of all 12 corpus positions must return score and best_move."""
+
         async def _run():
             results = []
             for fen in EXTENDED_CORPUS:
@@ -980,6 +1005,7 @@ class TestExtendedBenchmarkCorpus:
 
     def test_cache_size_6_never_exceeded_across_12_positions(self):
         """cache_size=6 must cap at 6 entries after evaluating all 12 corpus positions."""
+
         async def _run():
             ev = _make_evaluator(_EmptyPool(), cache_size=6)
             for fen in EXTENDED_CORPUS:
@@ -990,6 +1016,7 @@ class TestExtendedBenchmarkCorpus:
 
     def test_no_board_state_mutation_across_all_12_positions(self):
         """evaluate_with_metrics must not mutate the caller's board for any corpus position."""
+
         async def _run():
             pool = _OneShotPool()
             ev = _make_evaluator(pool)
@@ -1053,9 +1080,7 @@ class TestCiCdPipelineStress:
 
     def test_no_intra_group_duplicate_targets(self):
         for label, targets in self.regression_groups:
-            assert len(targets) == len(set(targets)), (
-                f"Group '{label}' has duplicate targets"
-            )
+            assert len(targets) == len(set(targets)), f"Group '{label}' has duplicate targets"
 
     def test_no_cross_group_duplicate_targets(self):
         all_targets: list[str] = []
@@ -1067,18 +1092,16 @@ class TestCiCdPipelineStress:
     def test_all_regression_targets_exist_as_files(self):
         for label, targets in self.regression_groups:
             for target in targets:
-                assert (PROJECT_ROOT / target).exists(), (
-                    f"Group '{label}' target missing: {target}"
-                )
+                assert (PROJECT_ROOT / target).exists(), f"Group '{label}' target missing: {target}"
 
     def test_all_ci_suite_targets_exist_as_files(self):
         for target in self.ci_targets:
             assert (PROJECT_ROOT / target).exists(), f"CI target missing: {target}"
 
     def test_ci_suite_has_minimum_30_targets(self):
-        assert len(self.ci_targets) >= 30, (
-            f"CI suite has only {len(self.ci_targets)} targets; minimum is 30"
-        )
+        assert (
+            len(self.ci_targets) >= 30
+        ), f"CI suite has only {len(self.ci_targets)} targets; minimum is 30"
 
     def test_no_duplicate_targets_in_ci_suite(self):
         duplicates = {t for t in self.ci_targets if self.ci_targets.count(t) > 1}
@@ -1087,9 +1110,9 @@ class TestCiCdPipelineStress:
     def test_first_regression_group_is_engine_related(self):
         """Engine regression must run first (cheapest tests catch first)."""
         first_label, _ = self.regression_groups[0]
-        assert "engine" in first_label.lower(), (
-            f"First group should be engine-related; got '{first_label}'"
-        )
+        assert (
+            "engine" in first_label.lower()
+        ), f"First group should be engine-related; got '{first_label}'"
 
     def test_regression_covers_all_major_areas(self):
         """Regression groups must cover engine, coaching, API, analysis, and layer areas."""
@@ -1102,9 +1125,9 @@ class TestCiCdPipelineStress:
             "layer": ["seca_layer_boundaries"],
         }
         for area, kws in required_keywords.items():
-            assert any(kw in all_targets for kw in kws), (
-                f"Regression pipeline missing coverage for area: {area}"
-            )
+            assert any(
+                kw in all_targets for kw in kws
+            ), f"Regression pipeline missing coverage for area: {area}"
 
     def test_layer_boundary_group_present(self):
         labels = [label.lower() for label, _ in self.regression_groups]

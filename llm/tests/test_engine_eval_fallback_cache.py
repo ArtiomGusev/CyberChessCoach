@@ -32,6 +32,7 @@ _FakeEngine         — async engine stub returning a real score and best move.
 _SlowPool           — try_acquire() returns None, acquire() blocks forever
                       (simulates a pool that times out).
 """
+
 import asyncio
 import os
 
@@ -56,6 +57,7 @@ _FEN_E4 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
 # ---------------------------------------------------------------------------
 # Pool / engine test doubles
 # ---------------------------------------------------------------------------
+
 
 class _FakeEngine:
     """Async engine stub that returns a fixed score and best move."""
@@ -143,6 +145,7 @@ class _SlowPool:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_evaluator(pool, *, acquire_timeout_ms: int = 0) -> EngineEvaluator:
     ev = EngineEvaluator(pool)
     ev.acquire_timeout_ms = acquire_timeout_ms
@@ -153,11 +156,13 @@ def _make_evaluator(pool, *, acquire_timeout_ms: int = 0) -> EngineEvaluator:
 # Test 1: empty pool → fallback on first call
 # ---------------------------------------------------------------------------
 
+
 def test_first_call_empty_pool_returns_fallback():
     """
     When the pool is empty, evaluate_with_metrics must return
     engine_fallback=True and engine_result_cache_hit=False.
     """
+
     async def _run():
         ev = _make_evaluator(_EmptyPool(), acquire_timeout_ms=0)
         result, metrics = await ev.evaluate_with_metrics(fen=_STARTPOS, nodes=100)
@@ -175,6 +180,7 @@ def test_first_call_empty_pool_returns_fallback():
 # Test 2: second call for same position → cache hit, fallback invisible
 # ---------------------------------------------------------------------------
 
+
 def test_second_call_same_position_returns_cache_hit():
     """
     The second call for the same position/limits returns engine_result_cache_hit=True
@@ -185,6 +191,7 @@ def test_second_call_same_position_returns_cache_hit():
     After any fix that tags fallback-origin entries: the second assertion about
     engine_fallback would need to be updated to engine_fallback=True.
     """
+
     async def _run():
         ev = _make_evaluator(_EmptyPool(), acquire_timeout_ms=0)
         # First call populates the cache with a fallback result.
@@ -195,9 +202,9 @@ def test_second_call_same_position_returns_cache_hit():
 
     result2, metrics2 = asyncio.run(_run())
 
-    assert metrics2["engine_result_cache_hit"] is True, (
-        "Second call for the same position must be a cache hit"
-    )
+    assert (
+        metrics2["engine_result_cache_hit"] is True
+    ), "Second call for the same position must be a cache hit"
     assert metrics2["engine_fallback"] is False, (
         "Cache hit path always reports engine_fallback=False, even when the cached "
         "value originated from the fast-fallback path. This is the pinned invariant: "
@@ -209,11 +216,13 @@ def test_second_call_same_position_returns_cache_hit():
 # Test 3: fallback is cached per limit key
 # ---------------------------------------------------------------------------
 
+
 def test_fallback_cached_per_limit_key():
     """
     Different limit parameters produce different cache keys. A fallback result
     cached for nodes=100 must not serve as a cache hit for nodes=200.
     """
+
     async def _run():
         ev = _make_evaluator(_EmptyPool(), acquire_timeout_ms=0)
         _, m1 = await ev.evaluate_with_metrics(fen=_STARTPOS, nodes=100)
@@ -240,12 +249,14 @@ def test_fallback_cached_per_limit_key():
 # Test 4: real engine result is cached and served as cache hit
 # ---------------------------------------------------------------------------
 
+
 def test_real_engine_result_cached_and_returned_as_cache_hit():
     """
     When a real engine result is obtained, it is stored in the LRU cache.
     The second call for the same position returns engine_result_cache_hit=True
     and engine_fallback=False.
     """
+
     async def _run():
         pool = _TrackingPool()
         ev = _make_evaluator(pool, acquire_timeout_ms=0)
@@ -271,11 +282,13 @@ def test_real_engine_result_cached_and_returned_as_cache_hit():
 # Test 5: timeout fallback is also cached
 # ---------------------------------------------------------------------------
 
+
 def test_timeout_fallback_is_cached():
     """
     When acquire() times out, the fallback result is cached. The second call
     for the same position returns engine_result_cache_hit=True.
     """
+
     async def _run():
         # Use a very short timeout (1 ms) so the test finishes quickly.
         ev = _make_evaluator(_SlowPool(), acquire_timeout_ms=1)

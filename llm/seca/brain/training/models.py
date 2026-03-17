@@ -27,9 +27,7 @@ class TrainingDecision(Base):
 
 class TrainingOutcome(Base):
     __tablename__ = "training_outcomes"
-    __table_args__ = (
-        Index("idx_training_outcomes_decision", "decision_id"),
-    )
+    __table_args__ = (Index("idx_training_outcomes_decision", "decision_id"),)
 
     id = Column(String, primary_key=True)
     decision_id = Column(String, ForeignKey("training_decisions.id"), nullable=False)
