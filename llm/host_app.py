@@ -4,9 +4,12 @@ load_dotenv()
 import asyncio
 import os
 import time
+import logging
 from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+
+logger = logging.getLogger(__name__)
 
 try:
     import orjson  # noqa: F401
@@ -133,11 +136,12 @@ async def debug_redis():
             "redis": bool(pong),
             "pong": pong,
         }
-    except Exception as exc:
+    except Exception:
+        logger.exception("Redis ping failed")
         return {
             "backend": redis_backend_name(),
             "redis": False,
-            "detail": str(exc),
+            "detail": "redis_error",
         }
 
 
