@@ -414,7 +414,6 @@ jobs:
           ignore-unfixed: true
           exit-code: "0"
           trivy-config: trivy.yaml
-          ignore-unfixed: true
         env:
           TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy
           TRIVY_TIMEOUT: "15m"
