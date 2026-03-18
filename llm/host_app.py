@@ -158,13 +158,13 @@ async def debug_redis():
             "redis": bool(pong),
             "pong": pong,
         }
-    except Exception as exc:
-        logger.error(f"DEBUG: Redis error: {exc}") 
-        
+    except Exception:
+        logger.exception("Redis connection error during debug check")
+
         return {
             "backend": redis_backend_name(),
             "redis": False,
-            "detail": "Redis connection unavailable", 
+            "detail": "Redis connection unavailable",
         }
 
 
