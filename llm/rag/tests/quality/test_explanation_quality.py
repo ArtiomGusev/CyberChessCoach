@@ -10,7 +10,6 @@ Do NOT add these to CI.
 from llm.rag.llm.fake import FakeLLM
 from llm.rag.llm.run_mode_2 import run_mode_2
 
-
 PROMPT = "Dummy prompt"
 
 

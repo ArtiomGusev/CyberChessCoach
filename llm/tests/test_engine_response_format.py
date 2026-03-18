@@ -37,7 +37,6 @@ import pytest
 from llm.rag.engine_signal.extract_engine_signal import extract_engine_signal
 from llm.seca.engines.stockfish.pool import FenMoveCache, StockfishEnginePool, EnginePoolSettings
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

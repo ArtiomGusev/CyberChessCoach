@@ -9,7 +9,6 @@ from sqlalchemy.orm import sessionmaker
 from llm.seca.auth.models import Player
 from llm.seca.learning.player_embedding import embedding_from_json, zeros_embedding
 
-
 # --------------------------------------------------
 # Data structures
 # --------------------------------------------------

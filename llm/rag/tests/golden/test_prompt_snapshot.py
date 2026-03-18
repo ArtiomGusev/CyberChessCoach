@@ -6,7 +6,6 @@ from llm.rag.retriever.retriever import retrieve
 from llm.rag.documents import ALL_RAG_DOCUMENTS
 from llm.rag.prompts.mode_2.render_v1 import render_mode_2_prompt
 
-
 ROOT = Path(__file__).resolve().parents[3]
 
 SYSTEM_PROMPT = (

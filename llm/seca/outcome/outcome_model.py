@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from typing import Literal
 
-
 OutcomeType = Literal["improved", "neutral", "worse"]
 
 

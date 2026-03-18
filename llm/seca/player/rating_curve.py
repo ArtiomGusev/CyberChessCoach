@@ -2,7 +2,6 @@ from typing import List
 
 from .timeline_types import SkillPoint
 
-
 BASE_RATING = 800
 SKILL_TO_ELO = 12.0  # scale factor
 

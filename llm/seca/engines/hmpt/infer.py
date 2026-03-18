@@ -10,7 +10,6 @@ import torch
 import torch.nn as nn
 import chess
 
-
 # --------------------------------------------------
 # Minimal placeholder neural model
 # --------------------------------------------------

@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from typing import List, Literal
 
-
 LessonType = Literal[
     "tactics",
     "blunder_check",

@@ -13,7 +13,6 @@ import random
 import requests
 from dataclasses import dataclass
 
-
 # =========================
 # Config
 # =========================

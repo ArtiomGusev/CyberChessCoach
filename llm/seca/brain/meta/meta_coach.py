@@ -3,7 +3,6 @@ from pathlib import Path
 
 from .meta_bandit import LinUCB
 
-
 MODEL_PATH = Path("llm/seca/brain/meta/meta_bandit.pkl")
 
 

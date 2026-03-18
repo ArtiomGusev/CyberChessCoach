@@ -15,13 +15,11 @@ def load_experiences():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
-    cur.execute(
-        """
+    cur.execute("""
         SELECT context_json, action, reward
         FROM bandit_experiences
         ORDER BY created_at ASC
-    """
-    )
+    """)
 
     rows = cur.fetchall()
     conn.close()

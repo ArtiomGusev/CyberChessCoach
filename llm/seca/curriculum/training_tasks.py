@@ -1,6 +1,5 @@
 from .curriculum_types import TrainingTask
 
-
 TASK_LIBRARY = {
     "tactics": [
         TrainingTask("tactics", "Fork puzzles", "Solve 10 fork tactics", 3),

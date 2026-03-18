@@ -1,6 +1,5 @@
 import re
 
-
 FORBIDDEN_EQUAL = [
     r"\bslight advantage\b",
     r"\bbetter\b",

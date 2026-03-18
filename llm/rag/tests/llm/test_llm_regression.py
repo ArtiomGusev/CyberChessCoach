@@ -11,7 +11,6 @@ from llm.rag.documents import ALL_RAG_DOCUMENTS
 import json
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[3]
 CASES_DIR = ROOT / "tests" / "golden" / "cases"
 

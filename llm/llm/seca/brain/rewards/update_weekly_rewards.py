@@ -4,6 +4,5 @@ from seca.brain.rewards.update_weekly_rewards import (
     run_weekly_reward_update,
 )
 
-
 if __name__ == "__main__":
     run_weekly_reward_update()

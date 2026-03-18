@@ -9,7 +9,6 @@ import yaml  # type: ignore[import-untyped]
 
 from llm import run_ci_suite, run_quality_gate
 
-
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_DIR = ROOT / ".github" / "workflows"
 
