@@ -41,19 +41,25 @@ class ChessViewModel(
         applyAIMove: (Int, Int, Int, Int) -> Unit
     ) {
         if (turn != Turn.HUMAN) return
+        
+        val requestId = stateId 
 
         viewModelScope.launch(Dispatchers.Default) {
             val result = withContext(Dispatchers.Main) { applyHumanMove() }
             
-            when (result) {
-                MoveResult.SUCCESS -> {
-                    turn = Turn.AI
-                    requestAIMove(exportFEN, applyAIMove)
+            withContext(Dispatchers.Main) {
+                if (stateId != requestId) return@withContext 
+
+                when (result) {
+                    MoveResult.SUCCESS -> {
+                        turn = Turn.AI
+                        requestAIMove(exportFEN, applyAIMove)
+                    }
+                    MoveResult.PROMOTION -> {
+                        Log.d("TURN", "Human promotion pending...")
+                    }
+                    MoveResult.FAILED -> {}
                 }
-                MoveResult.PROMOTION -> {
-                    Log.d("TURN", "Human promotion pending...")
-                }
-                MoveResult.FAILED -> {}
             }
         }
     }
