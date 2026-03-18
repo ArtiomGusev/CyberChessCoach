@@ -159,7 +159,7 @@ async def debug_redis():
             "pong": pong,
         }
     except Exception as exc:
-        print(f"DEBUG: Redis error: {exc}") 
+        logger.error(f"DEBUG: Redis error: {exc}") 
         
         return {
             "backend": redis_backend_name(),
