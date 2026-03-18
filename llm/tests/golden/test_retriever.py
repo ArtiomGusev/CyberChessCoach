@@ -5,7 +5,6 @@ from llm.rag.engine_signal.extract_engine_signal import extract_engine_signal
 from llm.rag.retriever.retriever import retrieve
 from llm.rag.documents import ALL_RAG_DOCUMENTS
 
-
 ROOT = Path(__file__).resolve().parents[3]
 CASES_DIR = ROOT / "tests" / "golden" / "cases"
 EXPECTED_DIR = ROOT / "tests" / "golden" / "expected_rag"

@@ -6,7 +6,6 @@ from pathlib import Path
 import subprocess
 import sys
 
-
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 ARTIFACT_DIR = PROJECT_ROOT / "tmp_logs"
 

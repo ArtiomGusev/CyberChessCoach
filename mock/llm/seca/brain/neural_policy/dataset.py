@@ -32,22 +32,18 @@ def load_training_data():
     cur = conn.cursor()
 
     try:
-        cur.execute(
-            """
+        cur.execute("""
             SELECT context_json, action_index, reward
             FROM bandit_experiences
             ORDER BY created_at ASC
-        """
-        )
+        """)
         rows = cur.fetchall()
     except sqlite3.OperationalError:
-        cur.execute(
-            """
+        cur.execute("""
             SELECT context_json, action, reward
             FROM bandit_experiences
             ORDER BY created_at ASC
-        """
-        )
+        """)
         rows = cur.fetchall()
 
     X, A, y = [], [], []

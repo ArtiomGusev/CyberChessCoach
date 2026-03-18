@@ -8,7 +8,6 @@ import os
 import subprocess
 import sys
 
-
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PYLINT_HOME = PROJECT_ROOT / "tmp_logs" / ".pylint"
 

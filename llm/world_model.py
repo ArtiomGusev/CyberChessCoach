@@ -21,7 +21,6 @@ import numpy as np
 from pathlib import Path
 from typing import List, Tuple
 
-
 # ---------------------------------------------------------------------
 # PyTorch model definition (must match training architecture)
 # ---------------------------------------------------------------------

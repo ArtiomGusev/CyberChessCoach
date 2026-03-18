@@ -3,7 +3,6 @@ import pytest
 from llm.rag.llm.fake import FakeLLM
 from llm.rag.llm.run_mode_2 import run_mode_2
 
-
 PROMPT = "dummy prompt"
 
 

@@ -8,7 +8,6 @@ from sqlalchemy import select
 from llm.seca.db import SessionLocal
 from llm.seca.brain.training.models import TrainingDecision, TrainingOutcome
 
-
 MODEL_PATH = Path("llm/seca/brain/bandit/bandit_model.pkl")
 
 

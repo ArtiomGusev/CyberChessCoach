@@ -2,7 +2,6 @@ import numpy as np
 import pickle
 from pathlib import Path
 
-
 MODEL_PATH = Path("llm/seca/brain/bandit/thompson_bandit.pkl")
 
 

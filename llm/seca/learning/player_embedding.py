@@ -7,7 +7,6 @@ from typing import Dict, Iterable
 
 import numpy as np
 
-
 EMBED_DIM = 16
 INPUT_DIM = 32
 EMBED_KEY_OFFSET = 3

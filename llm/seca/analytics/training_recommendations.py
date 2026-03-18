@@ -25,7 +25,6 @@ from dataclasses import dataclass
 
 from .mistake_stats import MistakeCategory, MistakeStats
 
-
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------

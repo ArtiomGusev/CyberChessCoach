@@ -12,7 +12,6 @@ from llm.rag.validators.explain_response_schema import EngineSignalSchema, Expla
 from llm.confidence_language_controller import build_language_controller_block
 from llm.rag.prompts.input_sanitizer import sanitize_user_query
 
-
 _ollama_base = os.getenv("COACH_OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
 OLLAMA_URL = f"{_ollama_base}/api/generate"
 MODEL_NAME = os.getenv("COACH_OLLAMA_MODEL", "qwen2.5:7b-instruct-q2_K")

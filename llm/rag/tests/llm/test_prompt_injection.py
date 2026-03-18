@@ -11,7 +11,6 @@ from llm.rag.engine_signal.extract_engine_signal import extract_engine_signal
 from llm.rag.llm.config import MIN_QUALITY_SCORE
 from llm.rag.quality.explanation_score import score_explanation
 
-
 if os.getenv("RUN_OLLAMA_TESTS") != "1":
     pytest.skip(
         "Prompt-injection tests are local-only. Set RUN_OLLAMA_TESTS=1 to enable.",

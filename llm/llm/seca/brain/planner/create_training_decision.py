@@ -4,7 +4,6 @@ from llm.seca.brain.bandit.thompson_linear import LinearThompsonBandit
 from llm.seca.brain.bandit.context import build_context_vector
 from llm.seca.brain.training.models import TrainingDecision
 
-
 N_ACTIONS = 6
 N_FEATURES = 4
 

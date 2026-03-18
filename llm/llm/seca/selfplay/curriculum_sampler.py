@@ -2,7 +2,6 @@ import random
 from dataclasses import dataclass
 from typing import Dict, List
 
-
 # ------------------------------------------------------------
 # Data structure returned by sampler
 # ------------------------------------------------------------

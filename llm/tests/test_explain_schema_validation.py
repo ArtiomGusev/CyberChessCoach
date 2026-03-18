@@ -28,7 +28,6 @@ from llm.rag.validators.explain_response_schema import (
     validate_explain_response,
 )
 
-
 # ---------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------

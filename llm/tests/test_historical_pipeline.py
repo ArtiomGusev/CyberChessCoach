@@ -61,7 +61,6 @@ from llm.seca.analysis.mistake_classifier import classify_delta
 from llm.seca.analysis.pgn_loader import load_moves_from_pgn
 from llm.seca.analytics.events import EventType
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

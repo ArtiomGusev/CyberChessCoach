@@ -4,7 +4,6 @@ from statistics import mean
 from llm.rag.quality.explanation_score import score_explanation
 from llm.rag.llm.config import MIN_QUALITY_SCORE
 
-
 RNG_SEED = 12345
 SAMPLES = 100
 

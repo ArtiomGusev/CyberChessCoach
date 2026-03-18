@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from math import exp
 from typing import List
 
-
 # -------------------------------
 # DATA STRUCTURES
 # -------------------------------
