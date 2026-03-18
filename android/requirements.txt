@@ -1,2 +1,1 @@
-pyyaml
-pytest
+black==24.10.0
