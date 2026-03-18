@@ -61,10 +61,12 @@ class SECA_MCTS:
 
         r, c, r_unc, c_unc = self.world_model.predict(features)
 
-        next_state = np.array([
-            state[0] + r,
-            state[1] + c,
-        ])
+        next_state = np.array(
+            [
+                state[0] + r,
+                state[1] + c,
+            ]
+        )
 
         uncertainty = r_unc + c_unc
         return next_state, uncertainty

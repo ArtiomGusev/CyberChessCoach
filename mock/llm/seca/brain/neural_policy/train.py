@@ -29,9 +29,7 @@ def train_policy():
     loss_fn = nn.MSELoss()
 
     for _ in range(50):
-        action_onehot = torch.nn.functional.one_hot(
-            torch.tensor(A), num_classes=n_actions
-        ).float()
+        action_onehot = torch.nn.functional.one_hot(torch.tensor(A), num_classes=n_actions).float()
 
         preds = model(X, action_onehot)
         loss = loss_fn(preds, y)

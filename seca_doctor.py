@@ -29,6 +29,7 @@ DB_PATH = Path("data/seca.db")
 # Helpers
 # ---------------------------------------------------------------------
 
+
 def ok(msg):
     print(f"[PASS] {msg}")
 
@@ -44,6 +45,7 @@ def info(msg):
 # ---------------------------------------------------------------------
 # 1. API Ping
 # ---------------------------------------------------------------------
+
 
 def check_api():
     try:
@@ -61,6 +63,7 @@ def check_api():
 # ---------------------------------------------------------------------
 # 2. Auth Flow
 # ---------------------------------------------------------------------
+
 
 def check_auth():
     email = f"doctor_{int(time.time())}@seca.ai"
@@ -104,6 +107,7 @@ def check_auth():
 # 3. Game ingestion
 # ---------------------------------------------------------------------
 
+
 def check_game_finish(token):
     payload = {
         "pgn": "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6",
@@ -134,6 +138,7 @@ def check_game_finish(token):
 # ---------------------------------------------------------------------
 # 4. DB integrity
 # ---------------------------------------------------------------------
+
 
 def check_db():
     if not DB_PATH.exists():
@@ -178,6 +183,7 @@ def check_db():
 # 5. Dataset build
 # ---------------------------------------------------------------------
 
+
 def run_module(module):
     try:
         subprocess.check_call([sys.executable, "-m", module])
@@ -199,6 +205,7 @@ def check_dataset():
 # 6. World model training
 # ---------------------------------------------------------------------
 
+
 def check_training():
     if run_module("llm.seca.brain.world_model.train_regression"):
         ok("World model training succeeded")
@@ -211,6 +218,7 @@ def check_training():
 # ---------------------------------------------------------------------
 # MAIN
 # ---------------------------------------------------------------------
+
 
 def main():
     print("=== SECA DOCTOR ===")

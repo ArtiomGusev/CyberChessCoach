@@ -17,8 +17,8 @@ class Trajectory:
 class RolloutPlanner:
     def __init__(
         self,
-        horizon: int = 4,      # weeks ahead
-        beam_width: int = 5,   # number of futures kept
+        horizon: int = 4,  # weeks ahead
+        beam_width: int = 5,  # number of futures kept
         gamma: float = 0.9,
     ):
         self.horizon = horizon
@@ -35,8 +35,8 @@ class RolloutPlanner:
         r_delta, c_delta, r_unc, c_unc = self.ensemble.predict(features)
 
         next_state = state.copy()
-        next_state[0] += r_delta        # rating
-        next_state[1] += c_delta        # confidence
+        next_state[0] += r_delta  # rating
+        next_state[1] += c_delta  # confidence
 
         reward = risk_adjusted_reward(r_delta, c_delta, r_unc, c_unc)
 
@@ -65,7 +65,7 @@ class RolloutPlanner:
                 for i, a in enumerate(actions):
                     next_state, reward = self.step(traj.state, a)
 
-                    discounted = (self.gamma ** t) * reward
+                    discounted = (self.gamma**t) * reward
 
                     new_traj = Trajectory(
                         state=next_state,
