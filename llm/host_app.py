@@ -5,7 +5,7 @@ import time
 from typing import List, Tuple
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
@@ -14,6 +14,20 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 load_dotenv()
+
+_API_KEY = os.getenv("SECA_API_KEY")
+_IS_PROD = os.getenv("SECA_ENV", "dev") in {"prod", "production"}
+
+
+def verify_api_key(x_api_key: str = Header(None)):
+    """Guard debug endpoints — mirrors server.py:verify_api_key."""
+    if _API_KEY is None:
+        if _IS_PROD:
+            raise HTTPException(status_code=500, detail="Server misconfiguration")
+        return  # dev mode: unauthenticated access allowed
+    if x_api_key != _API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
 
 # --- Response Class Setup ---
 try:
@@ -74,10 +88,10 @@ app = FastAPI(default_response_class=DefaultResponseClass)
 # Global Exception Handler for Security (CWE-209)
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.error("Unhandled error at %s: %s", request.url, exc, exc_info=True)
+    logger.exception("Unhandled error") 
     return JSONResponse(
         status_code=500,
-        content={"detail": "An internal server error occurred."},
+        content={"detail": "An internal server error occurred."}, 
     )
 
 
@@ -144,7 +158,7 @@ async def health():
 
 
 @app.get("/debug/redis")
-async def debug_redis():
+async def debug_redis(_: None = Depends(verify_api_key)):
     if redis_client is None:
         return {
             "backend": redis_backend_name(),
@@ -169,7 +183,7 @@ async def debug_redis():
 
 
 @app.get("/debug/book")
-async def debug_book():
+async def debug_book(_: None = Depends(verify_api_key)):
     return {
         "available": opening_book.available,
         "path": opening_book.path,
@@ -227,7 +241,7 @@ async def _evaluate_position(
 
 
 @app.get("/debug/engine")
-async def debug_engine():
+async def debug_engine(_: None = Depends(verify_api_key)):
     capacity = engine_pool.capacity
     available = engine_pool.available
     return {
@@ -238,7 +252,7 @@ async def debug_engine():
 
 
 @app.post("/debug/engine-raw")
-async def engine_raw(payload: EngineEvalRequest):
+async def engine_raw(payload: EngineEvalRequest, _: None = Depends(verify_api_key)):
     movetime, nodes = _resolve_request_limits(movetime=payload.movetime_ms, nodes=payload.nodes)
     started = time.perf_counter()
     engine = await engine_pool.acquire()
@@ -269,7 +283,7 @@ async def engine_raw(payload: EngineEvalRequest):
 
 
 @app.get("/debug/cache")
-async def debug_cache(pattern: str = "cc:*"):
+async def debug_cache(pattern: str = "cc:*", _: None = Depends(verify_api_key)):
     stats = await get_redis_info("stats")
     return {
         "backend": redis_backend_name(),
@@ -282,7 +296,7 @@ async def debug_cache(pattern: str = "cc:*"):
 
 
 @app.get("/debug/cache/value")
-async def debug_cache_value(key: str):
+async def debug_cache_value(key: str, _: None = Depends(verify_api_key)):
     return {
         "backend": redis_backend_name(),
         "key": key,
@@ -291,7 +305,7 @@ async def debug_cache_value(key: str):
 
 
 @app.get("/debug/miss-metrics")
-def debug_miss_metrics():
+def debug_miss_metrics(_: None = Depends(verify_api_key)):
     return miss_metrics_snapshot()
 
 

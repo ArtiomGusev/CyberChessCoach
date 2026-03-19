@@ -1,3 +1,4 @@
+import logging
 import os
 import shutil
 import chess
@@ -60,7 +61,8 @@ from llm.seca.storage.repo import (
     update_learning_score,
 )
 
-print(">>> RUNNING SERVER FROM:", __file__)
+logger = logging.getLogger(__name__)
+logger.info("Running server from: %s", __file__)
 
 load_dotenv()
 
@@ -357,26 +359,28 @@ async def startup():
                     fens=prewarm_fens,
                     mode=mode,
                 )
-            print(
-                f">>> Move cache prewarmed (entries={warmed}, "
-                f"positions={len(prewarm_fens)}, modes={','.join(prewarm_modes)})"
+            logger.info(
+                "Move cache prewarmed (entries=%d, positions=%d, modes=%s)",
+                warmed,
+                len(prewarm_fens),
+                ",".join(prewarm_modes),
             )
         scheduler = CurriculumScheduler()
-        print(">>> DB initialized")
-        print(f">>> Stockfish engine pool initialized (size={settings.pool_size})")
+        logger.info("DB initialized")
+        logger.info("Stockfish engine pool initialized (size=%d)", settings.pool_size)
     except Exception as e:
         if engine_pool:
             engine_pool.close()
         engine_pool = None
         move_cache = None
-        print(">>> Stockfish engine pool DISABLED:", e)
+        logger.error("Stockfish engine pool DISABLED: %s", e)
 
 
 @app.on_event("shutdown")
 async def shutdown():
     if engine_pool:
         engine_pool.close()
-        print(">>> Stockfish engine pool closed")
+        logger.info("Stockfish engine pool closed")
 
 
 # ------------------------------------------------------------------
