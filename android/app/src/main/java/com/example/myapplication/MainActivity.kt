@@ -194,7 +194,10 @@ class MainActivity : AppCompatActivity() {
         // Start initial game session
         startNewGameSession()
 
-        chessBoard.quickCoachListener = { update ->
+        // Wire real Stockfish evaluation: after each AI move, ChessViewModel calls
+        // POST /engine/eval and emits the result here with the centipawn score.
+        viewModel.engineEvalClient = HttpEngineEvalClient(BuildConfig.COACH_API_BASE)
+        viewModel.onQuickCoachUpdate = { update ->
             // Track for end-of-game accuracy computation
             moveClassifications.add(update.classification)
 
