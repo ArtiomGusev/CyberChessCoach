@@ -14,13 +14,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
  * Long-form chat coaching bottom sheet.
@@ -30,6 +24,9 @@ import java.net.URL
  *  - Displays a structured response that always references engine evaluation.
  *  - Shows an engine context header (evaluation band + game phase).
  *  - Falls back gracefully when the backend is unavailable or returns no reply.
+ *
+ * Auth tokens, timeouts, and base URL are configured in [BuildConfig] per build
+ * variant and owned by [HttpCoachApiClient] — not duplicated here.
  *
  * No RL adaptation. All coaching logic lives server-side in chat_pipeline.py.
  */
@@ -56,26 +53,24 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
     private val sessionStore = ChatSessionStore(maxMessages = 50)
     private val chatAdapter = ChatAdapter()
 
+    /**
+     * Shared API client — constructed once from [BuildConfig] constants.
+     * Base URL and API key are set per build variant (debug / release).
+     */
+    private val coachApiClient: CoachApiClient by lazy {
+        HttpCoachApiClient(
+            baseUrl = BuildConfig.COACH_API_BASE,
+            apiKey = BuildConfig.COACH_API_KEY,
+        )
+    }
+
     companion object {
         private const val ARG_FEN = "arg_fen"
         private const val STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
-        /**
-         * Backend base URL.
-         * 10.0.2.2 routes to the host machine from the Android emulator.
-         * Override via a build-config constant in production.
-         */
-        private const val COACH_API_BASE = "http://10.0.2.2:8000"
-
-        /**
-         * Dev API key (matches SECA_API_KEY=dev-key in .env).
-         * Replace with BuildConfig.COACH_API_KEY in a production build.
-         */
-        private const val DEV_API_KEY = "dev-key"
-
         private const val FALLBACK_REPLY =
             "Coach is offline. Review the position and consider piece activity, " +
-            "centre control, and king safety."
+                "centre control, and king safety."
 
         fun newInstance(fen: String): ChatBottomSheet {
             val fragment = ChatBottomSheet()
@@ -118,9 +113,10 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
         currentFen?.let { miniBoard.setFEN(it) }
 
         // RecyclerView — stable message rendering
-        val layoutManager = LinearLayoutManager(requireContext()).apply {
-            stackFromEnd = true
-        }
+        val layoutManager =
+            LinearLayoutManager(requireContext()).apply {
+                stackFromEnd = true
+            }
         recyclerMessages.layoutManager = layoutManager
         recyclerMessages.adapter = chatAdapter
 
@@ -170,24 +166,24 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
     // ---------------------------------------------------------------------------
 
     /**
-     * Update the engine context bar from the engine_signal returned by /chat.
+     * Update the engine context bar from the [EngineSignalDto] returned by /chat.
      * Always shows evaluation band and game phase; hides the bar if both are empty.
      */
-    private fun updateEngineContextHeader(engineSignal: JSONObject) {
-        val eval = engineSignal.optJSONObject("evaluation")
-        val band = eval?.optString("band", "") ?: ""
-        val side = eval?.optString("side", "") ?: ""
-        val phase = engineSignal.optString("phase", "")
+    private fun updateEngineContextHeader(signal: EngineSignalDto) {
+        val band = signal.evaluation?.band ?: ""
+        val side = signal.evaluation?.side ?: ""
+        val phase = signal.phase ?: ""
 
         if (band.isEmpty() && phase.isEmpty()) return
 
-        val label = buildString {
-            if (phase.isNotEmpty()) append(phase.uppercase())
-            if (phase.isNotEmpty() && (side.isNotEmpty() || band.isNotEmpty())) append("  ·  ")
-            if (side.isNotEmpty()) append(side)
-            if (side.isNotEmpty() && band.isNotEmpty()) append(": ")
-            if (band.isNotEmpty()) append(band.replace('_', ' '))
-        }
+        val label =
+            buildString {
+                if (phase.isNotEmpty()) append(phase.uppercase())
+                if (phase.isNotEmpty() && (side.isNotEmpty() || band.isNotEmpty())) append("  ·  ")
+                if (side.isNotEmpty()) append(side)
+                if (side.isNotEmpty() && band.isNotEmpty()) append(": ")
+                if (band.isNotEmpty()) append(band.replace('_', ' '))
+            }
         txtEngineContext.text = label
         engineContextHeader.visibility = View.VISIBLE
     }
@@ -197,75 +193,39 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
     // ---------------------------------------------------------------------------
 
     /**
-     * Build the JSON request body for POST /chat.
-     * Includes current FEN, full conversation history, and no player profile
-     * (the demo flow omits auth; a real integration would inject player_profile).
-     */
-    private fun buildRequestBody(): String {
-        val root = JSONObject()
-        root.put("fen", currentFen ?: STARTING_FEN)
-
-        val arr = JSONArray()
-        for (msg in sessionStore.messages) {
-            arr.put(JSONObject().apply {
-                put("role", msg.role)
-                put("content", msg.text)
-            })
-        }
-        root.put("messages", arr)
-        // player_profile and past_mistakes omitted in demo mode (optional fields)
-        return root.toString()
-    }
-
-    /**
-     * Call POST /chat on a background thread.
-     * Returns (reply, engineSignal?) — both null-safe.
-     * Never throws; returns ("", null) on any error so the fallback path triggers.
-     */
-    private suspend fun fetchChatReply(): Pair<String, JSONObject?> =
-        withContext(Dispatchers.IO) {
-            try {
-                val url = URL("$COACH_API_BASE/chat")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.requestMethod = "POST"
-                conn.setRequestProperty("Content-Type", "application/json")
-                conn.setRequestProperty("X-Api-Key", DEV_API_KEY)
-                conn.doOutput = true
-                conn.connectTimeout = 8_000
-                conn.readTimeout = 15_000
-
-                conn.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(buildRequestBody()) }
-
-                if (conn.responseCode == 200) {
-                    val body = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
-                    val root = JSONObject(body)
-                    Pair(root.optString("reply", ""), root.optJSONObject("engine_signal"))
-                } else {
-                    Pair("", null)
-                }
-            } catch (_: Exception) {
-                Pair("", null)
-            }
-        }
-
-    /**
-     * Send the current query to the backend, display the structured reply,
-     * and update the engine context header.
+     * Send the current position and conversation history to [coachApiClient],
+     * display the structured reply, and update the engine context header.
      *
-     * Falls back to [FALLBACK_REPLY] when the backend is unreachable or
+     * Falls back to [FALLBACK_REPLY] on any error ([ApiResult.HttpError],
+     * [ApiResult.NetworkError], [ApiResult.Timeout]) or when the backend
      * returns an empty reply — no crash on missing explanation.
      */
-    private fun sendToBackend(query: String) {
+    private fun sendToBackend(@Suppress("UNUSED_PARAMETER") query: String) {
         isStreaming = true
         sendBtn.isEnabled = false
 
         viewLifecycleOwner.lifecycleScope.launch {
-            val (reply, engineSignal) = fetchChatReply()
+            val messages =
+                sessionStore.messages.map { msg ->
+                    ChatMessageDto(role = msg.role, content = msg.text)
+                }
+
+            val (reply, engineSignal) =
+                when (
+                    val result =
+                        coachApiClient.chat(
+                            fen = currentFen ?: STARTING_FEN,
+                            messages = messages,
+                        )
+                ) {
+                    is ApiResult.Success -> Pair(result.data.reply, result.data.engineSignal)
+                    is ApiResult.HttpError,
+                    is ApiResult.NetworkError,
+                    ApiResult.Timeout -> Pair("", null)
+                }
 
             val displayReply = reply.takeIf { it.isNotBlank() } ?: FALLBACK_REPLY
-
             appendAssistant(displayReply)
-
             engineSignal?.let { updateEngineContextHeader(it) }
 
             isStreaming = false
