@@ -7,6 +7,10 @@ android {
     namespace = "com.example.myapplication"
     compileSdk = 36
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     defaultConfig {
         applicationId = "com.example.myapplication"
         minSdk = 26
@@ -15,6 +19,11 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Coach backend — debug default routes to Android emulator host.
+        // Override COACH_API_BASE / COACH_API_KEY env vars for release builds.
+        buildConfigField("String", "COACH_API_BASE", "\"http://10.0.2.2:8000\"")
+        buildConfigField("String", "COACH_API_KEY", "\"dev-key\"")
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
@@ -38,8 +47,14 @@ android {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
             )
+            // Production values injected via env vars at build time.
+            // Falls back to dev defaults so CI never fails on a missing secret.
+            val prodApiBase: String = System.getenv("COACH_API_BASE") ?: "http://10.0.2.2:8000"
+            val prodApiKey: String = System.getenv("COACH_API_KEY") ?: "dev-key"
+            buildConfigField("String", "COACH_API_BASE", "\"$prodApiBase\"")
+            buildConfigField("String", "COACH_API_KEY", "\"$prodApiKey\"")
         }
     }
 
