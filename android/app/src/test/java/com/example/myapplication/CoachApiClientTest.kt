@@ -49,6 +49,9 @@ import org.junit.Test
  * 25.  FAKE_CALL_COUNT:              FakeCoachApiClient counts calls correctly.
  * 26.  FAKE_LAST_FEN:                FakeCoachApiClient records the last FEN received.
  * 27.  FAKE_LAST_MESSAGES:           FakeCoachApiClient records the last message list.
+ * 28.  TOKEN_PROVIDER_NULL_DEFAULT:  HttpCoachApiClient.tokenProvider defaults to null.
+ * 29.  TOKEN_PROVIDER_STORED:        HttpCoachApiClient stores a supplied tokenProvider.
+ * 30.  TOKEN_PROVIDER_RETURNS_VALUE: The stored tokenProvider lambda is callable.
  */
 class CoachApiClientTest {
 
@@ -394,4 +397,39 @@ class CoachApiClientTest {
             fake.chat("fen", msgs)
             assertEquals(msgs, fake.lastMessages)
         }
+
+    // ------------------------------------------------------------------
+    // 28–30  HttpCoachApiClient tokenProvider
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `HttpCoachApiClient tokenProvider defaults to null when not supplied`() {
+        val client = HttpCoachApiClient(baseUrl = "http://localhost", apiKey = "key")
+        assertNull("tokenProvider must default to null", client.tokenProvider)
+    }
+
+    @Test
+    fun `HttpCoachApiClient stores a supplied tokenProvider`() {
+        val provider: () -> String? = { "my-token" }
+        val client = HttpCoachApiClient(
+            baseUrl = "http://localhost",
+            apiKey = "key",
+            tokenProvider = provider,
+        )
+        assertNotNull("tokenProvider must not be null after being supplied", client.tokenProvider)
+    }
+
+    @Test
+    fun `HttpCoachApiClient tokenProvider lambda is callable and returns the expected value`() {
+        var invoked = false
+        val provider: () -> String? = { invoked = true; "bearer-token" }
+        val client = HttpCoachApiClient(
+            baseUrl = "http://localhost",
+            apiKey = "key",
+            tokenProvider = provider,
+        )
+        val token = client.tokenProvider?.invoke()
+        assertTrue("tokenProvider lambda must have been invoked", invoked)
+        assertEquals("bearer-token", token)
+    }
 }

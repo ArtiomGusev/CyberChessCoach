@@ -1,5 +1,7 @@
 package com.example.myapplication
 
+import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -54,13 +56,21 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
     private val chatAdapter = ChatAdapter()
 
     /**
+     * Auth repository — wired in [onAttach] so the Context is available.
+     * Provides the JWT to [coachApiClient] via the [tokenProvider] lambda.
+     */
+    private var authRepository: AuthRepository? = null
+
+    /**
      * Shared API client — constructed once from [BuildConfig] constants.
-     * Base URL and API key are set per build variant (debug / release).
+     * Injects the current JWT (if any) via [tokenProvider] so user-specific
+     * backend endpoints receive an Authorization: Bearer header automatically.
      */
     private val coachApiClient: CoachApiClient by lazy {
         HttpCoachApiClient(
             baseUrl = BuildConfig.COACH_API_BASE,
             apiKey = BuildConfig.COACH_API_KEY,
+            tokenProvider = { authRepository?.getToken() },
         )
     }
 
@@ -84,6 +94,11 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
     // ---------------------------------------------------------------------------
     // Lifecycle
     // ---------------------------------------------------------------------------
+
+    override fun onAttach(context: Context) {
+        super.onAttach(context)
+        authRepository = AuthRepository(EncryptedTokenStorage(context))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -189,6 +204,23 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
     }
 
     // ---------------------------------------------------------------------------
+    // Token expiry
+    // ---------------------------------------------------------------------------
+
+    /**
+     * Called when the backend returns HTTP 401, indicating the stored JWT has
+     * expired or been invalidated. Clears the local token and redirects to
+     * [LoginActivity] with CLEAR_TASK so the user must re-authenticate.
+     */
+    private fun handleTokenExpiry() {
+        authRepository?.clearToken()
+        val intent =
+            Intent(requireContext(), LoginActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        startActivity(intent)
+    }
+
+    // ---------------------------------------------------------------------------
     // Backend integration
     // ---------------------------------------------------------------------------
 
@@ -219,7 +251,13 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
                         )
                 ) {
                     is ApiResult.Success -> Pair(result.data.reply, result.data.engineSignal)
-                    is ApiResult.HttpError,
+                    is ApiResult.HttpError -> {
+                        // 401 means the JWT has expired server-side; clear the
+                        // stored token and redirect to login so the user can
+                        // re-authenticate without losing their game state.
+                        if (result.code == 401) handleTokenExpiry()
+                        Pair("", null)
+                    }
                     is ApiResult.NetworkError,
                     ApiResult.Timeout -> Pair("", null)
                 }

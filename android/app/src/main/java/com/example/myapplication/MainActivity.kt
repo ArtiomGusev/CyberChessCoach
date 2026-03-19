@@ -1,6 +1,7 @@
 package com.example.myapplication
 
 import android.app.Dialog
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
@@ -35,6 +36,20 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Redirect unauthenticated users to the login screen before showing
+        // the board. EncryptedTokenStorage is lazily initialised; no Keystore
+        // operation occurs if the token is already in the prefs cache.
+        val authRepository = AuthRepository(EncryptedTokenStorage(this))
+        if (!authRepository.isLoggedIn()) {
+            startActivity(
+                Intent(this, LoginActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
+            )
+            finish()
+            return
+        }
+
         setContentView(R.layout.activity_main)
 
         Log.d("AI_TEST", "MainActivity started")

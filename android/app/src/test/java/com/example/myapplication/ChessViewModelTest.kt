@@ -12,7 +12,13 @@ import org.junit.Test
 class ChessViewModelTest {
 
     private lateinit var viewModel: ChessViewModel
-    private val testDispatcher = StandardTestDispatcher()
+    // Explicit scheduler prevents StandardTestDispatcher() from calling
+    // getCurrentTestScheduler(), which requires Dispatchers.Main to already be
+    // a TestMainDispatcher. Without this, the test fails when another test class
+    // runs before it and the process-wide Main dispatcher is in the default state.
+    // See the identical pattern and explanation in ChessViewModelEngineFailureTest.
+    private val scheduler = TestCoroutineScheduler()
+    private val testDispatcher = StandardTestDispatcher(scheduler)
 
     // 🛡️ Safe mock for testing
     private class FakeEngine : EngineProvider {
@@ -33,7 +39,7 @@ class ChessViewModelTest {
     }
 
     @Test
-    fun `test AI move is discarded after reset`() = runTest {
+    fun `test AI move is discarded after reset`() = runTest(testDispatcher) {
         var aiMoveApplied = false
         
         // 1. Trigger human move
