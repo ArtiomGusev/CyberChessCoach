@@ -49,7 +49,7 @@ class ChessViewModelTest {
             fr = 6, fc = 4, tr = 4, tc = 4,
             applyHumanMove = { MoveResult.SUCCESS }, // Use extracted enum
             exportFEN = { "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b" },
-            applyAIMove = { _, _, _, _ -> aiMoveApplied = true }
+            applyAIMove = { _, _, _, _ -> aiMoveApplied = true; '.' }
         )
 
         // Give the coroutine a moment to start

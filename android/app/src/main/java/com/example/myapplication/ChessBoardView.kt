@@ -174,16 +174,20 @@ class ChessBoardView @JvmOverloads constructor(
     /**
      * 🛡️ SAFE AI EXECUTION:
      * Validates that the engine's move is legal before applying.
+     *
+     * Returns the piece that was on the target square before the move
+     * ('.' if nothing was captured or the move was rejected).
+     * The caller (ChessViewModel) uses this to build the Quick Coach update.
      */
-    fun applyAIMove(fr: Int, fc: Int, tr: Int, tc: Int) {
+    fun applyAIMove(fr: Int, fc: Int, tr: Int, tc: Int): Char {
         if (fr !in 0..7 || fc !in 0..7 || tr !in 0..7 || tc !in 0..7) {
             Log.e("CHESS_BOARD", "AI Move out of bounds: $fr,$fc -> $tr,$tc")
-            return
+            return '.'
         }
-        
+
         if (!isLegal(fr, fc, tr, tc)) {
             Log.e("CHESS_BOARD", "AI ATTEMPTED ILLEGAL MOVE: $fr,$fc -> $tr,$tc")
-            return
+            return '.'
         }
 
         val capturedPiece = board[tr][tc]
@@ -191,7 +195,7 @@ class ChessBoardView @JvmOverloads constructor(
         whiteToMove = !whiteToMove
         checkAndNotifyGameOver()
         invalidate()
-        quickCoachListener?.invoke(QuickCoachLogic.buildUpdate(capturedPiece, board))
+        return capturedPiece
     }
 
     fun undoMove(): Boolean? {
