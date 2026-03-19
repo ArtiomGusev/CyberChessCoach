@@ -30,6 +30,19 @@ import org.junit.Test
  * 20. BUILD_UPDATE_FIELDS:        buildUpdate sets all fields consistently
  * 21. BUILD_UPDATE_FALLBACK_EXPLANATION: GOOD capture → null explanation in update
  * 22. DETERMINISM: identical inputs → identical QuickCoachUpdate
+ * 23. CENTIPAWN_NULL: null score → "?"
+ * 24. CENTIPAWN_EQUAL: score in -4..4 → "Equal"
+ * 25. CENTIPAWN_POSITIVE: positive score → "+N.NN" with two decimal places
+ * 26. CENTIPAWN_NEGATIVE: negative score → "-N.NN" with no plus sign
+ * 27. CENTIPAWN_BOUNDARY_EXACT: ±5 cp → not "Equal" (outside boundary)
+ * 28. CENTIPAWN_PAWN_UNIT: 100 cp → "+1.00"
+ * 29. CENTIPAWN_LARGE: 9997 cp (mate) → "+99.97"
+ * 30. BUILD_ENGINE_FIELDS: buildUpdateFromEngine sets all fields consistently
+ * 31. BUILD_ENGINE_SCORE_REFLECTED: scoreText matches formatCentipawns(engineScore)
+ * 32. BUILD_ENGINE_BEST_MOVE: bestMove propagated to QuickCoachUpdate
+ * 33. BUILD_ENGINE_NULL_BEST_MOVE: null bestMove allowed
+ * 34. BUILD_ENGINE_CLASSIFICATION: classification derived from capturedPiece
+ * 35. BUILD_ENGINE_VS_HEURISTIC: engine and heuristic paths produce same classification
  */
 class QuickCoachDockTest {
 
@@ -194,5 +207,98 @@ class QuickCoachDockTest {
         val u1 = QuickCoachLogic.buildUpdate('r', board)
         val u2 = QuickCoachLogic.buildUpdate('r', board)
         assertEquals(u1, u2)
+    }
+
+    // ---------------------------------------------------------------------------
+    // 23–29  formatCentipawns
+    // ---------------------------------------------------------------------------
+
+    @Test fun `null score formats as question mark`() {
+        assertEquals("?", QuickCoachLogic.formatCentipawns(null))
+    }
+
+    @Test fun `zero centipawns formats as Equal`() {
+        assertEquals("Equal", QuickCoachLogic.formatCentipawns(0))
+    }
+
+    @Test fun `score within minus-four to plus-four formats as Equal`() {
+        for (cp in -4..4) {
+            assertEquals("formatCentipawns($cp) must be Equal", "Equal", QuickCoachLogic.formatCentipawns(cp))
+        }
+    }
+
+    @Test fun `positive centipawns start with plus sign and two decimals`() {
+        val result = QuickCoachLogic.formatCentipawns(152)
+        assertTrue("Expected '+' prefix, got: $result", result.startsWith("+"))
+        assertEquals("+1.52", result)
+    }
+
+    @Test fun `negative centipawns have no plus sign and two decimals`() {
+        val result = QuickCoachLogic.formatCentipawns(-80)
+        assertFalse("Unexpected '+' in negative score: $result", result.startsWith("+"))
+        assertEquals("-0.80", result)
+    }
+
+    @Test fun `plus-five centipawns is not Equal`() {
+        // ±5 is just outside the Equal boundary (boundary is -4..4)
+        assertNotEquals("Equal", QuickCoachLogic.formatCentipawns(5))
+        assertNotEquals("Equal", QuickCoachLogic.formatCentipawns(-5))
+    }
+
+    @Test fun `one-hundred centipawns formats as plus-one`() {
+        assertEquals("+1.00", QuickCoachLogic.formatCentipawns(100))
+    }
+
+    @Test fun `mate score 9997 formats with correct pawn units`() {
+        // 9997 cp = 99.97 pawns (engine mate representation)
+        assertEquals("+99.97", QuickCoachLogic.formatCentipawns(9997))
+    }
+
+    // ---------------------------------------------------------------------------
+    // 30–35  buildUpdateFromEngine
+    // ---------------------------------------------------------------------------
+
+    @Test fun `buildUpdateFromEngine sets all fields`() {
+        val update = QuickCoachLogic.buildUpdateFromEngine('q', engineScore = 152, bestMove = "e2e4")
+        assertNotNull(update.scoreText)
+        assertTrue(update.scoreText.isNotBlank())
+        assertEquals(MistakeClassification.BLUNDER, update.classification)
+        assertNotNull(update.explanation)
+        assertEquals("e2e4", update.bestMove)
+    }
+
+    @Test fun `buildUpdateFromEngine scoreText matches formatCentipawns`() {
+        val score = -180
+        val update = QuickCoachLogic.buildUpdateFromEngine('.', engineScore = score)
+        assertEquals(QuickCoachLogic.formatCentipawns(score), update.scoreText)
+    }
+
+    @Test fun `buildUpdateFromEngine propagates bestMove`() {
+        val update = QuickCoachLogic.buildUpdateFromEngine('.', engineScore = 30, bestMove = "d2d4")
+        assertEquals("d2d4", update.bestMove)
+    }
+
+    @Test fun `buildUpdateFromEngine accepts null bestMove`() {
+        val update = QuickCoachLogic.buildUpdateFromEngine('.', engineScore = 10, bestMove = null)
+        assertNull(update.bestMove)
+    }
+
+    @Test fun `buildUpdateFromEngine derives classification from captured piece`() {
+        assertEquals(
+            MistakeClassification.BLUNDER,
+            QuickCoachLogic.buildUpdateFromEngine('Q', engineScore = null).classification
+        )
+        assertEquals(
+            MistakeClassification.GOOD,
+            QuickCoachLogic.buildUpdateFromEngine('.', engineScore = 50).classification
+        )
+    }
+
+    @Test fun `engine and heuristic paths produce same classification for same piece`() {
+        val board = startingBoard()
+        val capturedPiece = 'r'
+        val heuristicUpdate = QuickCoachLogic.buildUpdate(capturedPiece, board)
+        val engineUpdate = QuickCoachLogic.buildUpdateFromEngine(capturedPiece, engineScore = -50)
+        assertEquals(heuristicUpdate.classification, engineUpdate.classification)
     }
 }
