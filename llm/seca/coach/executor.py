@@ -76,6 +76,35 @@ class CoachExecutor:
             payload={"suggestion": "Take a 10-minute walk and return refreshed."},
         )
 
+    # ---------------- PUZZLE ----------------
+
+    def _handle_puzzle(self, action) -> CoachContent:
+        weakness = action.weakness or "tactics"
+
+        return CoachContent(
+            title=f"Puzzle challenge ({weakness})",
+            description="Solve this position to sharpen your calculation.",
+            payload={
+                "puzzle_count": 3,
+                "theme": weakness,
+                "difficulty": "adaptive",
+            },
+        )
+
+    # ---------------- PLAN UPDATE ----------------
+
+    def _handle_plan_update(self, action) -> CoachContent:
+        weakness = action.weakness or "general"
+
+        return CoachContent(
+            title="Updated training plan",
+            description=f"Focus area adjusted: {weakness.replace('_', ' ').title()}.",
+            payload={
+                "updated_focus": weakness,
+                "reason": action.reason or "Based on recent game performance.",
+            },
+        )
+
     # ---------------- DEFAULT ----------------
 
     def _handle_default(self, action) -> CoachContent:

@@ -1,7 +1,9 @@
 package com.example.myapplication
 
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.*
 import org.junit.After
 import org.junit.Assert.assertFalse
@@ -61,5 +63,13 @@ class ChessViewModelTest {
 
         // 4. Verify that the AI move was never applied
         assertFalse("AI move should have been discarded after reset", aiMoveApplied)
+
+        // Cancel in-flight Dispatchers.Default coroutines before tearDown calls
+        // resetMain(), following the same pattern as ChessViewModelEngineFailureTest.
+        // Without this, a Default-thread continuation that dispatches to Main after
+        // resetMain() races and throws "Dispatchers.Main is used concurrently with
+        // setting it", contaminating subsequent test classes.
+        viewModel.viewModelScope.cancel()
+        advanceUntilIdle()
     }
 }
