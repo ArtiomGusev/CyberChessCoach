@@ -43,6 +43,7 @@ TEST_TARGETS = [
     "llm/tests/test_engine_eval_benchmark.py",
     "llm/tests/test_api_security.py",
     "llm/tests/test_next_training_after_game.py",
+    "llm/tests/test_engine_eval_android_contract.py",
 ]
 
 COVERAGE_TARGETS = [

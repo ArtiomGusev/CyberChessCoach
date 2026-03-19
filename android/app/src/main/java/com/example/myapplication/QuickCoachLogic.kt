@@ -73,6 +73,9 @@ object QuickCoachLogic {
     /**
      * Build a [QuickCoachUpdate] from the AI's captured piece and the
      * board state after the AI's move has been applied.
+     *
+     * Uses the local material balance heuristic for the score.
+     * [bestMove] is null because no engine call is made here.
      */
     fun buildUpdate(capturedPiece: Char, board: Array<CharArray>): QuickCoachUpdate {
         val classification = classifyCapture(capturedPiece)
@@ -80,7 +83,51 @@ object QuickCoachLogic {
         return QuickCoachUpdate(
             scoreText = formatScore(balance),
             classification = classification,
-            explanation = deriveExplanation(classification)
+            explanation = deriveExplanation(classification),
+        )
+    }
+
+    /**
+     * Format a centipawn score from the engine as a human-readable string.
+     *
+     * The engine returns centipawns from White's perspective (100 cp = 1 pawn).
+     * Positive → White advantage; negative → Black advantage.
+     *
+     * | Input        | Output   |
+     * |--------------|----------|
+     * | null         | "?"      |
+     * | abs(cp) < 5  | "Equal"  |
+     * | cp = +152    | "+1.52"  |
+     * | cp = -80     | "-0.80"  |
+     */
+    fun formatCentipawns(score: Int?): String = when {
+        score == null        -> "?"
+        score in -4..4      -> "Equal"
+        score > 0           -> "+%.2f".format(score / 100.0)
+        else                -> "%.2f".format(score / 100.0)
+    }
+
+    /**
+     * Build a [QuickCoachUpdate] using the real engine centipawn score
+     * instead of the local material balance heuristic.
+     *
+     * Use this path when [EngineEvalClient.evaluate] has returned successfully.
+     *
+     * @param capturedPiece Piece char captured by the AI (or '.' for none).
+     * @param engineScore   Centipawn score from [EngineEvalResponse.score]; null if unavailable.
+     * @param bestMove      UCI string from [EngineEvalResponse.bestMove]; null if unavailable.
+     */
+    fun buildUpdateFromEngine(
+        capturedPiece: Char,
+        engineScore: Int?,
+        bestMove: String? = null,
+    ): QuickCoachUpdate {
+        val classification = classifyCapture(capturedPiece)
+        return QuickCoachUpdate(
+            scoreText = formatCentipawns(engineScore),
+            classification = classification,
+            explanation = deriveExplanation(classification),
+            bestMove = bestMove,
         )
     }
 }

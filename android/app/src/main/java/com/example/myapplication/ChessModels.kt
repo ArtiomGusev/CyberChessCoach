@@ -30,10 +30,21 @@ enum class MistakeClassification {
 
 /**
  * Structured update emitted after each AI move for the Quick Coach dock.
+ *
+ * [scoreText]      Formatted score shown in the dock (e.g. "+1.52", "Equal", "?").
+ *                  When built from the engine, this is the centipawn evaluation
+ *                  formatted by [QuickCoachLogic.formatCentipawns]; when built
+ *                  from local material balance it uses [QuickCoachLogic.formatScore].
+ * [classification] Severity of the human's last move.
+ * [explanation]    One-line coaching hint; null when position is solid.
+ * [bestMove]       Engine's preferred response in UCI notation (e.g. "e2e4");
+ *                  null when no engine call was made or engine unavailable.
  */
 data class QuickCoachUpdate(
     val scoreText: String,
     val classification: MistakeClassification,
     /** null when position is solid — dock shows fallback text. */
-    val explanation: String?
+    val explanation: String?,
+    /** null when built from local heuristic or when engine is unavailable. */
+    val bestMove: String? = null,
 )
