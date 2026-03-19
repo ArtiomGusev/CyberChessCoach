@@ -75,6 +75,7 @@ from pydantic import ValidationError
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _SERVER_PY = _REPO_ROOT / "llm" / "server.py"
+_HOST_APP_PY = _REPO_ROOT / "llm" / "host_app.py"
 _AUTH_ROUTER = _REPO_ROOT / "llm" / "seca" / "auth" / "router.py"
 
 
@@ -87,9 +88,15 @@ def _parse(path: Path) -> ast.Module:
     return ast.parse(path.read_text(encoding="utf-8"))
 
 
-def _get_decorated_functions(tree: ast.Module) -> dict[str, ast.FunctionDef]:
-    """Return {function_name: FunctionDef} for all top-level decorated defs."""
-    return {node.name: node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)}
+def _get_decorated_functions(
+    tree: ast.Module,
+) -> dict[str, ast.FunctionDef | ast.AsyncFunctionDef]:
+    """Return {function_name: FunctionDef|AsyncFunctionDef} for all decorated defs."""
+    return {
+        node.name: node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
 
 
 def _depends_on(func_def: ast.FunctionDef, target: str) -> bool:
@@ -570,3 +577,93 @@ class TestVerifyApiKeyLogic:
         with pytest.raises(HTTPException) as exc_info:
             check(x_api_key=None)
         assert exc_info.value.status_code == 500
+
+
+# ===========================================================================
+# Tier 1 — AST Inspection: host_app.py debug endpoint protection
+# ===========================================================================
+#
+# Pinned invariants:
+# 31. SEC_HOST_DEBUG_REDIS_AUTH      /debug/redis has verify_api_key dependency.
+# 32. SEC_HOST_DEBUG_BOOK_AUTH       /debug/book has verify_api_key dependency.
+# 33. SEC_HOST_DEBUG_ENGINE_AUTH     /debug/engine (host_app) has verify_api_key.
+# 34. SEC_HOST_ENGINE_RAW_AUTH       /debug/engine-raw has verify_api_key dependency.
+# 35. SEC_HOST_CACHE_AUTH            /debug/cache has verify_api_key dependency.
+# 36. SEC_HOST_CACHE_VALUE_AUTH      /debug/cache/value has verify_api_key dependency.
+# 37. SEC_HOST_MISS_METRICS_AUTH     /debug/miss-metrics has verify_api_key dependency.
+# 38. SEC_SERVER_NO_PRINT_STMTS      server.py uses logger not print() for diagnostics.
+
+
+class TestAstHostAppDebugProtection:
+    """AST inspection: every debug endpoint in host_app.py must require verify_api_key."""
+
+    def setup_method(self):
+        self._host_tree = _parse(_HOST_APP_PY)
+        self._host_funcs = _get_decorated_functions(self._host_tree)
+
+    def _assert_protected(self, func_name: str, route: str) -> None:
+        func = self._host_funcs.get(func_name)
+        assert func is not None, f"{func_name}() not found in host_app.py"
+        assert _depends_on(func, "verify_api_key"), (
+            f"{route} in host_app.py must have Depends(verify_api_key) — "
+            "unauthenticated access exposes internal service state"
+        )
+
+    def test_debug_redis_has_verify_api_key(self):
+        """SEC_HOST_DEBUG_REDIS_AUTH: /debug/redis must require verify_api_key."""
+        self._assert_protected("debug_redis", "/debug/redis")
+
+    def test_debug_book_has_verify_api_key(self):
+        """SEC_HOST_DEBUG_BOOK_AUTH: /debug/book must require verify_api_key."""
+        self._assert_protected("debug_book", "/debug/book")
+
+    def test_debug_engine_has_verify_api_key(self):
+        """SEC_HOST_DEBUG_ENGINE_AUTH: /debug/engine (host_app) must require verify_api_key."""
+        self._assert_protected("debug_engine", "/debug/engine")
+
+    def test_engine_raw_has_verify_api_key(self):
+        """SEC_HOST_ENGINE_RAW_AUTH: /debug/engine-raw must require verify_api_key.
+
+        This endpoint bypasses the caching layer and acquires an engine directly —
+        an unauthenticated caller could exhaust the engine pool.
+        """
+        self._assert_protected("engine_raw", "/debug/engine-raw")
+
+    def test_debug_cache_has_verify_api_key(self):
+        """SEC_HOST_CACHE_AUTH: /debug/cache must require verify_api_key.
+
+        Accepts a Redis SCAN pattern — without auth, callers can enumerate all keys.
+        """
+        self._assert_protected("debug_cache", "/debug/cache")
+
+    def test_debug_cache_value_has_verify_api_key(self):
+        """SEC_HOST_CACHE_VALUE_AUTH: /debug/cache/value must require verify_api_key."""
+        self._assert_protected("debug_cache_value", "/debug/cache/value")
+
+    def test_debug_miss_metrics_has_verify_api_key(self):
+        """SEC_HOST_MISS_METRICS_AUTH: /debug/miss-metrics must require verify_api_key."""
+        self._assert_protected("debug_miss_metrics", "/debug/miss-metrics")
+
+
+class TestServerNoPrintStatements:
+    """SEC_SERVER_NO_PRINT_STMTS: server.py must use logger, not print(), for diagnostics.
+
+    print() bypasses the logging framework:
+    - Structured log aggregation misses diagnostic events.
+    - CodeQL flags bare print() in server code as a potential information-disclosure path.
+    - The fix is to use logger.info() / logger.error() / logger.exception() throughout.
+    """
+
+    def test_server_py_has_no_bare_print_calls(self):
+        """server.py must not contain bare print() calls — use logger instead."""
+        tree = _parse(_SERVER_PY)
+        violations = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                func = node.func
+                if isinstance(func, ast.Name) and func.id == "print":
+                    violations.append(node.lineno)
+        assert not violations, (
+            f"server.py contains bare print() calls at lines {violations}. "
+            "Replace with logger.info() / logger.error() / logger.exception()."
+        )
