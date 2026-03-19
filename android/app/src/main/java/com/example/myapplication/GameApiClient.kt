@@ -12,6 +12,17 @@ import java.net.URL
 interface GameApiClient {
     suspend fun startGame(playerId: String): ApiResult<GameStartResponse>
     suspend fun finishGame(req: GameFinishRequest): ApiResult<GameFinishResponse>
+
+    /**
+     * Fetch the next training recommendation for [playerId] from
+     * GET /next-training/{player_id}.
+     *
+     * Returns [ApiResult.Success] with a [TrainingRecommendation] on HTTP 200;
+     * [ApiResult.HttpError] on any non-200 response; [ApiResult.Timeout] when
+     * the connect or read deadline is exceeded; [ApiResult.NetworkError]
+     * for all other transport failures.
+     */
+    suspend fun getNextTraining(playerId: String): ApiResult<TrainingRecommendation>
 }
 
 // ── HTTP implementation ───────────────────────────────────────────────────────
@@ -87,6 +98,25 @@ class HttpGameApiClient(
             }
         }
 
+    override suspend fun getNextTraining(playerId: String): ApiResult<TrainingRecommendation> =
+        withContext(Dispatchers.IO) {
+            try {
+                val conn = openGetConnection("$baseUrl/next-training/$playerId")
+                conn.setRequestProperty("X-Api-Key", apiKey)
+                val code = conn.responseCode
+                if (code == 200) {
+                    val text = conn.inputStream.bufferedReader().readText()
+                    ApiResult.Success(parseTrainingResponse(text))
+                } else {
+                    ApiResult.HttpError(code)
+                }
+            } catch (e: SocketTimeoutException) {
+                ApiResult.Timeout
+            } catch (e: Exception) {
+                ApiResult.NetworkError(e)
+            }
+        }
+
     private fun openConnection(urlStr: String): HttpURLConnection =
         (URL(urlStr).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
@@ -95,6 +125,24 @@ class HttpGameApiClient(
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
         }
+
+    private fun openGetConnection(urlStr: String): HttpURLConnection =
+        (URL(urlStr).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = connectTimeoutMs
+            readTimeout = readTimeoutMs
+            setRequestProperty("Content-Type", "application/json")
+        }
+
+    private fun parseTrainingResponse(text: String): TrainingRecommendation {
+        val json = JSONObject(text)
+        return TrainingRecommendation(
+            topic = json.optString("topic", ""),
+            difficulty = json.optDouble("difficulty", 0.5).toFloat(),
+            format = json.optString("format", ""),
+            expectedGain = json.optDouble("expected_gain", 0.0).toFloat(),
+        )
+    }
 
     private fun parseFinishResponse(text: String): GameFinishResponse {
         val json = JSONObject(text)
