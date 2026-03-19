@@ -9,6 +9,8 @@ import android.view.MotionEvent
 import android.view.View
 import kotlin.math.*
 
+enum class GameResult { WHITE_WINS, BLACK_WINS, DRAW }
+
 class ChessBoardView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
@@ -46,6 +48,8 @@ class ChessBoardView @JvmOverloads constructor(
     var promotionListener: ((Int, Int) -> Unit)? = null
     /** Emits a structured [QuickCoachUpdate] after each AI move. */
     var quickCoachListener: ((QuickCoachUpdate) -> Unit)? = null
+    /** Fires when checkmate or stalemate is detected. */
+    var onGameOver: ((GameResult) -> Unit)? = null
 
     private data class MoveRecord(
         val sr: Int, val sc: Int, val tr: Int, val tc: Int,
@@ -161,6 +165,7 @@ class ChessBoardView @JvmOverloads constructor(
         performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
         return if (isPromotion) MoveResult.PROMOTION else {
             whiteToMove = !whiteToMove
+            checkAndNotifyGameOver()
             invalidate()
             MoveResult.SUCCESS
         }
@@ -184,6 +189,7 @@ class ChessBoardView @JvmOverloads constructor(
         val capturedPiece = board[tr][tc]
         executeMove(fr, fc, tr, tc)
         whiteToMove = !whiteToMove
+        checkAndNotifyGameOver()
         invalidate()
         quickCoachListener?.invoke(QuickCoachLogic.buildUpdate(capturedPiece, board))
     }
@@ -236,6 +242,29 @@ class ChessBoardView @JvmOverloads constructor(
         board[r][c] = if (board[r][c].isUpperCase()) to.uppercaseChar() else to.lowercaseChar()
         whiteToMove = !whiteToMove
         invalidate()
+    }
+
+    private fun hasAnyLegalMove(): Boolean {
+        for (r in 0..7) for (c in 0..7) {
+            val p = board[r][c]
+            if (p == '.' || p.isUpperCase() != whiteToMove) continue
+            for (tr in 0..7) for (tc in 0..7) {
+                if (isLegal(r, c, tr, tc)) return true
+            }
+        }
+        return false
+    }
+
+    private fun checkAndNotifyGameOver() {
+        if (hasAnyLegalMove()) return
+        gameOver = true
+        val inCheck = isInCheck(whiteToMove)
+        val result = when {
+            inCheck && whiteToMove -> GameResult.BLACK_WINS
+            inCheck && !whiteToMove -> GameResult.WHITE_WINS
+            else -> GameResult.DRAW
+        }
+        onGameOver?.invoke(result)
     }
 
     private fun isLegal(sr: Int, sc: Int, tr: Int, tc: Int): Boolean {

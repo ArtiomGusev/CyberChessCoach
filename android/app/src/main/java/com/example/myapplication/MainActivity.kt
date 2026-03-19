@@ -1,5 +1,6 @@
 package com.example.myapplication
 
+import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Intent
 import android.graphics.Color
@@ -20,6 +21,8 @@ import androidx.activity.viewModels
 import androidx.core.view.GravityCompat
 import androidx.appcompat.app.AppCompatActivity
 import androidx.drawerlayout.widget.DrawerLayout
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
@@ -34,14 +37,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var txtEngineScore: TextView
     private lateinit var txtMistakeCategory: TextView
 
+    // ── Game session state ───────────────────────────────────────────────────
+    private lateinit var gameApiClient: GameApiClient
+    private lateinit var authRepo: AuthRepository
+    private var currentPlayerId: String = "demo"
+    private val moveClassifications = mutableListOf<MistakeClassification>()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         // Redirect unauthenticated users to the login screen before showing
         // the board. EncryptedTokenStorage is lazily initialised; no Keystore
         // operation occurs if the token is already in the prefs cache.
-        val authRepository = AuthRepository(EncryptedTokenStorage(this))
-        if (!authRepository.isLoggedIn()) {
+        authRepo = AuthRepository(EncryptedTokenStorage(this))
+        if (!authRepo.isLoggedIn()) {
             startActivity(
                 Intent(this, LoginActivity::class.java)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
@@ -49,6 +58,14 @@ class MainActivity : AppCompatActivity() {
             finish()
             return
         }
+
+        currentPlayerId = (authRepo.authState() as? AuthState.Authenticated)?.playerId ?: "demo"
+        gameApiClient =
+            HttpGameApiClient(
+                baseUrl = BuildConfig.COACH_API_BASE,
+                apiKey = BuildConfig.COACH_API_KEY,
+                tokenProvider = { authRepo.getToken() },
+            )
 
         setContentView(R.layout.activity_main)
 
@@ -105,11 +122,13 @@ class MainActivity : AppCompatActivity() {
                 viewModel.reset()
                 chessBoard.resetBoard()
             }
+            moveClassifications.clear()
             coachText.text = "♟ New game. Control the center!"
             scoreRow.visibility = View.GONE
             txtEngineScore.text = ""
             txtMistakeCategory.text = ""
             drawerLayout.closeDrawer(GravityCompat.END)
+            startNewGameSession()
         }
 
         btnUndo.setOnClickListener {
@@ -152,7 +171,33 @@ class MainActivity : AppCompatActivity() {
         chessBoard.coachListener = { comment -> coachText.text = comment }
         chessBoard.promotionListener = { r, c -> showPromotionDialog(r, c) }
 
+        chessBoard.onGameOver = { result ->
+            val pgn = viewModel.exportPGN()
+            val resultStr =
+                when (result) {
+                    GameResult.WHITE_WINS -> "win"
+                    GameResult.BLACK_WINS -> "loss"
+                    GameResult.DRAW -> "draw"
+                }
+            val accuracy = computeAccuracy()
+            moveClassifications.clear()
+            lifecycleScope.launch {
+                when (val r = gameApiClient.finishGame(GameFinishRequest(pgn, resultStr, accuracy, emptyMap(), currentPlayerId))) {
+                    is ApiResult.Success -> showCoachingResult(r.data)
+                    is ApiResult.HttpError -> Log.w("GAME", "finishGame HTTP ${r.code}")
+                    is ApiResult.NetworkError -> Log.w("GAME", "finishGame network error", r.cause)
+                    ApiResult.Timeout -> Log.w("GAME", "finishGame timed out")
+                }
+            }
+        }
+
+        // Start initial game session
+        startNewGameSession()
+
         chessBoard.quickCoachListener = { update ->
+            // Track for end-of-game accuracy computation
+            moveClassifications.add(update.classification)
+
             // Show engine score badge
             txtEngineScore.text = update.scoreText
 
@@ -193,6 +238,56 @@ class MainActivity : AppCompatActivity() {
             .newInstance(boardSnapshot)
             .show(supportFragmentManager, "ChatBottomSheet")
     }
+
+    private fun startNewGameSession() {
+        lifecycleScope.launch {
+            when (val r = gameApiClient.startGame(currentPlayerId)) {
+                is ApiResult.Success -> Log.d("GAME", "Session started: ${r.data.gameId}")
+                is ApiResult.HttpError -> Log.w("GAME", "startGame HTTP ${r.code}")
+                is ApiResult.NetworkError -> Log.w("GAME", "startGame network error", r.cause)
+                ApiResult.Timeout -> Log.w("GAME", "startGame timed out")
+            }
+        }
+    }
+
+    private fun computeAccuracy(): Float {
+        if (moveClassifications.isEmpty()) return 0.5f
+        val score =
+            moveClassifications.sumOf { c ->
+                when (c) {
+                    MistakeClassification.GOOD -> 1.0
+                    MistakeClassification.INACCURACY -> 0.75
+                    MistakeClassification.MISTAKE -> 0.5
+                    MistakeClassification.BLUNDER -> 0.0
+                }
+            }
+        return (score / moveClassifications.size).toFloat()
+    }
+
+    private fun showCoachingResult(response: GameFinishResponse) {
+        val action = response.coachAction
+        val content = response.coachContent
+        val ratingText = "New rating: %.0f".format(response.newRating)
+        val message = "${content.description}\n\n$ratingText"
+
+        coachText.text = content.title
+
+        AlertDialog.Builder(this)
+            .setTitle("${actionTypeLabel(action.type)} — ${content.title}")
+            .setMessage(message)
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
+    private fun actionTypeLabel(type: String): String =
+        when (type.uppercase()) {
+            "DRILL" -> "Drill"
+            "PUZZLE" -> "Puzzle"
+            "REFLECT" -> "Reflect"
+            "PLAN_UPDATE" -> "Plan update"
+            "REST" -> "Rest"
+            else -> "Coach"
+        }
 
     private fun showPromotionDialog(r: Int, c: Int) {
         val dialog = Dialog(this)

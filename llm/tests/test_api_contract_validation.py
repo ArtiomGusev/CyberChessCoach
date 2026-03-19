@@ -603,48 +603,54 @@ class TestNextTrainingSchemaConflict:
 
 class TestCoachExecutorHandlerGap:
     """
-    Contract mismatch: CoachExecutor silently falls back to 'Keep playing' for
-    PUZZLE and PLAN_UPDATE action types, producing internally inconsistent
-    responses where coach_action.type disagrees with coach_content.
+    CoachExecutor handler coverage for PUZZLE and PLAN_UPDATE action types.
 
-    See docs/API_CONTRACTS.md — /game/finish — executor handler gap.
+    Previously (before the fix) both action types had no dedicated handler and
+    fell through to _handle_default, producing 'Keep playing' content regardless
+    of the action type. The handlers have since been added. These tests verify the
+    corrected behaviour.
+
+    See docs/API_CONTRACTS.md — /game/finish — executor handler gap (now fixed).
     """
 
-    def test_puzzle_action_falls_back_to_default_content(self):
+    def test_puzzle_action_returns_specific_content(self):
         """
-        PUZZLE action has no _handle_puzzle handler.
-        Executor falls back to _handle_default → 'Keep playing'.
-        This documents the gap; it MUST be fixed to pass in a corrected implementation.
+        PUZZLE action now has a _handle_puzzle handler.
+        The returned content must not be the generic 'Keep playing' fallback,
+        and must reference the action's weakness theme.
         """
         from llm.seca.coach.executor import CoachExecutor
 
         action = SimpleNamespace(type="PUZZLE", weakness="tactics", reason="confidence drop")
         content = CoachExecutor().execute(action)
-        # Current (broken) state: PUZZLE produces the default generic content
-        assert content.title == "Keep playing", (
-            "PUZZLE handler gap no longer present — update this test and "
-            "docs/API_CONTRACTS.md to reflect the corrected behaviour."
+        assert content.title != "Keep playing", (
+            "_handle_puzzle must return specific content, not the default fallback."
+        )
+        assert "tactics" in content.title.lower() or "puzzle" in content.title.lower(), (
+            "PUZZLE content title should reference the weakness or 'puzzle'."
         )
 
-    def test_plan_update_action_falls_back_to_default_content(self):
+    def test_plan_update_action_returns_specific_content(self):
         """
-        PLAN_UPDATE action has no _handle_plan_update handler.
-        Executor falls back to _handle_default → 'Keep playing'.
+        PLAN_UPDATE action now has a _handle_plan_update handler.
+        The returned content must not be the generic 'Keep playing' fallback,
+        and must reference the action's weakness.
         """
         from llm.seca.coach.executor import CoachExecutor
 
         action = SimpleNamespace(type="PLAN_UPDATE", weakness="endgame", reason="repeated weakness")
         content = CoachExecutor().execute(action)
-        assert content.title == "Keep playing", (
-            "PLAN_UPDATE handler gap no longer present — update this test and "
-            "docs/API_CONTRACTS.md to reflect the corrected behaviour."
+        assert content.title != "Keep playing", (
+            "_handle_plan_update must return specific content, not the default fallback."
         )
+        assert "endgame" in content.description.lower() or "endgame" in content.payload.get(
+            "updated_focus", ""
+        ), "PLAN_UPDATE content should reference the weakness."
 
-    def test_game_finish_puzzle_response_is_inconsistent(self):
+    def test_game_finish_puzzle_response_is_consistent(self):
         """
-        When PostGameCoachController decides PUZZLE, finish_game returns
-        coach_action.type='PUZZLE' but coach_content.title='Keep playing'.
-        The response is internally inconsistent.
+        When PostGameCoachController decides PUZZLE, finish_game must return
+        coach_content that is consistent with the action type — i.e. NOT 'Keep playing'.
         """
         player, db = _make_game_finish_mocks(
             rating_before=1500.0,
@@ -665,11 +671,10 @@ class TestCoachExecutorHandlerGap:
         action_type = result["coach_action"]["type"]
         content_title = result["coach_content"]["title"]
         if action_type == "PUZZLE":
-            # This is the documented inconsistency
-            assert content_title == "Keep playing", (
+            assert content_title != "Keep playing", (
                 f"coach_action.type='PUZZLE' but coach_content.title={content_title!r}. "
-                "If the handler gap is fixed, update TestCoachExecutorHandlerGap "
-                "and docs/API_CONTRACTS.md."
+                "The executor handler gap was supposed to be fixed — "
+                "_handle_puzzle must return puzzle-specific content."
             )
 
     def test_drill_and_reflect_handlers_are_consistent(self):
