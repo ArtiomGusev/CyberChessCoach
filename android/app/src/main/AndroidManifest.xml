@@ -8,14 +8,19 @@
         android:theme="@style/Theme.Material3.DayNight.NoActionBar">
 
         <activity
-    android:name=".MainActivity"
-    android:windowSoftInputMode="stateAlwaysHidden|adjustResize"
-    android:exported="true">
+            android:name=".LoginActivity"
+            android:windowSoftInputMode="adjustResize"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".MainActivity"
+            android:windowSoftInputMode="stateAlwaysHidden|adjustResize"
+            android:exported="false" />
 
         <activity
             android:name=".ChatActivity"

@@ -41,12 +41,19 @@ interface CoachApiClient {
  * @param apiKey           Sent as the X-Api-Key request header.
  * @param connectTimeoutMs TCP connect deadline in milliseconds.
  * @param readTimeoutMs    Read deadline in milliseconds.
+ * @param tokenProvider    Optional supplier of a JWT Bearer token. When
+ *                         non-null and returns a non-null string, the token
+ *                         is sent as `Authorization: Bearer <token>` alongside
+ *                         the X-Api-Key header. Required for endpoints that
+ *                         enforce user-level auth (/game/finish, /next-training,
+ *                         /curriculum/next).
  */
 class HttpCoachApiClient(
     val baseUrl: String,
     val apiKey: String,
     val connectTimeoutMs: Int = DEFAULT_CONNECT_TIMEOUT_MS,
     val readTimeoutMs: Int = DEFAULT_READ_TIMEOUT_MS,
+    val tokenProvider: (() -> String?)? = null,
 ) : CoachApiClient {
 
     companion object {
@@ -65,6 +72,10 @@ class HttpCoachApiClient(
             conn.requestMethod = "POST"
             conn.setRequestProperty("Content-Type", "application/json")
             conn.setRequestProperty("X-Api-Key", apiKey)
+            // Inject JWT Bearer token when the caller has a logged-in session.
+            tokenProvider?.invoke()?.let { token ->
+                conn.setRequestProperty("Authorization", "Bearer $token")
+            }
             conn.doOutput = true
             conn.connectTimeout = connectTimeoutMs
             conn.readTimeout = readTimeoutMs
