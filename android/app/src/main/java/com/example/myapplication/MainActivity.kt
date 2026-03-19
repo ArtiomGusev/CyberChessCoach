@@ -43,6 +43,13 @@ class MainActivity : AppCompatActivity() {
     private var currentPlayerId: String = "demo"
     private val moveClassifications = mutableListOf<MistakeClassification>()
 
+    /**
+     * Cached result from the most recent /game/finish call.
+     * Provides [PlayerProfileDto] (rating + confidence) and weakness categories for
+     * the next chat session opened via [openChat].  Null before the first game ends.
+     */
+    private var lastGameFinishResponse: GameFinishResponse? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -183,7 +190,10 @@ class MainActivity : AppCompatActivity() {
             moveClassifications.clear()
             lifecycleScope.launch {
                 when (val r = gameApiClient.finishGame(GameFinishRequest(pgn, resultStr, accuracy, emptyMap(), currentPlayerId))) {
-                    is ApiResult.Success -> showCoachingResult(r.data)
+                    is ApiResult.Success -> {
+                        lastGameFinishResponse = r.data
+                        showCoachingResult(r.data)
+                    }
                     is ApiResult.HttpError -> Log.w("GAME", "finishGame HTTP ${r.code}")
                     is ApiResult.NetworkError -> Log.w("GAME", "finishGame network error", r.cause)
                     ApiResult.Timeout -> Log.w("GAME", "finishGame timed out")
@@ -237,8 +247,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         val boardSnapshot = chessBoard.exportFEN()
+
+        // Build player context from the last completed game, if available.
+        val profile = lastGameFinishResponse?.let {
+            PlayerProfileDto(rating = it.newRating, confidence = it.confidence)
+        }
+        val mistakes = lastGameFinishResponse?.coachAction?.weakness?.let { listOf(it) }
+
         ChatBottomSheet
-            .newInstance(boardSnapshot)
+            .newInstance(boardSnapshot, profile, mistakes)
             .show(supportFragmentManager, "ChatBottomSheet")
     }
 

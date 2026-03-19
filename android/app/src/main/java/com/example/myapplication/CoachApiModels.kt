@@ -16,14 +16,33 @@ package com.example.myapplication
 data class ChatMessageDto(val role: String, val content: String)
 
 /**
+ * Player context sent with every POST /chat request for personalised coaching.
+ *
+ * Values are sourced from the most recent [GameFinishResponse]:
+ *  - [rating]     Current Glicko-2 skill estimate (backend field: `rating`).
+ *  - [confidence] Rating confidence in the range 0.0–1.0 (backend field: `confidence`).
+ *
+ * Maps to the `player_profile` dict accepted by chat_pipeline.generate_chat_reply().
+ * Null values in the dict are omitted by [HttpCoachApiClient.buildJson].
+ */
+data class PlayerProfileDto(
+    val rating: Float,
+    val confidence: Float,
+)
+
+/**
  * Request body for POST /chat.
  *
- * [fen]      current board position in Forsyth-Edwards Notation.
- * [messages] conversation history (most-recent last).
+ * [fen]           current board position in Forsyth-Edwards Notation.
+ * [messages]      conversation history (most-recent last).
+ * [playerProfile] optional player context for personalised replies; null omits the field.
+ * [pastMistakes]  optional list of weakness categories from the last game; null omits the field.
  */
 data class ChatRequestBody(
     val fen: String,
     val messages: List<ChatMessageDto>,
+    val playerProfile: PlayerProfileDto? = null,
+    val pastMistakes: List<String>? = null,
 )
 
 /**

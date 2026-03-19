@@ -18,15 +18,25 @@ import java.net.URL
 interface CoachApiClient {
 
     /**
-     * Send the current position and conversation history to POST /chat.
+     * Send the current position, conversation history, and optional player context
+     * to POST /chat.
      *
-     * @param fen      Board position in FEN notation.
-     * @param messages Conversation history (most-recent last).
-     * @return         [ApiResult.Success] on HTTP 200 with a valid body;
-     *                 [ApiResult.HttpError] on non-200; [ApiResult.Timeout]
-     *                 on deadline exceeded; [ApiResult.NetworkError] otherwise.
+     * @param fen           Board position in FEN notation.
+     * @param messages      Conversation history (most-recent last).
+     * @param playerProfile Optional player context (rating, confidence) for personalised
+     *                      coaching; omitted from the request when null.
+     * @param pastMistakes  Optional list of weakness categories from the last game; omitted
+     *                      from the request when null.
+     * @return              [ApiResult.Success] on HTTP 200 with a valid body;
+     *                      [ApiResult.HttpError] on non-200; [ApiResult.Timeout]
+     *                      on deadline exceeded; [ApiResult.NetworkError] otherwise.
      */
-    suspend fun chat(fen: String, messages: List<ChatMessageDto>): ApiResult<ChatResponseBody>
+    suspend fun chat(
+        fen: String,
+        messages: List<ChatMessageDto>,
+        playerProfile: PlayerProfileDto? = null,
+        pastMistakes: List<String>? = null,
+    ): ApiResult<ChatResponseBody>
 }
 
 /**
@@ -65,6 +75,8 @@ class HttpCoachApiClient(
     override suspend fun chat(
         fen: String,
         messages: List<ChatMessageDto>,
+        playerProfile: PlayerProfileDto?,
+        pastMistakes: List<String>?,
     ): ApiResult<ChatResponseBody> = withContext(Dispatchers.IO) {
         try {
             val url = URL("$baseUrl$CHAT_PATH")
@@ -81,7 +93,7 @@ class HttpCoachApiClient(
             conn.readTimeout = readTimeoutMs
 
             conn.outputStream.bufferedWriter(Charsets.UTF_8).use {
-                it.write(buildJson(fen, messages))
+                it.write(buildJson(fen, messages, playerProfile, pastMistakes))
             }
 
             val code = conn.responseCode
@@ -102,7 +114,12 @@ class HttpCoachApiClient(
     // JSON serialisation / deserialisation (private — not unit tested directly)
     // -----------------------------------------------------------------------
 
-    private fun buildJson(fen: String, messages: List<ChatMessageDto>): String {
+    private fun buildJson(
+        fen: String,
+        messages: List<ChatMessageDto>,
+        playerProfile: PlayerProfileDto?,
+        pastMistakes: List<String>?,
+    ): String {
         val arr = JSONArray()
         for (msg in messages) {
             arr.put(
@@ -116,6 +133,22 @@ class HttpCoachApiClient(
             .apply {
                 put("fen", fen)
                 put("messages", arr)
+                // Omit player_profile when null so the server uses its own defaults.
+                playerProfile?.let {
+                    put(
+                        "player_profile",
+                        JSONObject().apply {
+                            put("rating", it.rating.toDouble())
+                            put("confidence", it.confidence.toDouble())
+                        },
+                    )
+                }
+                // Omit past_mistakes when null; empty list is sent as [] (valid).
+                pastMistakes?.let {
+                    val arr2 = JSONArray()
+                    for (mistake in it) arr2.put(mistake)
+                    put("past_mistakes", arr2)
+                }
             }
             .toString()
     }

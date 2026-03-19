@@ -52,6 +52,20 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
     private var currentFen: String? = null
     private var isStreaming = false
 
+    /**
+     * Player profile injected by the host Activity when a game has been completed.
+     * Sourced from [GameFinishResponse.newRating] and [GameFinishResponse.confidence].
+     * Null when no game has finished in this session (opening/pre-game chat).
+     */
+    private var playerProfile: PlayerProfileDto? = null
+
+    /**
+     * Weakness categories from the most recent game, used to personalise coaching.
+     * Derived from [GameFinishResponse.coachAction.weakness] when available.
+     * Null when no game has finished in this session.
+     */
+    private var pastMistakes: List<String>? = null
+
     private val sessionStore = ChatSessionStore(maxMessages = 50)
     private val chatAdapter = ChatAdapter()
 
@@ -76,16 +90,40 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
 
     companion object {
         private const val ARG_FEN = "arg_fen"
+        private const val ARG_HAS_PROFILE = "arg_has_profile"
+        private const val ARG_PLAYER_RATING = "arg_player_rating"
+        private const val ARG_PLAYER_CONFIDENCE = "arg_player_confidence"
+        private const val ARG_PAST_MISTAKES = "arg_past_mistakes"
+
         private const val STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
         private const val FALLBACK_REPLY =
             "Coach is offline. Review the position and consider piece activity, " +
                 "centre control, and king safety."
 
-        fun newInstance(fen: String): ChatBottomSheet {
+        /**
+         * Create a new instance with the current board position and optional
+         * player context for personalised coaching.
+         *
+         * @param fen           Current board position in FEN notation.
+         * @param playerProfile Rating + confidence from the last [GameFinishResponse];
+         *                      null when no game has completed in this session.
+         * @param pastMistakes  Weakness categories from the last game; null when not available.
+         */
+        fun newInstance(
+            fen: String,
+            playerProfile: PlayerProfileDto? = null,
+            pastMistakes: List<String>? = null,
+        ): ChatBottomSheet {
             val fragment = ChatBottomSheet()
             val args = Bundle()
             args.putString(ARG_FEN, fen)
+            if (playerProfile != null) {
+                args.putBoolean(ARG_HAS_PROFILE, true)
+                args.putFloat(ARG_PLAYER_RATING, playerProfile.rating)
+                args.putFloat(ARG_PLAYER_CONFIDENCE, playerProfile.confidence)
+            }
+            pastMistakes?.let { args.putStringArrayList(ARG_PAST_MISTAKES, ArrayList(it)) }
             fragment.arguments = args
             return fragment
         }
@@ -103,6 +141,12 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         currentFen = arguments?.getString(ARG_FEN)
+        if (arguments?.getBoolean(ARG_HAS_PROFILE, false) == true) {
+            val rating = arguments!!.getFloat(ARG_PLAYER_RATING)
+            val confidence = arguments!!.getFloat(ARG_PLAYER_CONFIDENCE)
+            playerProfile = PlayerProfileDto(rating = rating, confidence = confidence)
+        }
+        pastMistakes = arguments?.getStringArrayList(ARG_PAST_MISTAKES)?.toList()
         isCancelable = true
     }
 
@@ -248,6 +292,8 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
                         coachApiClient.chat(
                             fen = currentFen ?: STARTING_FEN,
                             messages = messages,
+                            playerProfile = playerProfile,
+                            pastMistakes = pastMistakes,
                         )
                 ) {
                     is ApiResult.Success -> Pair(result.data.reply, result.data.engineSignal)
