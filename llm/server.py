@@ -54,6 +54,7 @@ from llm.seca.coach.chat_pipeline import (
     generate_chat_reply,
     ChatTurn as _ChatPipelineTurn,
 )
+from llm.seca.coach.live_move_pipeline import generate_live_reply
 from llm.seca.storage.repo import (
     create_game,
     log_move,
@@ -740,11 +741,15 @@ def move(
 
 
 @app.post("/live/move")
-def live_move(req: LiveMoveRequest, _: None = Depends(verify_api_key)):
-    # TODO: wire LiveCoach and realtime analyzer pipeline
+@limiter.limit("30/minute")
+def live_move(req: LiveMoveRequest, request: Request, _: None = Depends(verify_api_key)):
+    result = generate_live_reply(fen=req.fen, uci=req.uci, player_id=req.player_id)
     return {
-        "status": "not_implemented",
-        "message": "Live coaching pipeline not wired yet.",
+        "status": "ok",
+        "hint": result.hint,
+        "engine_signal": result.engine_signal,
+        "move_quality": result.move_quality,
+        "mode": result.mode,
     }
 
 
