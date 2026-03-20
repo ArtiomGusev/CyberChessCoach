@@ -12,9 +12,8 @@ import org.junit.Test
  *   - QuickCoachUpdate data class constraints
  *   - AIMove validity boundary conditions
  *
- * ChatActivity itself requires the Android framework (TextView, Activity) and
- * is covered by instrumented tests.  This suite validates all testable logic
- * in the JVM-safe data model layer without requiring an Android emulator.
+ * This suite validates all testable logic in the JVM-safe data model layer
+ * without requiring an Android emulator.
  */
 class ChatCoachStressTest {
 
