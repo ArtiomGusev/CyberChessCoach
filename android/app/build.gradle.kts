@@ -48,23 +48,28 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            // Production values injected via env vars at build time.
-            // Falls back to dev defaults so CI never fails on a missing secret.
-            // CI secret injection: set COACH_API_BASE (https://...) and COACH_API_KEY
-            // in the release workflow before running `./gradlew assembleRelease`.
+            // COACH_API_BASE is a plain configuration value (not a secret) — it is
+            // visible in the decompiled APK regardless of obfuscation. Pass it as a
+            // GitHub Actions variable (vars.COACH_API_BASE), not a secret.
+            // COACH_API_KEY ends up in the APK binary and is therefore semi-public;
+            // treat it as a rate-limit shield only, not real authentication. Real
+            // per-user auth uses JWT tokens issued by /auth/login. Pass it as a
+            // GitHub Actions secret (secrets.COACH_API_KEY).
+            //
+            // Falls back to dev defaults when env vars are absent (e.g. unit-test CI).
             val prodApiBase: String = System.getenv("COACH_API_BASE") ?: "http://10.0.2.2:8000"
             val prodApiKey: String = System.getenv("COACH_API_KEY") ?: "dev-key"
-            // Fail the release build when COACH_API_BASE is explicitly provided but
-            // uses plain HTTP — prevents shipping a cleartext-only base URL.
+            // Hard-fail if COACH_API_BASE is explicitly provided but uses plain HTTP.
             if (System.getenv("COACH_API_BASE") != null && !prodApiBase.startsWith("https://")) {
                 error(
                     "Release build requires COACH_API_BASE to start with https://. " +
-                    "Got: $prodApiBase — set a valid TLS endpoint in your CI secrets."
+                    "Got: $prodApiBase — set a valid TLS endpoint."
                 )
             }
             buildConfigField("String", "COACH_API_BASE", "\"$prodApiBase\"")

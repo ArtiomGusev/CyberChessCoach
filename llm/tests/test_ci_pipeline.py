@@ -48,6 +48,7 @@ def test_ci_workflow_includes_required_gates():
         "dependency-security",
         "node-security",
         "android-build",
+        "compose-validate",
         "docker-images",
         "image-security",
         "deploy",
@@ -60,6 +61,7 @@ def test_ci_workflow_includes_required_gates():
         "dependency-security",
         "node-security",
         "android-build",
+        "compose-validate",
     }
     assert "image-security" in jobs["deploy"]["needs"]
     assert "image-security" in jobs["release"]["needs"]
@@ -79,6 +81,7 @@ def test_ci_workflow_hardens_checkout_and_supply_chain_controls():  # pylint: di
         "dependency-security",
         "node-security",
         "android-build",
+        "compose-validate",
         "docker-images",
         "image-security",
         "deploy",

@@ -244,6 +244,66 @@ jobs:
             grep -q 'android.permission.INTERNET' "$manifest"
           done
 
+      # COACH_API_BASE is a plain URL (visible in the APK — not a secret).
+      # Pass it via vars.COACH_API_BASE (GitHub Actions variable, not secret).
+      # COACH_API_KEY is semi-public once in the APK; it is a rate-limit shield
+      # only. Real per-user auth uses JWT. Pass it via secrets.COACH_API_KEY.
+      # Both fall back to dev defaults when not configured (unit-test CI is fine).
+      - name: Build release APK
+        working-directory: android
+        env:
+          COACH_API_BASE: ${{ vars.COACH_API_BASE }}
+          COACH_API_KEY: ${{ secrets.COACH_API_KEY }}
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Upload release APK
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk-${{ github.sha }}
+          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: warn
+
+  compose-validate:
+    name: Validate Compose files and Caddyfile
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Validate docker-compose.yml syntax
+        run: docker compose config --quiet
+
+      - name: Validate docker-compose.prod.yml syntax
+        env:
+          DOMAIN: test.example.com
+          GHCR_IMAGE: ghcr.io/owner/test:latest
+        run: |
+          printf '%s\n' \
+            'POSTGRES_DB=chesscoach' \
+            'POSTGRES_USER=chesscoach' \
+            'POSTGRES_PASSWORD=stub' \
+            'SECA_ENV=prod' \
+            'SECA_API_KEY=stub' \
+            'SECRET_KEY=stub' \
+            'CORS_ALLOWED_ORIGINS=https://test.example.com' \
+            'DATABASE_URL=sqlite:///data/seca.db' \
+            'COACH_OLLAMA_MODEL=qwen2.5:7b-instruct-q2_K' \
+            > .env.prod
+          docker compose -f docker-compose.prod.yml config --quiet
+
+      - name: Validate Caddyfile syntax
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2-alpine \
+            caddy fmt /etc/caddy/Caddyfile > /dev/null
+
   docker-images:
     name: Build and publish Docker images
     runs-on: ubuntu-latest
@@ -255,6 +315,7 @@ jobs:
       - dependency-security
       - node-security
       - android-build
+      - compose-validate
     permissions:
       contents: read
       packages: write
@@ -496,7 +557,7 @@ jobs:
 
 
   deploy:
-    name: Deploy to Fly
+    name: Deploy to Hetzner
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs:
@@ -507,13 +568,14 @@ jobs:
       - node-security
       - docker-images
       - image-security
+      - compose-validate
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
     environment:
       name: production
     concurrency:
-      group: fly-production
+      group: hetzner-production
       cancel-in-progress: false
     steps:
       - name: Checkout repository
@@ -521,28 +583,50 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check Fly token availability
-        id: fly-token
+      - name: Check Hetzner secrets availability
+        id: hetzner-check
         shell: bash
         env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
         run: |
-          if [ -z "${FLY_API_TOKEN}" ]; then
-            echo "::warning::FLY_API_TOKEN is not configured for this repository/environment. Skipping Fly deploy."
+          if [ -z "${HETZNER_HOST}" ] || [ -z "${HETZNER_SSH_KEY}" ]; then
+            echo "::warning::HETZNER_HOST or HETZNER_SSH_KEY not configured. Skipping Hetzner deploy."
             echo "available=false" >> "$GITHUB_OUTPUT"
           else
             echo "available=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Set up Flyctl
-        if: steps.fly-token.outputs.available == 'true'
-        uses: superfly/flyctl-actions/setup-flyctl@v1
+      # Pulls the latest GHCR image and does a zero-downtime restart of the api
+      # container only — db and ollama are left running.
+      - name: Deploy to Hetzner via SSH
+        if: steps.hetzner-check.outputs.available == 'true'
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.HETZNER_HOST }}
+          username: deploy
+          key: ${{ secrets.HETZNER_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            cd /opt/chesscoach
 
-      - name: Deploy application
-        if: steps.fly-token.outputs.available == 'true'
-        run: flyctl deploy --remote-only --verbose
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+            # Pull the freshly signed image from GHCR
+            docker compose -f docker-compose.prod.yml pull api
+
+            # Replace only the api container; leave db and ollama untouched
+            docker compose -f docker-compose.prod.yml up -d --no-deps api
+
+            # Wait for the health check to pass (max 60 s)
+            for i in $(seq 1 12); do
+              sleep 5
+              if curl -sf http://127.0.0.1:8000/health > /dev/null; then
+                echo "Health check passed."
+                exit 0
+              fi
+              echo "Waiting for api to be healthy ($i/12)..."
+            done
+            echo "::error::API did not become healthy after deploy."
+            exit 1
 
   release:
     name: Create GitHub release
@@ -555,6 +639,7 @@ jobs:
       - node-security
       - docker-images
       - image-security
+      - compose-validate
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write

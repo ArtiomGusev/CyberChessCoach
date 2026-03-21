@@ -5,17 +5,28 @@
 # For more details, see
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Preserve stack trace information for crash reporting.
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# API model classes are serialized/deserialized via org.json (JSONObject field
+# access by string name). Keep their public members so R8 does not rename them.
+-keepclassmembers class com.example.myapplication.**ApiModels** { public *; }
+-keepclassmembers class com.example.myapplication.**Models** { public *; }
+-keep class com.example.myapplication.CoachApiModels** { *; }
+-keep class com.example.myapplication.GameApiModels** { *; }
+-keep class com.example.myapplication.AuthApiModels** { *; }
+-keep class com.example.myapplication.EngineEvalApiModels** { *; }
+-keep class com.example.myapplication.LiveMoveApiModels** { *; }
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Kotlin coroutines
+-keepclassmembernames class kotlinx.** {
+    volatile <fields>;
+}
+-keepnames class kotlinx.coroutines.** { *; }
+
+# AndroidX Security Crypto / EncryptedSharedPreferences
+-keep class androidx.security.crypto.** { *; }
+
+# Kotlin metadata (needed for reflection used by coroutines)
+-keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod
