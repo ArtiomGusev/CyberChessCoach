@@ -3,6 +3,17 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// Release signing — populated from environment variables injected by CI.
+// When any variable is absent (local dev, unit-test CI) the signingConfig is
+// skipped and Gradle produces app-release-unsigned.apk as before.
+val releaseKeystoreFile: String? = System.getenv("KEYSTORE_FILE")
+val releaseKeyAlias: String? = System.getenv("KEY_ALIAS")
+val releaseKeyPassword: String? = System.getenv("KEY_PASSWORD")
+val releaseStorePassword: String? = System.getenv("STORE_PASSWORD")
+val hasReleaseSigningConfig: Boolean = listOf(
+    releaseKeystoreFile, releaseKeyAlias, releaseKeyPassword, releaseStorePassword,
+).all { it != null }
+
 android {
     namespace = "com.example.myapplication"
     compileSdk = 36
@@ -46,8 +57,22 @@ android {
         }
     }
 
+    if (hasReleaseSigningConfig) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(releaseKeystoreFile!!)
+                keyAlias = releaseKeyAlias!!
+                keyPassword = releaseKeyPassword!!
+                storePassword = releaseStorePassword!!
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (hasReleaseSigningConfig) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

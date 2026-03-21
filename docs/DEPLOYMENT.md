@@ -124,6 +124,10 @@ run. Go to **Settings → Secrets and variables → Actions**.
 | `HETZNER_HOST` | SSH deploy step — target address | IP or hostname of your Hetzner VPS |
 | `HETZNER_SSH_KEY` | SSH deploy step — private key | Generate with `ssh-keygen -t ed25519`; add the public key to `/home/deploy/.ssh/authorized_keys` on the server (user `deploy`) |
 | `COACH_API_KEY` | Android release APK build — baked in as `X-Api-Key` | Any non-empty string; **must match `SECA_API_KEY` in `.env.prod` on the server** |
+| `KEYSTORE_BASE64` | Android release APK signing | Base64-encode your `.jks` file: `base64 -w 0 release.jks` (Linux/macOS) or `[Convert]::ToBase64String([IO.File]::ReadAllBytes("release.jks"))` (PowerShell) |
+| `KEY_ALIAS` | Android release APK signing | The alias chosen when running `keytool -genkey` |
+| `KEY_PASSWORD` | Android release APK signing | The key password chosen when running `keytool -genkey` |
+| `STORE_PASSWORD` | Android release APK signing | The store password chosen when running `keytool -genkey` |
 
 > `GITHUB_TOKEN` is auto-provisioned by Actions. It is used for GHCR push,
 > image attestation, and Trivy scanning. No configuration required.
