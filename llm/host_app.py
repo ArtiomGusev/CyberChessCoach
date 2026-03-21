@@ -7,6 +7,9 @@ from typing import List, Tuple
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 # Setup logging
@@ -82,7 +85,15 @@ if os.name == "nt" and hasattr(asyncio, "WindowsProactorEventLoopPolicy"):
     if not isinstance(current_policy, asyncio.WindowsProactorEventLoopPolicy):
         asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
+_limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI(default_response_class=DefaultResponseClass)
+app.state.limiter = _limiter
+
+
+@app.exception_handler(RateLimitExceeded)
+async def _rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(status_code=429, content={"error": "Too many requests"})
 
 
 # Global Exception Handler for Security (CWE-209)
@@ -191,7 +202,8 @@ async def debug_book(_: None = Depends(verify_api_key)):
 
 
 @app.post("/engine/eval")
-async def eval_position(payload: EngineEvalRequest):
+@_limiter.limit("30/minute")
+async def eval_position(request: Request, payload: EngineEvalRequest):
     movetime, nodes = _resolve_request_limits(movetime=payload.movetime_ms, nodes=payload.nodes)
     return await _evaluate_position(
         fen=payload.fen,
@@ -202,7 +214,9 @@ async def eval_position(payload: EngineEvalRequest):
 
 
 @app.get("/engine/eval")
+@_limiter.limit("30/minute")
 async def eval_position_query(
+    request: Request,
     fen: str | None = None,
     moves: List[str] | None = Query(default=None),
     movetime_ms: int | None = None,

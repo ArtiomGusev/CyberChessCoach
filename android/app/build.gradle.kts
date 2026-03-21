@@ -55,8 +55,18 @@ android {
             )
             // Production values injected via env vars at build time.
             // Falls back to dev defaults so CI never fails on a missing secret.
+            // CI secret injection: set COACH_API_BASE (https://...) and COACH_API_KEY
+            // in the release workflow before running `./gradlew assembleRelease`.
             val prodApiBase: String = System.getenv("COACH_API_BASE") ?: "http://10.0.2.2:8000"
             val prodApiKey: String = System.getenv("COACH_API_KEY") ?: "dev-key"
+            // Fail the release build when COACH_API_BASE is explicitly provided but
+            // uses plain HTTP — prevents shipping a cleartext-only base URL.
+            if (System.getenv("COACH_API_BASE") != null && !prodApiBase.startsWith("https://")) {
+                error(
+                    "Release build requires COACH_API_BASE to start with https://. " +
+                    "Got: $prodApiBase — set a valid TLS endpoint in your CI secrets."
+                )
+            }
             buildConfigField("String", "COACH_API_BASE", "\"$prodApiBase\"")
             buildConfigField("String", "COACH_API_KEY", "\"$prodApiKey\"")
         }

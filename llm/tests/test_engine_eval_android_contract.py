@@ -162,6 +162,8 @@ def _call_eval_position(monkeypatch, **kwargs):
                 return None, self.default_nodes
             return movetime, nodes
 
+    # Disable the rate limiter so direct function calls don't need a real Request.
+    monkeypatch.setattr(host_app._limiter, "enabled", False)
     monkeypatch.setattr(host_app, "engine_eval", _FakeEvaluator())
     monkeypatch.setattr(
         host_app.engine_service,
@@ -170,7 +172,9 @@ def _call_eval_position(monkeypatch, **kwargs):
     )
 
     async def _run():
-        return await host_app.eval_position(host_app.EngineEvalRequest(fen="startpos"))
+        return await host_app.eval_position(
+            MagicMock(), host_app.EngineEvalRequest(fen="startpos")
+        )
 
     return asyncio.run(_run())
 

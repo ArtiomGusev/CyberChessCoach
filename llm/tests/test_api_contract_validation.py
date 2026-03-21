@@ -101,6 +101,8 @@ class TestEngineEvalContractSchema:
                     return None, self.default_nodes
                 return movetime, nodes
 
+        # Disable the rate limiter so direct function calls don't need a real Request.
+        monkeypatch.setattr(host_app._limiter, "enabled", False)
         monkeypatch.setattr(host_app, "engine_eval", _FakeEvaluator())
         monkeypatch.setattr(
             host_app.engine_service,
@@ -109,7 +111,9 @@ class TestEngineEvalContractSchema:
         )
 
         async def _run():
-            return await host_app.eval_position(host_app.EngineEvalRequest(fen="startpos"))
+            return await host_app.eval_position(
+                MagicMock(), host_app.EngineEvalRequest(fen="startpos")
+            )
 
         return asyncio.run(_run())
 
@@ -206,6 +210,7 @@ class TestEngineEvalGetContractSchema:
                 return movetime, nodes
 
         monkeypatch.setattr(host_app, "engine_eval", _FakeEvaluator())
+        monkeypatch.setattr(host_app._limiter, "enabled", False)
         monkeypatch.setattr(
             host_app.engine_service,
             "evaluate_with_metrics",
@@ -213,7 +218,7 @@ class TestEngineEvalGetContractSchema:
         )
 
         async def _run():
-            return await host_app.eval_position_query(fen="startpos")
+            return await host_app.eval_position_query(MagicMock(), fen="startpos")
 
         result = asyncio.run(_run())
         for field in ("score", "best_move", "source", "_metrics"):
@@ -238,11 +243,14 @@ class TestEngineEvalGetContractSchema:
             def resolve_limits(self, *, movetime, nodes):
                 return movetime, nodes
 
+        monkeypatch.setattr(host_app._limiter, "enabled", False)
         monkeypatch.setattr(host_app, "engine_eval", _FakeEvaluator())
         monkeypatch.setattr(host_app.engine_service, "evaluate_with_metrics", _fake_evaluate)
 
         async def _run():
-            return await host_app.eval_position_query(fen="startpos", movetime_ms=30, movetime=None)
+            return await host_app.eval_position_query(
+                MagicMock(), fen="startpos", movetime_ms=30, movetime=None
+            )
 
         asyncio.run(_run())
         assert received_movetime["mt"] == 30

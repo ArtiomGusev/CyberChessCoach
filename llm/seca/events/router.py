@@ -105,7 +105,12 @@ def finish_game(
     )
 
     # ---- skill update ----
-    SkillUpdater(db).update_from_event(player.id, event)
+    try:
+        SkillUpdater(db).update_from_event(player.id, event)
+    except Exception:
+        logger.exception(
+            "SkillUpdater failed for player %s; rating not updated this game", player.id
+        )
     db.refresh(player)
 
     rating_after = player.rating

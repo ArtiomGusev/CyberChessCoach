@@ -83,9 +83,14 @@ app.state.limiter = limiter
 
 # ---- CORS ----------------------------------------------------------------
 _cors_origins = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+if not _cors_origins:
+    logger.warning(
+        "CORS_ALLOWED_ORIGINS is not set — all cross-origin requests will be blocked. "
+        "Set CORS_ALLOWED_ORIGINS to a comma-separated list of allowed origins."
+    )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins if _cors_origins else (["*"] if DEBUG else []),
+    allow_origins=_cors_origins,
     allow_methods=["GET", "POST"],
     allow_headers=["Authorization", "Content-Type", "X-Api-Key"],
 )
