@@ -145,13 +145,85 @@ These are not GitHub secrets — they live on the server itself:
 
 All other backend variables (`SECA_API_KEY`, `SECRET_KEY`, `DATABASE_URL`,
 `POSTGRES_*`, etc.) go into `/opt/chesscoach/.env.prod` — see section 1 and
-`.env.example` for the full list.
+`.env.prod.example` for the production-specific template.
 
 ---
 
-## 7. References
+## 7. First-Time Hetzner Bootstrap
 
-- `.env.example` — full variable reference with comments
+Use the bootstrap script for initial server setup. CI handles all subsequent
+deploys automatically.
+
+### Prerequisites on the server
+
+```bash
+# Install Docker Engine + Compose plugin (Debian/Ubuntu)
+curl -fsSL https://get.docker.com | sh
+apt install -y docker-compose-plugin curl python3
+
+# Create deploy user and add to docker group
+useradd -m -s /bin/bash deploy
+usermod -aG docker deploy
+
+# Create working directory and clone/copy the repo
+mkdir -p /opt/chesscoach
+cd /opt/chesscoach
+# ... git clone or rsync the repo here ...
+```
+
+### Run the bootstrap script
+
+```bash
+cd /opt/chesscoach
+./scripts/hetzner_setup.sh
+```
+
+The script:
+
+1. Validates prerequisites and generates `.env.prod` from `.env.prod.example`
+   (prompts you to fill in `SECA_API_KEY`, `POSTGRES_PASSWORD`, `DOMAIN`, `GHCR_IMAGE`)
+2. Pulls all GHCR images
+3. Starts Ollama and pulls `qwen2.5:7b-instruct-q2_K` into the persistent volume
+4. Starts the full stack (`db`, `ollama`, `api`, `caddy`)
+5. Waits for the API health check and runs the smoke tests
+
+The script is idempotent — safe to re-run if interrupted.
+
+### CORS for mobile clients
+
+Android's `HttpURLConnection` does not send `Origin` headers, so CORS
+restrictions are a browser-only concern. Set `CORS_ALLOWED_ORIGINS=*` in
+`.env.prod` to silence the server warning and allow future web clients.
+The `.env.prod.example` template already includes this value.
+
+### Postgres schema initialization
+
+`Base.metadata.create_all()` runs at server startup and creates all tables
+from the SQLAlchemy models if they do not exist. No Alembic or manual
+migration step is needed for a fresh deployment — the full schema
+(including `player_embedding`) is created automatically by the first
+`docker compose up`.
+
+### After bootstrap
+
+```bash
+# Tail logs to confirm TLS cert provisioned and Ollama is connected
+docker compose -f docker-compose.prod.yml logs -f caddy api
+
+# Register the first player (replace values)
+curl -s -X POST https://api.yourdomain.com/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@example.com","password":"changeme123"}'
+```
+
+---
+
+## 8. References
+
+- `.env.prod.example` — production environment template (copy to `.env.prod` on server)
+- `.env.example` — dev/Docker variable reference with comments
+- `scripts/hetzner_setup.sh` — first-time server bootstrap script
+- `scripts/smoke_test.sh` — post-deploy health verification
 - `docs/OPERATIONS.md` — runtime monitoring, telemetry, incident response
 - `docs/ARCHITECTURE.md` — system design and layer boundaries
 - `docs/API_CONTRACTS.md` — authoritative endpoint schemas

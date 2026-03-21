@@ -15,18 +15,29 @@ from .service import AuthService
 from .tokens import decode_token
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///data/seca.db")
-os.makedirs("data", exist_ok=True)
+_is_sqlite = DATABASE_URL.startswith("sqlite")
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+if _is_sqlite:
+    os.makedirs("data", exist_ok=True)
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+else:
+    engine = create_engine(DATABASE_URL)
+
 SessionLocal = sessionmaker(bind=engine)
 
 Base.metadata.create_all(bind=engine)
-with engine.connect() as conn:
-    rows = conn.execute(text("PRAGMA table_info(players)")).fetchall()
-    columns = {r[1] for r in rows}
-    if "player_embedding" not in columns:
-        conn.execute(text("ALTER TABLE players ADD COLUMN player_embedding TEXT DEFAULT '[]'"))
-        conn.commit()
+
+# Add player_embedding column if missing (schema upgrade for SQLite instances
+# created before this column was added to the Player model).
+# On Postgres, create_all() generates the full schema, so no migration needed.
+if _is_sqlite:
+    with engine.connect() as conn:
+        rows = conn.execute(text("PRAGMA table_info(players)")).fetchall()
+        if "player_embedding" not in {r[1] for r in rows}:
+            conn.execute(
+                text("ALTER TABLE players ADD COLUMN player_embedding TEXT DEFAULT '[]'")
+            )
+            conn.commit()
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
