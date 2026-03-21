@@ -22,15 +22,27 @@
         - Allow cleartext only to the emulator host and localhost.
         These settings are stripped from release builds by the build toolchain.
     -->
+    <!--
+        Cleartext is permitted to the Android emulator host and localhost so the
+        app can reach the dev backend over plain HTTP. Applies to all build types;
+        release builds connect to https:// Hetzner only and never use these hosts.
+        Kept at the top level because <debug-overrides> does not allow child
+        <domain-config> elements (NetworkSecurityConfig lint rule).
+    -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+
+    <!--
+        Debug overrides: trust user-installed CAs (Charles, mitmproxy, etc.).
+        Stripped from release builds by the build toolchain.
+    -->
     <debug-overrides>
         <trust-anchors>
             <certificates src="system" />
             <certificates src="user" />
         </trust-anchors>
-        <domain-config cleartextTrafficPermitted="true">
-            <domain includeSubdomains="false">10.0.2.2</domain>
-            <domain includeSubdomains="false">localhost</domain>
-        </domain-config>
     </debug-overrides>
 
 </network-security-config>

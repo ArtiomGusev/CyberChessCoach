@@ -30,3 +30,9 @@
 
 # Kotlin metadata (needed for reflection used by coroutines)
 -keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod
+
+# javax.annotation classes are referenced by Google Tink (pulled in transitively
+# by androidx.security:security-crypto) but are not present at runtime on Android.
+# R8 generates missing_rules.txt with these; suppress to keep the build clean.
+-dontwarn javax.annotation.Nullable
+-dontwarn javax.annotation.concurrent.GuardedBy
