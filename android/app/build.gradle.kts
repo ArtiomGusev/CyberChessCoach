@@ -75,6 +75,15 @@ android {
             buildConfigField("String", "COACH_API_BASE", "\"$prodApiBase\"")
             buildConfigField("String", "COACH_API_KEY", "\"$prodApiKey\"")
         }
+        debug {
+            // Allow developers to point at a remote server (e.g. Hetzner) without
+            // modifying source code — export COACH_API_BASE / COACH_API_KEY in the
+            // shell, then re-sync Gradle (Step 3.4).
+            val debugApiBase: String = System.getenv("COACH_API_BASE") ?: "http://10.0.2.2:8000"
+            val debugApiKey: String = System.getenv("COACH_API_KEY") ?: "dev-key"
+            buildConfigField("String", "COACH_API_BASE", "\"$debugApiBase\"")
+            buildConfigField("String", "COACH_API_KEY", "\"$debugApiKey\"")
+        }
     }
 
     compileOptions {

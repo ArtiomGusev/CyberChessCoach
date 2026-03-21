@@ -475,3 +475,146 @@ def test_run_quality_gate_rejects_unknown_steps(monkeypatch):
         run_quality_gate.main()
 
     assert excinfo.value.code == 2
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — Android release build integration
+# ---------------------------------------------------------------------------
+
+
+def test_android_build_job_apk_step_uses_vars_not_secrets():
+    """COACH_API_BASE is visible in the APK binary — must be vars.*, not secrets.*.
+    COACH_API_KEY is a rate-limit shield only and is appropriately secrets.*.
+    The upload step must target the unsigned release APK path.
+    """
+    workflow = _load_workflow("fly-deploy.yml")
+    android_build = workflow["jobs"]["android-build"]
+
+    apk_step = _step_named(android_build, "Build release APK")
+    assert apk_step["working-directory"] == "android"
+    assert apk_step["run"] == "./gradlew assembleRelease --no-daemon"
+
+    api_base_ref = apk_step["env"]["COACH_API_BASE"]
+    assert "vars.COACH_API_BASE" in api_base_ref, (
+        "COACH_API_BASE is visible in the APK; use vars.COACH_API_BASE (not secrets.*)"
+    )
+    assert "secrets.COACH_API_BASE" not in api_base_ref
+
+    assert "secrets.COACH_API_KEY" in apk_step["env"]["COACH_API_KEY"]
+
+    upload_step = _step_named(android_build, "Upload release APK")
+    assert upload_step["with"]["path"].endswith("app-release-unsigned.apk")
+    assert upload_step["uses"].startswith("actions/upload-artifact@")
+
+
+def test_build_gradle_kts_release_enforces_https_and_obfuscation():
+    """Release build must enable R8, shrink resources, and hard-fail on plain-HTTP
+    COACH_API_BASE so a misconfigured secret is caught at build time, not at runtime.
+    """
+    gradle = (ROOT / "android" / "app" / "build.gradle.kts").read_text(encoding="utf-8")
+
+    assert "isMinifyEnabled = true" in gradle, "R8 minification must be enabled for release"
+    assert "isShrinkResources = true" in gradle, "Resource shrinking must be enabled for release"
+    assert "proguard-android-optimize.txt" in gradle
+    assert "proguard-rules.pro" in gradle
+
+    assert 'startsWith("https://")' in gradle, (
+        "Release build must hard-fail when COACH_API_BASE does not start with https://"
+    )
+    assert "error(" in gradle, "Hard-fail guard for non-HTTPS COACH_API_BASE must be present"
+
+    assert 'System.getenv("COACH_API_BASE")' in gradle
+    assert 'System.getenv("COACH_API_KEY")' in gradle
+
+
+def test_build_gradle_kts_debug_reads_api_endpoint_from_env():
+    """Debug builds must override the defaultConfig API endpoint from env vars so
+    developers can test against Hetzner without modifying source code (Step 3.4).
+    """
+    gradle = (ROOT / "android" / "app" / "build.gradle.kts").read_text(encoding="utf-8")
+
+    # Must appear in both release and debug blocks — count must be >= 2
+    assert gradle.count('System.getenv("COACH_API_BASE")') >= 2, (
+        "COACH_API_BASE env-var override must appear in both debug and release build types"
+    )
+    assert gradle.count('System.getenv("COACH_API_KEY")') >= 2, (
+        "COACH_API_KEY env-var override must appear in both debug and release build types"
+    )
+
+
+def test_proguard_rules_preserve_api_model_classes():
+    """ProGuard/R8 must not rename or remove API model members accessed by string
+    name through org.json, Kotlin coroutine internals, or EncryptedSharedPreferences.
+    """
+    proguard = (ROOT / "android" / "app" / "proguard-rules.pro").read_text(encoding="utf-8")
+
+    assert "-keepattributes SourceFile,LineNumberTable" in proguard, (
+        "Stack-trace line numbers must be preserved for crash reporting"
+    )
+    assert "com.example.myapplication" in proguard, (
+        "API model classes in com.example.myapplication must be kept"
+    )
+    assert "public *" in proguard, (
+        "Public members of model classes must be kept for org.json field access"
+    )
+    assert "kotlinx.coroutines" in proguard, (
+        "Kotlin coroutine internals must be preserved"
+    )
+    assert "androidx.security.crypto" in proguard, (
+        "AndroidX EncryptedSharedPreferences must be preserved"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — Hetzner deploy and Phase 5 — runtime configuration
+# ---------------------------------------------------------------------------
+
+
+def test_hetzner_deploy_health_gates_rollout():
+    """The deploy script must: use set -euo pipefail, pull before restart, perform
+    a zero-downtime --no-deps restart, and poll /health before declaring success.
+    """
+    workflow = _load_workflow("fly-deploy.yml")
+    deploy = workflow["jobs"]["deploy"]
+
+    assert deploy["environment"] == {"name": "production"}
+    assert deploy["concurrency"]["group"] == "hetzner-production"
+    assert deploy["concurrency"]["cancel-in-progress"] is False
+
+    ssh_step = _step_named(deploy, "Deploy to Hetzner via SSH")
+    assert ssh_step["uses"] == "appleboy/ssh-action@v1.2.0"
+    script: str = ssh_step["with"]["script"]
+
+    assert "set -euo pipefail" in script, "SSH script must use strict error handling"
+    assert "pull api" in script, "Must pull the new image before restarting"
+    assert "up -d --no-deps api" in script, "Must do a zero-downtime --no-deps restart"
+    assert "/health" in script, "Must poll /health to gate a successful rollout"
+    assert "curl" in script
+
+
+def test_docker_compose_prod_health_and_immutable_image():
+    """Production compose must: pull a pre-built image (not build from source),
+    expose api internally only, gate Caddy startup on api health, and rotate logs.
+    """
+    compose = yaml.safe_load(
+        (ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")
+    )
+
+    api = compose["services"]["api"]
+
+    assert "image" in api, "api must pull a pre-built image in prod, not build from source"
+    assert "build" not in api, "api must not build from source in prod"
+    assert "ports" not in api, "api must not publish ports to host — Caddy proxies it"
+    assert "expose" in api
+
+    assert "healthcheck" in api
+    assert "/health" in str(api["healthcheck"]["test"])
+
+    caddy = compose["services"]["caddy"]
+    caddy_api_dep = caddy["depends_on"]["api"]
+    assert caddy_api_dep.get("condition") == "service_healthy", (
+        "Caddy must wait for api service_healthy before starting"
+    )
+
+    assert "logging" in api
+    assert api["logging"]["driver"] == "json-file"
