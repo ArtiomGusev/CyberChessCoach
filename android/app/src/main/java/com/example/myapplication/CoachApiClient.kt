@@ -2,6 +2,7 @@ package com.example.myapplication
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.example.myapplication.RetryUtil.withRetry
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -96,36 +97,38 @@ class HttpCoachApiClient(
         playerProfile: PlayerProfileDto?,
         pastMistakes: List<String>?,
         moveCount: Int?,
-    ): ApiResult<ChatResponseBody> = withContext(Dispatchers.IO) {
-        try {
-            val url = URL("$baseUrl$CHAT_PATH")
-            val conn = url.openConnection() as HttpURLConnection
-            conn.requestMethod = "POST"
-            conn.setRequestProperty("Content-Type", "application/json")
-            conn.setRequestProperty("X-Api-Key", apiKey)
-            // Inject JWT Bearer token when the caller has a logged-in session.
-            tokenProvider?.invoke()?.let { token ->
-                conn.setRequestProperty("Authorization", "Bearer $token")
-            }
-            conn.doOutput = true
-            conn.connectTimeout = connectTimeoutMs
-            conn.readTimeout = readTimeoutMs
+    ): ApiResult<ChatResponseBody> = withRetry(maxAttempts = 2) {
+        withContext(Dispatchers.IO) {
+            try {
+                val url = URL("$baseUrl$CHAT_PATH")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.setRequestProperty("X-Api-Key", apiKey)
+                // Inject JWT Bearer token when the caller has a logged-in session.
+                tokenProvider?.invoke()?.let { token ->
+                    conn.setRequestProperty("Authorization", "Bearer $token")
+                }
+                conn.doOutput = true
+                conn.connectTimeout = connectTimeoutMs
+                conn.readTimeout = readTimeoutMs
 
-            conn.outputStream.bufferedWriter(Charsets.UTF_8).use {
-                it.write(buildJson(fen, messages, playerProfile, pastMistakes, moveCount))
-            }
+                conn.outputStream.bufferedWriter(Charsets.UTF_8).use {
+                    it.write(buildJson(fen, messages, playerProfile, pastMistakes, moveCount))
+                }
 
-            val code = conn.responseCode
-            if (code == HttpURLConnection.HTTP_OK) {
-                val body = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
-                ApiResult.Success(parseResponse(body))
-            } else {
-                ApiResult.HttpError(code)
+                val code = conn.responseCode
+                if (code == HttpURLConnection.HTTP_OK) {
+                    val body = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
+                    ApiResult.Success(parseResponse(body))
+                } else {
+                    ApiResult.HttpError(code)
+                }
+            } catch (_: SocketTimeoutException) {
+                ApiResult.Timeout
+            } catch (e: Exception) {
+                ApiResult.NetworkError(e)
             }
-        } catch (_: SocketTimeoutException) {
-            ApiResult.Timeout
-        } catch (e: Exception) {
-            ApiResult.NetworkError(e)
         }
     }
 

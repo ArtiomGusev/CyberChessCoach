@@ -44,6 +44,24 @@ data class TrainingRecommendation(
     val expectedGain: Float,
 )
 
+// ── /game/history ─────────────────────────────────────────────────────────────
+
+/**
+ * Summary of a single completed game returned by GET /game/history.
+ *
+ * [result]      One of "win", "loss", "draw".
+ * [accuracy]    Move accuracy 0.0–1.0 as recorded at the time of /game/finish.
+ * [ratingAfter] Player rating after this game; null when no rating update was stored.
+ * [createdAt]   ISO-8601 datetime string (e.g. "2026-03-21T14:05:00").
+ */
+data class GameHistoryItem(
+    val id: String,
+    val result: String,
+    val accuracy: Float,
+    val ratingAfter: Float?,
+    val createdAt: String,
+)
+
 // ── /game/start ──────────────────────────────────────────────────────────────
 
 data class GameStartRequest(val playerId: String)

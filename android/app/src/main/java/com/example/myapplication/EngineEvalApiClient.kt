@@ -36,11 +36,15 @@ interface EngineEvalClient {
  *
  * @param baseUrl          Scheme + host + optional port, no trailing slash
  *                         (e.g. "http://10.0.2.2:8000").
+ * @param apiKey           Optional X-Api-Key value. Sent only when non-empty, so
+ *                         existing callers that omit it continue to work against
+ *                         the unauthenticated `/engine/eval` endpoint.
  * @param connectTimeoutMs TCP connect deadline in milliseconds.
  * @param readTimeoutMs    Read deadline in milliseconds.
  */
 class HttpEngineEvalClient(
     val baseUrl: String,
+    val apiKey: String = "",
     val connectTimeoutMs: Int = DEFAULT_CONNECT_TIMEOUT_MS,
     val readTimeoutMs: Int = DEFAULT_READ_TIMEOUT_MS,
 ) : EngineEvalClient {
@@ -52,30 +56,33 @@ class HttpEngineEvalClient(
     }
 
     override suspend fun evaluate(fen: String): ApiResult<EngineEvalResponse> =
-        withContext(Dispatchers.IO) {
-            try {
-                val url = URL("$baseUrl$EVAL_PATH")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.requestMethod = "POST"
-                conn.setRequestProperty("Content-Type", "application/json")
-                conn.doOutput = true
-                conn.connectTimeout = connectTimeoutMs
-                conn.readTimeout = readTimeoutMs
+        withRetry(maxAttempts = 2) {
+            withContext(Dispatchers.IO) {
+                try {
+                    val url = URL("$baseUrl$EVAL_PATH")
+                    val conn = url.openConnection() as HttpURLConnection
+                    conn.requestMethod = "POST"
+                    conn.setRequestProperty("Content-Type", "application/json")
+                    if (apiKey.isNotEmpty()) conn.setRequestProperty("X-Api-Key", apiKey)
+                    conn.doOutput = true
+                    conn.connectTimeout = connectTimeoutMs
+                    conn.readTimeout = readTimeoutMs
 
-                val body = JSONObject().put("fen", fen).toString()
-                conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                    val body = JSONObject().put("fen", fen).toString()
+                    conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
 
-                val code = conn.responseCode
-                if (code == HttpURLConnection.HTTP_OK) {
-                    val text = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
-                    ApiResult.Success(parseResponse(text))
-                } else {
-                    ApiResult.HttpError(code)
+                    val code = conn.responseCode
+                    if (code == HttpURLConnection.HTTP_OK) {
+                        val text = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
+                        ApiResult.Success(parseResponse(text))
+                    } else {
+                        ApiResult.HttpError(code)
+                    }
+                } catch (_: SocketTimeoutException) {
+                    ApiResult.Timeout
+                } catch (e: Exception) {
+                    ApiResult.NetworkError(e)
                 }
-            } catch (_: SocketTimeoutException) {
-                ApiResult.Timeout
-            } catch (e: Exception) {
-                ApiResult.NetworkError(e)
             }
         }
 

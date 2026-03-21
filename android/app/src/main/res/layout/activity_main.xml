@@ -215,6 +215,18 @@
             android:backgroundTint="#00FFFF"
             android:textAllCaps="true"
             android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:layout_marginBottom="8dp"/>
+
+        <Button
+            android:id="@+id/btnGameHistory"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="GAME HISTORY"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#1F242A"
+            android:textAllCaps="true"
+            android:insetTop="0dp"
             android:insetBottom="0dp"/>
 
         <View
