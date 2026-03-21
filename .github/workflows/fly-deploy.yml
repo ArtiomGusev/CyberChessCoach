@@ -244,6 +244,23 @@ jobs:
             grep -q 'android.permission.INTERNET' "$manifest"
           done
 
+      # Decode the base64-encoded keystore secret into a temp file.
+      # When KEYSTORE_BASE64 is absent (forks, unit-test PRs) the step is a
+      # no-op and assembleRelease falls back to producing an unsigned APK.
+      - name: Decode release keystore
+        id: keystore
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "path=$RUNNER_TEMP/release.jks" >> "$GITHUB_OUTPUT"
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # COACH_API_BASE is a plain URL (visible in the APK — not a secret).
       # Pass it via vars.COACH_API_BASE (GitHub Actions variable, not secret).
       # COACH_API_KEY is semi-public once in the APK; it is a rate-limit shield
@@ -254,6 +271,10 @@ jobs:
         env:
           COACH_API_BASE: ${{ vars.COACH_API_BASE }}
           COACH_API_KEY: ${{ secrets.COACH_API_KEY }}
+          KEYSTORE_FILE: ${{ steps.keystore.outputs.path }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
         run: ./gradlew assembleRelease --no-daemon
 
       - name: Upload release APK
@@ -261,7 +282,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: release-apk-${{ github.sha }}
-          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+          # Signed build produces app-release.apk; unsigned fallback produces
+          # app-release-unsigned.apk. The glob captures whichever is present.
+          path: android/app/build/outputs/apk/release/app-release*.apk
           if-no-files-found: warn
 
   compose-validate:

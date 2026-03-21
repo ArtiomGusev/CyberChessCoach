@@ -45,6 +45,10 @@ llm/*.db
 llm/redis-win/
 engines/stockfish.exe
 
+# ========= SIGNING =========
+*.jks
+*.keystore
+
 # ========= LOCAL TOOLS =========
 tools/run_autonomous.sh
 
