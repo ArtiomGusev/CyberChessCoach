@@ -747,3 +747,174 @@ class TestProductionStartupGuards:
             "When SECA_API_KEY is unset in prod, the current code defers the failure to "
             "the first request (HTTP 500). Add a module-level check to fail fast at startup."
         )
+
+
+# ===========================================================================
+# Invariants 41-45 — Gap 6-10 regression tests
+# ===========================================================================
+#
+# 41. SEC_CORS_NO_WILDCARD          server.py must never fall back to allow_origins=["*"].
+# 42. SEC_ANDROID_HTTPS_ASSERTION   build.gradle.kts release block asserts HTTPS base URL.
+# 43. SEC_NETWORK_SECURITY_CONFIG   network_security_config.xml exists and blocks cleartext
+#                                   globally (base-config cleartextTrafficPermitted="false").
+# 44. SEC_HOST_EVAL_RATE_LIMITED    /engine/eval (POST+GET) in host_app.py has @limiter.limit.
+# 45. SEC_SKILL_UPDATER_GUARDED     SkillUpdater.update_from_event() is wrapped in try/except.
+
+
+_BUILD_GRADLE = _REPO_ROOT / "android" / "app" / "build.gradle.kts"
+_NETWORK_SEC_XML = (
+    _REPO_ROOT
+    / "android"
+    / "app"
+    / "src"
+    / "main"
+    / "res"
+    / "xml"
+    / "network_security_config.xml"
+)
+_EVENTS_ROUTER = _REPO_ROOT / "llm" / "seca" / "events" / "router.py"
+
+
+class TestCorsNoWildcard:
+    """SEC_CORS_NO_WILDCARD (41): server.py must not default CORS allow_origins to ["*"]."""
+
+    def test_cors_wildcard_not_in_source(self):
+        """A bare ["*"] wildcard in the CORS setup means any origin can call the API."""
+        source = _SERVER_PY.read_text(encoding="utf-8")
+        # The wildcard is only acceptable as a literal in a comment or string inside a
+        # non-CORS context.  We check the CORS middleware call specifically via AST.
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            # Look for CORSMiddleware(...) calls
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            is_cors = (isinstance(func, ast.Name) and func.id == "CORSMiddleware") or (
+                isinstance(func, ast.Attribute) and func.attr == "CORSMiddleware"
+            )
+            if not is_cors:
+                continue
+            for kw in node.keywords:
+                if kw.arg != "allow_origins":
+                    continue
+                # The value must not be a list literal containing "*"
+                val = kw.value
+                if isinstance(val, ast.List):
+                    for elt in val.elts:
+                        if isinstance(elt, ast.Constant) and elt.value == "*":
+                            raise AssertionError(
+                                "CORSMiddleware allow_origins contains a hardcoded '*' wildcard. "
+                                "Set CORS_ALLOWED_ORIGINS explicitly; never default to ['*']."
+                            )
+                # The value must not be a conditional `... if DEBUG else ...` that resolves to ["*"]
+                if isinstance(val, ast.IfExp):
+                    for branch in (val.body, val.orelse):
+                        if isinstance(branch, ast.List):
+                            for elt in branch.elts:
+                                if isinstance(elt, ast.Constant) and elt.value == "*":
+                                    raise AssertionError(
+                                        "CORSMiddleware allow_origins falls back to ['*'] in a "
+                                        "conditional. Remove the wildcard branch entirely."
+                                    )
+
+
+class TestAndroidHttpsAssertion:
+    """SEC_ANDROID_HTTPS_ASSERTION (42): release block in build.gradle.kts asserts https://."""
+
+    def test_gradle_release_block_contains_https_check(self):
+        """Release builds must refuse to compile when COACH_API_BASE is not HTTPS."""
+        source = _BUILD_GRADLE.read_text(encoding="utf-8")
+        assert "https://" in source, (
+            "build.gradle.kts has no https:// reference in the release block. "
+            "Add a build-time check that rejects non-TLS base URLs."
+        )
+        assert "error(" in source or 'error(' in source, (
+            "build.gradle.kts has no error() call. "
+            "The release block must call error() when COACH_API_BASE is not HTTPS."
+        )
+
+
+class TestNetworkSecurityConfig:
+    """SEC_NETWORK_SECURITY_CONFIG (43): network_security_config.xml blocks cleartext in release."""
+
+    def test_config_file_exists(self):
+        assert _NETWORK_SEC_XML.exists(), (
+            f"Missing {_NETWORK_SEC_XML.relative_to(_REPO_ROOT)}. "
+            "Add a network_security_config.xml to block cleartext traffic in release builds."
+        )
+
+    def test_base_config_blocks_cleartext(self):
+        source = _NETWORK_SEC_XML.read_text(encoding="utf-8")
+        assert 'cleartextTrafficPermitted="false"' in source, (
+            "network_security_config.xml does not set cleartextTrafficPermitted=\"false\" "
+            "in <base-config>. Release builds can still send data over plain HTTP."
+        )
+
+    def test_manifest_references_config(self):
+        manifest = (
+            _REPO_ROOT / "android" / "app" / "src" / "main" / "AndroidManifest.xml"
+        ).read_text(encoding="utf-8")
+        assert "network_security_config" in manifest, (
+            "AndroidManifest.xml does not reference @xml/network_security_config. "
+            "The network security policy is ignored until the manifest is updated."
+        )
+
+
+class TestHostAppEvalRateLimited:
+    """SEC_HOST_EVAL_RATE_LIMITED (44): /engine/eval must have @limiter.limit decorator."""
+
+    def setup_method(self):
+        self._host_tree = _parse(_HOST_APP_PY)
+        self._host_funcs = _get_decorated_functions(self._host_tree)
+
+    def _has_limiter_decorator(self, func_name: str) -> bool:
+        func = self._host_funcs.get(func_name)
+        if func is None:
+            return False
+        for dec in func.decorator_list:
+            # Match `_limiter.limit(...)` or `limiter.limit(...)`
+            if isinstance(dec, ast.Call):
+                f = dec.func
+                if isinstance(f, ast.Attribute) and f.attr == "limit":
+                    return True
+        return False
+
+    def test_eval_position_post_is_rate_limited(self):
+        """POST /engine/eval must have a @_limiter.limit() decorator."""
+        assert self._has_limiter_decorator("eval_position"), (
+            "eval_position() (POST /engine/eval) in host_app.py has no @limiter.limit decorator. "
+            "Unauthenticated callers can exhaust the engine pool."
+        )
+
+    def test_eval_position_query_get_is_rate_limited(self):
+        """GET /engine/eval must have a @_limiter.limit() decorator."""
+        assert self._has_limiter_decorator("eval_position_query"), (
+            "eval_position_query() (GET /engine/eval) in host_app.py has no @limiter.limit "
+            "decorator. Unauthenticated callers can exhaust the engine pool."
+        )
+
+
+class TestSkillUpdaterGuarded:
+    """SEC_SKILL_UPDATER_GUARDED (45): SkillUpdater call is wrapped in try/except."""
+
+    def test_skill_updater_call_is_in_try_block(self):
+        """A DB failure in SkillUpdater must not abort the /game/finish request."""
+        tree = _parse(_EVENTS_ROUTER)
+
+        # Find every Try node and check whether any of their bodies contain a call to
+        # update_from_event (the SkillUpdater method).
+        def _body_calls_update(nodes) -> bool:
+            for node in ast.walk(
+                ast.Module(body=nodes, type_ignores=[]) if not isinstance(nodes, ast.AST) else nodes
+            ):
+                if isinstance(node, ast.Call):
+                    f = node.func
+                    if isinstance(f, ast.Attribute) and f.attr == "update_from_event":
+                        return True
+            return False
+
+        try_nodes = [n for n in ast.walk(tree) if isinstance(n, ast.Try)]
+        assert any(_body_calls_update(t.body) for t in try_nodes), (
+            "SkillUpdater.update_from_event() in events/router.py is not inside a try/except "
+            "block. A DB write failure will propagate as HTTP 500, freezing the player's rating."
+        )

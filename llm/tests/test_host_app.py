@@ -1,4 +1,5 @@
 import asyncio
+from unittest.mock import MagicMock
 
 from llm import host_app
 from llm import metrics as metrics_module
@@ -151,12 +152,13 @@ def test_eval_position_defaults_to_fast_nodes_when_limits_missing(monkeypatch):
                 },
             )
 
+        monkeypatch.setattr(host_app._limiter, "enabled", False)
         monkeypatch.setattr(host_app, "engine_eval", _Evaluator())
         monkeypatch.setattr(
             host_app.engine_service, "evaluate_with_metrics", _evaluate_with_metrics
         )
 
-        result = await host_app.eval_position(host_app.EngineEvalRequest(fen="startpos"))
+        result = await host_app.eval_position(MagicMock(), host_app.EngineEvalRequest(fen="startpos"))
 
         assert result["best_move"] == "e2e4"
         assert result["_metrics"]["cache_hit"] is False
@@ -188,6 +190,7 @@ def test_eval_position_supports_moves_payload(monkeypatch):
                 {"cache_hit": True, "source": "book", "total_ms": 0.8},
             )
 
+        monkeypatch.setattr(host_app._limiter, "enabled", False)
         monkeypatch.setattr(host_app, "engine_eval", _Evaluator())
         monkeypatch.setattr(
             host_app.engine_service, "evaluate_with_metrics", _evaluate_with_metrics
@@ -197,7 +200,7 @@ def test_eval_position_supports_moves_payload(monkeypatch):
             moves=["e2e4", "e7e5", "g1f3"],
             movetime_ms=20,
         )
-        result = await host_app.eval_position(payload)
+        result = await host_app.eval_position(MagicMock(), payload)
 
         assert result["best_move"] == "b8c6"
         assert result["_metrics"]["source"] == "book"
