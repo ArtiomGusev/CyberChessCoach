@@ -163,15 +163,6 @@ interchangeable. Clients MUST NOT assume the two endpoints return the same shape
 | `coach_content.description` | `string` | Content description |
 | `coach_content.payload` | `object` | Type-specific content payload |
 
-### Executor handler coverage
-
-All five `coach_action.type` values (`NONE`, `REFLECT`, `DRILL`, `PUZZLE`,
-`PLAN_UPDATE`) have dedicated handlers in `CoachExecutor`. When `type` is
-`PUZZLE` or `PLAN_UPDATE` the returned `coach_content` references the weakness
-theme — it is never the generic `"Keep playing"` fallback.
-
-Verified by `TestCoachExecutorHandlerGap` in `test_api_contract_validation.py`.
-
 ---
 
 ## 4. `POST /live/move`
