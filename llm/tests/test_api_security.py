@@ -592,6 +592,12 @@ class TestVerifyApiKeyLogic:
 # 36. SEC_HOST_CACHE_VALUE_AUTH      /debug/cache/value has verify_api_key dependency.
 # 37. SEC_HOST_MISS_METRICS_AUTH     /debug/miss-metrics has verify_api_key dependency.
 # 38. SEC_SERVER_NO_PRINT_STMTS      server.py uses logger not print() for diagnostics.
+# 39. SEC_PROD_SECRET_KEY_GUARD      tokens.py raises RuntimeError at startup when SECRET_KEY
+#                                    is absent in prod — prevents ephemeral key from
+#                                    invalidating all JWTs on server restart.
+# 40. SEC_PROD_API_KEY_GUARD         server.py raises RuntimeError at module level when
+#                                    SECA_API_KEY is absent in prod — fail-fast at startup
+#                                    instead of deferring failure to the first request.
 
 
 class TestAstHostAppDebugProtection:
@@ -666,4 +672,78 @@ class TestServerNoPrintStatements:
         assert not violations, (
             f"server.py contains bare print() calls at lines {violations}. "
             "Replace with logger.info() / logger.error() / logger.exception()."
+        )
+
+
+# ===========================================================================
+# Tier 1 — AST Inspection: production startup guards (invariants 39–40)
+# ===========================================================================
+
+
+_TOKENS_PY = _REPO_ROOT / "llm" / "seca" / "auth" / "tokens.py"
+
+
+def _module_level_raises(tree: ast.Module) -> list[ast.Raise]:
+    """Return Raise nodes found at the module top level (not inside function bodies)."""
+    raises = []
+    for node in tree.body:
+        for child in ast.walk(node):
+            if isinstance(child, ast.Raise):
+                raises.append(child)
+    return raises
+
+
+def _raise_is_runtime_error(raise_node: ast.Raise) -> bool:
+    """Return True if the Raise node raises RuntimeError (directly or via call)."""
+    exc = raise_node.exc
+    if exc is None:
+        return False
+    target = exc.func if isinstance(exc, ast.Call) else exc
+    return isinstance(target, ast.Name) and target.id == "RuntimeError"
+
+
+class TestProductionStartupGuards:
+    """
+    Verify fail-fast production guards are present in source code.
+
+    SEC_PROD_SECRET_KEY_GUARD (39): tokens.py must raise RuntimeError at module level
+        when SECRET_KEY is absent in prod.  Without this guard a missing SECRET_KEY
+        silently generates a random ephemeral key, invalidating all JWTs on restart.
+
+    SEC_PROD_API_KEY_GUARD (40): server.py must raise RuntimeError at module level
+        when SECA_API_KEY is absent in prod.  Without this the failure is deferred to
+        the first request (HTTP 500) instead of aborting startup immediately.
+    """
+
+    def test_tokens_py_has_prod_secret_key_guard(self):
+        """SEC_PROD_SECRET_KEY_GUARD: tokens.py raises RuntimeError at startup when SECRET_KEY absent in prod."""
+        source = _TOKENS_PY.read_text(encoding="utf-8")
+        assert "_IS_PROD" in source or "IS_PROD" in source, (
+            "tokens.py has no IS_PROD/production check. "
+            "A missing SECRET_KEY silently generates an ephemeral key in prod, "
+            "invalidating all JWTs on server restart."
+        )
+        tree = _parse(_TOKENS_PY)
+        has_runtime_error = any(
+            _raise_is_runtime_error(r) for r in _module_level_raises(tree)
+        )
+        assert has_runtime_error, (
+            "tokens.py has no module-level RuntimeError raise. "
+            "It must raise at startup when SECRET_KEY is missing in production."
+        )
+
+    def test_server_py_has_prod_api_key_startup_guard(self):
+        """SEC_PROD_API_KEY_GUARD: server.py raises RuntimeError at module level when SECA_API_KEY absent in prod."""
+        source = _SERVER_PY.read_text(encoding="utf-8")
+        assert "IS_PROD" in source, (
+            "server.py has no IS_PROD reference — production guard cannot be applied."
+        )
+        tree = _parse(_SERVER_PY)
+        has_runtime_error = any(
+            _raise_is_runtime_error(r) for r in _module_level_raises(tree)
+        )
+        assert has_runtime_error, (
+            "server.py has no module-level RuntimeError raise. "
+            "When SECA_API_KEY is unset in prod, the current code defers the failure to "
+            "the first request (HTTP 500). Add a module-level check to fail fast at startup."
         )

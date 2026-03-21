@@ -33,10 +33,20 @@ class AuthRepository(private val storage: TokenStorage) {
      * Return the stored token, or null if the user has never logged in,
      * logged out, or the token was cleared for any other reason.
      *
+     * Returns null (and clears storage) if the underlying [TokenStorage]
+     * throws — e.g. on Android Keystore corruption. The caller receives null
+     * exactly as if the user had never logged in, which causes [authState] to
+     * return [AuthState.Unauthenticated] and redirect the user to login.
+     *
      * The returned token may be expired — use [isLoggedIn] to combine
      * the presence check with an expiry check.
      */
-    fun getToken(): String? = storage.load()
+    fun getToken(): String? = try {
+        storage.load()
+    } catch (e: Exception) {
+        runCatching { storage.clear() }
+        null
+    }
 
     /**
      * Return the current [AuthState]:
@@ -47,7 +57,7 @@ class AuthRepository(private val storage: TokenStorage) {
      * payload without signature validation — treat it as informational only.
      */
     fun authState(): AuthState {
-        val token = storage.load() ?: return AuthState.Unauthenticated
+        val token = getToken() ?: return AuthState.Unauthenticated
         if (isJwtExpired(token)) return AuthState.Unauthenticated
         val playerId = parseJwtPlayerId(token) ?: ""
         return AuthState.Authenticated(token = token, playerId = playerId)

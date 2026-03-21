@@ -72,6 +72,12 @@ ENV = os.getenv("SECA_ENV", "dev")
 IS_PROD = ENV in {"prod", "production"}
 DEBUG = not IS_PROD
 
+if IS_PROD and API_KEY is None:
+    raise RuntimeError(
+        "SECA_API_KEY env var is required in production (SECA_ENV=prod). "
+        "Set a non-empty value before starting the server."
+    )
+
 app = FastAPI(title="SECA Chess Coach API")
 app.state.limiter = limiter
 
