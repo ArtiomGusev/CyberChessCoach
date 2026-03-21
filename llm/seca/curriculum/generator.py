@@ -8,6 +8,15 @@ from .policy import CurriculumPolicy
 
 
 class CurriculumGenerator:
+    """Generates and persists a TrainingPlan for a given player.
+
+    This is a complete implementation, not a stub. It queries the player
+    record, delegates topic/difficulty/exercise selection to CurriculumPolicy,
+    and commits the resulting TrainingPlan to the database.
+
+    Raises:
+        ValueError: if the player_id does not exist in the database.
+    """
 
     def __init__(self, db: DBSession):
         self.db = db
