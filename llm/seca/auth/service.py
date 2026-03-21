@@ -85,6 +85,17 @@ class AuthService:
         return session.player
 
     # ---------------------------
+    # Change password
+    # ---------------------------
+    def change_password(self, player: Player, current_password: str, new_password: str) -> None:
+        if not verify_password(current_password, player.password_hash):
+            raise ValueError("Current password is incorrect")
+        if len(new_password) < 8:
+            raise ValueError("New password must be at least 8 characters")
+        player.password_hash = hash_password(new_password)
+        self.db.commit()
+
+    # ---------------------------
     # Logout
     # ---------------------------
     def logout(self, session_id: str):

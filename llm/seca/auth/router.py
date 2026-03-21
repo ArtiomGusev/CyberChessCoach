@@ -78,6 +78,11 @@ class LoginRequest(BaseModel):
     device_info: str = ""
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
 # ---------------------------
 # Endpoints
 # ---------------------------
@@ -131,3 +136,17 @@ def me(player=Depends(get_current_player)):
         "rating": player.rating,
         "confidence": player.confidence,
     }
+
+
+@router.post("/change-password")
+def change_password(
+    req: ChangePasswordRequest,
+    player=Depends(get_current_player),
+    db: DBSession = Depends(get_db),
+):
+    service = AuthService(db)
+    try:
+        service.change_password(player, req.current_password, req.new_password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"status": "updated"}

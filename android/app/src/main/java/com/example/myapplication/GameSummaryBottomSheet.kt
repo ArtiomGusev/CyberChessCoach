@@ -181,7 +181,7 @@ class GameSummaryBottomSheet : BottomSheetDialogFragment() {
                     val rec = curriculumResult.data
                     view.findViewById<TextView>(R.id.txtTrainingTopic).text  = formatTopic(rec.topic)
                     view.findViewById<TextView>(R.id.txtTrainingFormat).text =
-                        "Type: ${rec.exerciseType.replaceFirstChar { it.uppercase() }}"
+                        "Format: ${rec.exerciseType.replaceFirstChar { it.uppercase() }}"
                     // /curriculum/next has no expected_gain; show difficulty instead
                     view.findViewById<TextView>(R.id.txtTrainingGain).text   =
                         "Diff: %.0f%%".format(rec.difficulty * 100f)

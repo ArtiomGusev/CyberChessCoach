@@ -103,6 +103,8 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
         private const val ARG_PLAYER_CONFIDENCE = "arg_player_confidence"
         private const val ARG_PAST_MISTAKES = "arg_past_mistakes"
         private const val ARG_MOVE_COUNT = "arg_move_count"
+        private const val KEY_MSG_ROLES = "chat_msg_roles"
+        private const val KEY_MSG_TEXTS = "chat_msg_texts"
 
         private const val STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
@@ -144,6 +146,13 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
     // Lifecycle
     // ---------------------------------------------------------------------------
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        val msgs = sessionStore.messages
+        outState.putStringArray(KEY_MSG_ROLES, Array(msgs.size) { msgs[it].role })
+        outState.putStringArray(KEY_MSG_TEXTS, Array(msgs.size) { msgs[it].text })
+    }
+
     override fun onAttach(context: Context) {
         super.onAttach(context)
         authRepository = AuthRepository(EncryptedTokenStorage(context))
@@ -183,6 +192,15 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
         miniBoard.isInteractive = false
         currentFen?.let { miniBoard.setFEN(it) }
 
+        // Wire feedback thumbs — fire-and-forget; ignore result
+        chatAdapter.onFeedback = { _, isHelpful ->
+            val fen = currentFen ?: STARTING_FEN
+            val token = authRepository?.getToken()
+            viewLifecycleOwner.lifecycleScope.launch {
+                coachApiClient.submitFeedback(fen, isHelpful, token)
+            }
+        }
+
         // RecyclerView — stable message rendering
         val layoutManager =
             LinearLayoutManager(requireContext()).apply {
@@ -198,8 +216,18 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
             peekHeight = resources.displayMetrics.heightPixels
         }
 
-        // Initial greeting
-        appendAssistant("Hi! Ask me about the current position, strategy, or your recent mistakes.")
+        // Restore messages after rotation; show greeting on first open
+        val roles = savedInstanceState?.getStringArray(KEY_MSG_ROLES)
+        val texts = savedInstanceState?.getStringArray(KEY_MSG_TEXTS)
+        if (roles != null && texts != null && roles.size == texts.size && roles.isNotEmpty()) {
+            roles.zip(texts).forEach { (role, text) ->
+                sessionStore.addMessage(role, text)
+                chatAdapter.addMessage(ChatMessage(role = role, text = text))
+            }
+            scrollToBottom()
+        } else {
+            appendAssistant("Hi! Ask me about the current position, strategy, or your recent mistakes.")
+        }
 
         sendBtn.setOnClickListener {
             val text = input.text.toString().trim()

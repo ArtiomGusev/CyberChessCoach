@@ -260,6 +260,69 @@ Any client expecting a standalone `/coach` endpoint will receive HTTP 404.
 
 ---
 
+## 7. `POST /auth/change-password`
+
+**Host:** `llm/seca/auth/router.py`
+**Auth:** `Authorization: Bearer <token>` required
+
+### Request body
+
+```json
+{
+  "current_password": <string>,
+  "new_password":     <string>
+}
+```
+
+| Field | Type | Constraints |
+|-------|------|-------------|
+| `current_password` | `string` | Must match the stored hash |
+| `new_password` | `string` | Minimum 8 characters |
+
+### Response
+
+```json
+{ "status": "updated" }
+```
+
+| HTTP Status | Meaning |
+|-------------|---------|
+| 200 | Password updated successfully |
+| 400 | `current_password` does not match (`"Current password is incorrect"`) or `new_password` too short |
+| 401 | Invalid or expired token |
+
+---
+
+## 8. `POST /game/coach-feedback`
+
+**Host:** `llm/seca/events/router.py`
+**Auth:** `Authorization: Bearer <token>` required
+
+### Request body
+
+```json
+{
+  "session_fen": <string>,
+  "is_helpful":  <boolean>
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `session_fen` | `string` | FEN of the board position when feedback was given |
+| `is_helpful` | `boolean` | `true` = thumbs up, `false` = thumbs down |
+
+### Response
+
+```json
+{ "status": "recorded" }
+```
+
+Feedback is logged server-side. This endpoint is fire-and-forget; clients
+should not block the UI on the result.
+
+---
+
 ## Error responses
 
 All endpoints return standard FastAPI error shapes:

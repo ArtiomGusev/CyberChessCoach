@@ -40,6 +40,20 @@ interface CoachApiClient {
         pastMistakes: List<String>? = null,
         moveCount: Int? = null,
     ): ApiResult<ChatResponseBody>
+
+    /**
+     * POST /game/coach-feedback.
+     *
+     * Records whether the coaching reply for a given position was helpful.
+     * Fire-and-forget: callers should not block the UI on this result.
+     * Returns [ApiResult.HttpError(501)] by default so test fakes don't need
+     * to override this method.
+     */
+    suspend fun submitFeedback(
+        fen: String,
+        isHelpful: Boolean,
+        token: String?,
+    ): ApiResult<Unit> = ApiResult.HttpError(501)
 }
 
 /**
@@ -73,6 +87,7 @@ class HttpCoachApiClient(
         const val DEFAULT_CONNECT_TIMEOUT_MS = 8_000
         const val DEFAULT_READ_TIMEOUT_MS = 15_000
         private const val CHAT_PATH = "/chat"
+        private const val FEEDBACK_PATH = "/game/coach-feedback"
     }
 
     override suspend fun chat(
@@ -107,6 +122,36 @@ class HttpCoachApiClient(
             } else {
                 ApiResult.HttpError(code)
             }
+        } catch (_: SocketTimeoutException) {
+            ApiResult.Timeout
+        } catch (e: Exception) {
+            ApiResult.NetworkError(e)
+        }
+    }
+
+    override suspend fun submitFeedback(
+        fen: String,
+        isHelpful: Boolean,
+        token: String?,
+    ): ApiResult<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val body = JSONObject().apply {
+                put("session_fen", fen)
+                put("is_helpful", isHelpful)
+            }.toString()
+            val url = URL("$baseUrl$FEEDBACK_PATH")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.setRequestProperty("X-Api-Key", apiKey)
+            token?.let { conn.setRequestProperty("Authorization", "Bearer $it") }
+            conn.doOutput = true
+            conn.connectTimeout = connectTimeoutMs
+            conn.readTimeout = readTimeoutMs
+            conn.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(body) }
+            val code = conn.responseCode
+            if (code == HttpURLConnection.HTTP_OK) ApiResult.Success(Unit)
+            else ApiResult.HttpError(code)
         } catch (_: SocketTimeoutException) {
             ApiResult.Timeout
         } catch (e: Exception) {

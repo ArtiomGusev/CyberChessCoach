@@ -65,6 +65,21 @@ interface AuthApiClient {
      */
     suspend fun register(email: String, password: String): ApiResult<LoginResponse> =
         ApiResult.HttpError(501)
+
+    /**
+     * POST /auth/change-password.
+     *
+     * Requires a valid [token] (Bearer). Returns [ApiResult.HttpError(400)] when
+     * [currentPassword] does not match the stored hash.
+     *
+     * Default implementation returns [ApiResult.HttpError(501)] so test fakes do
+     * not need to override this method.
+     */
+    suspend fun changePassword(
+        currentPassword: String,
+        newPassword: String,
+        token: String,
+    ): ApiResult<Unit> = ApiResult.HttpError(501)
 }
 
 /**
@@ -90,6 +105,7 @@ class HttpAuthApiClient(
         private const val LOGOUT_PATH = "/auth/logout"
         private const val ME_PATH = "/auth/me"
         private const val REGISTER_PATH = "/auth/register"
+        private const val CHANGE_PASSWORD_PATH = "/auth/change-password"
     }
 
     override suspend fun login(
@@ -170,6 +186,35 @@ class HttpAuthApiClient(
             } else {
                 ApiResult.HttpError(code)
             }
+        } catch (_: SocketTimeoutException) {
+            ApiResult.Timeout
+        } catch (e: Exception) {
+            ApiResult.NetworkError(e)
+        }
+    }
+
+    override suspend fun changePassword(
+        currentPassword: String,
+        newPassword: String,
+        token: String,
+    ): ApiResult<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val body = JSONObject().apply {
+                put("current_password", currentPassword)
+                put("new_password", newPassword)
+            }.toString()
+            val url = URL("$baseUrl$CHANGE_PASSWORD_PATH")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.setRequestProperty("Authorization", "Bearer $token")
+            conn.doOutput = true
+            conn.connectTimeout = connectTimeoutMs
+            conn.readTimeout = readTimeoutMs
+            conn.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(body) }
+            val code = conn.responseCode
+            if (code == HttpURLConnection.HTTP_OK) ApiResult.Success(Unit)
+            else ApiResult.HttpError(code)
         } catch (_: SocketTimeoutException) {
             ApiResult.Timeout
         } catch (e: Exception) {

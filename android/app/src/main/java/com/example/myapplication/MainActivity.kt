@@ -14,6 +14,7 @@ import android.view.View
 import android.view.animation.AlphaAnimation
 import android.view.animation.Animation
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -95,6 +96,7 @@ class MainActivity : AppCompatActivity() {
         val btnReset = findViewById<Button>(R.id.btnReset)
         val btnUndo = findViewById<Button>(R.id.btnUndo)
         val btnChat = findViewById<Button>(R.id.btnChat)
+        val btnChangePassword = findViewById<Button>(R.id.btnChangePassword)
         val btnLogout = findViewById<Button>(R.id.btnLogout)
 
         // START PULSE ANIMATION
@@ -151,6 +153,11 @@ class MainActivity : AppCompatActivity() {
 
         btnChat.setOnClickListener {
             openChat()
+        }
+
+        btnChangePassword.setOnClickListener {
+            drawerLayout.closeDrawer(GravityCompat.END)
+            showChangePasswordDialog()
         }
 
         btnLogout.setOnClickListener {
@@ -370,6 +377,55 @@ class MainActivity : AppCompatActivity() {
                 finish()
             }
             .setNegativeButton("Dismiss", null)
+            .show()
+    }
+
+    private fun showChangePasswordDialog() {
+        if (isFinishing || isDestroyed) return
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(64, 32, 64, 16)
+        }
+        val etCurrent = EditText(this).apply {
+            hint = "Current password"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        val etNew = EditText(this).apply {
+            hint = "New password (min 8 characters)"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        layout.addView(etCurrent)
+        layout.addView(etNew)
+
+        AlertDialog.Builder(this)
+            .setTitle("Change Password")
+            .setView(layout)
+            .setPositiveButton("Save") { _, _ ->
+                val current = etCurrent.text.toString()
+                val new = etNew.text.toString()
+                if (current.isBlank() || new.isBlank()) {
+                    Toast.makeText(this, "Fields must not be empty.", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                if (new.length < 8) {
+                    Toast.makeText(this, "New password must be at least 8 characters.", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                val token = authRepo.getToken() ?: return@setPositiveButton
+                lifecycleScope.launch {
+                    when (authApiClient.changePassword(current, new, token)) {
+                        is ApiResult.Success ->
+                            Toast.makeText(this@MainActivity, "Password updated.", Toast.LENGTH_SHORT).show()
+                        is ApiResult.HttpError ->
+                            Toast.makeText(this@MainActivity, "Incorrect current password.", Toast.LENGTH_SHORT).show()
+                        else ->
+                            Toast.makeText(this@MainActivity, "Network error. Please try again.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
             .show()
     }
 
