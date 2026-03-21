@@ -28,6 +28,26 @@ from llm.seca.runtime.safe_mode import SAFE_MODE
 router = APIRouter(prefix="/game", tags=["game"])
 
 
+class CoachFeedbackRequest(BaseModel):
+    session_fen: str
+    is_helpful: bool
+
+
+@router.post("/coach-feedback")
+def coach_feedback(
+    req: CoachFeedbackRequest,
+    player=Depends(get_current_player),
+    db: DBSession = Depends(get_db),
+):
+    logger.info(
+        "Coach feedback: player=%s fen=%.30s helpful=%s",
+        player.id,
+        req.session_fen,
+        req.is_helpful,
+    )
+    return {"status": "recorded"}
+
+
 class GameFinishRequest(BaseModel):
     pgn: str
     result: str  # win / loss / draw
