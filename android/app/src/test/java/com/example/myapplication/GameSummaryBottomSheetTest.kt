@@ -1,0 +1,218 @@
+package com.example.myapplication
+
+import org.junit.Assert.*
+import org.junit.Test
+
+/**
+ * Unit tests for the pure-Kotlin helper functions in [GameSummaryBottomSheet.Companion].
+ *
+ * The fragment itself extends [BottomSheetDialogFragment] and cannot be instantiated in
+ * a JVM test without Robolectric.  These tests cover all the display-logic helpers that
+ * would drive the view bindings, verifying that every field of [GameFinishResponse] is
+ * processed correctly and that null / missing values fall back gracefully.
+ *
+ * Invariants pinned
+ * -----------------
+ *  1.  FORMAT_RATING_WHOLE:              formatRating rounds to integer correctly.
+ *  2.  FORMAT_RATING_ZERO:               formatRating handles 0.0.
+ *  3.  FORMAT_CONFIDENCE_PERCENT:        formatConfidence converts 0.0–1.0 to percent string.
+ *  4.  CONFIDENCE_PROGRESS_BOUNDS:       confidenceProgress clamps outside 0–1.
+ *  5.  CONFIDENCE_PROGRESS_MIDPOINT:     confidenceProgress 0.5 → 50.
+ *  6.  ACTION_BADGE_DRILL:               actionBadgeLabel "DRILL" → "DRILL".
+ *  7.  ACTION_BADGE_PUZZLE:              actionBadgeLabel "PUZZLE" → "PUZZLE".
+ *  8.  ACTION_BADGE_REFLECT:             actionBadgeLabel "REFLECT" → "REFLECT".
+ *  9.  ACTION_BADGE_CELEBRATE:           actionBadgeLabel "CELEBRATE" → "CELEBRATE".
+ * 10.  ACTION_BADGE_UNKNOWN:             actionBadgeLabel unknown string → "COACH".
+ * 11.  ACTION_BADGE_EMPTY:               actionBadgeLabel "" → "COACH".
+ * 12.  ACTION_BADGE_CASE_INSENSITIVE:    actionBadgeLabel "drill" → "DRILL".
+ * 13.  FORMAT_TOPIC_CAPITALISED:         formatTopic capitalises first letter, replaces underscores.
+ * 14.  FORMAT_FORMAT_CAPITALISED:        formatFormat capitalises first letter.
+ * 15.  FORMAT_GAIN_POSITIVE:             formatGain adds "+" prefix.
+ * 16.  DIFFICULTY_PROGRESS_MIDPOINT:     difficultyProgress 0.7 → 70.
+ * 17.  DIFFICULTY_PROGRESS_BOUNDS:       difficultyProgress clamps outside 0–1.
+ * 18.  BUNDLE_ARGS_NULL_COACH_ACTION:    GameFinishResponse with null weakness/reason doesn't crash.
+ * 19.  BUNDLE_ARGS_BLANK_DESCRIPTION:    coachContent description can be empty.
+ * 20.  BUNDLE_FULL_RESPONSE_PARSES:      Full GameFinishResponse produces expected formatted strings.
+ */
+class GameSummaryBottomSheetTest {
+
+    // ------------------------------------------------------------------
+    // Helper
+    // ------------------------------------------------------------------
+
+    private fun makeResponse(
+        newRating: Float = 1200f,
+        confidence: Float = 0.72f,
+        actionType: String = "DRILL",
+        weakness: String? = "tactics",
+        reason: String? = "Missed fork",
+        title: String = "Drill tactics",
+        description: String = "Practice forks and skewers.",
+    ) = GameFinishResponse(
+        status = "stored",
+        newRating = newRating,
+        confidence = confidence,
+        coachAction = CoachActionDto(type = actionType, weakness = weakness, reason = reason),
+        coachContent = CoachContentDto(title = title, description = description),
+    )
+
+    // ------------------------------------------------------------------
+    // 1–2  formatRating
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `formatRating rounds to integer`() {
+        assertEquals("Rating: 1200", GameSummaryBottomSheet.formatRating(1200f))
+        assertEquals("Rating: 1350", GameSummaryBottomSheet.formatRating(1349.6f))
+    }
+
+    @Test
+    fun `formatRating handles zero`() {
+        assertEquals("Rating: 0", GameSummaryBottomSheet.formatRating(0f))
+    }
+
+    // ------------------------------------------------------------------
+    // 3–5  formatConfidence / confidenceProgress
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `formatConfidence converts fraction to percent string`() {
+        assertEquals("Confidence: 72%", GameSummaryBottomSheet.formatConfidence(0.72f))
+        assertEquals("Confidence: 100%", GameSummaryBottomSheet.formatConfidence(1.0f))
+        assertEquals("Confidence: 0%", GameSummaryBottomSheet.formatConfidence(0.0f))
+    }
+
+    @Test
+    fun `confidenceProgress clamps values outside 0 to 1`() {
+        assertEquals(0, GameSummaryBottomSheet.confidenceProgress(-0.5f))
+        assertEquals(100, GameSummaryBottomSheet.confidenceProgress(1.5f))
+    }
+
+    @Test
+    fun `confidenceProgress midpoint returns 50`() {
+        assertEquals(50, GameSummaryBottomSheet.confidenceProgress(0.5f))
+    }
+
+    // ------------------------------------------------------------------
+    // 6–12  actionBadgeLabel
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `actionBadgeLabel maps DRILL`() {
+        assertEquals("DRILL", GameSummaryBottomSheet.actionBadgeLabel("DRILL"))
+    }
+
+    @Test
+    fun `actionBadgeLabel maps PUZZLE`() {
+        assertEquals("PUZZLE", GameSummaryBottomSheet.actionBadgeLabel("PUZZLE"))
+    }
+
+    @Test
+    fun `actionBadgeLabel maps REFLECT`() {
+        assertEquals("REFLECT", GameSummaryBottomSheet.actionBadgeLabel("REFLECT"))
+    }
+
+    @Test
+    fun `actionBadgeLabel maps CELEBRATE`() {
+        assertEquals("CELEBRATE", GameSummaryBottomSheet.actionBadgeLabel("CELEBRATE"))
+    }
+
+    @Test
+    fun `actionBadgeLabel unknown type returns COACH`() {
+        assertEquals("COACH", GameSummaryBottomSheet.actionBadgeLabel("UNKNOWN_TYPE"))
+        assertEquals("COACH", GameSummaryBottomSheet.actionBadgeLabel("NONE"))
+    }
+
+    @Test
+    fun `actionBadgeLabel empty string returns COACH`() {
+        assertEquals("COACH", GameSummaryBottomSheet.actionBadgeLabel(""))
+    }
+
+    @Test
+    fun `actionBadgeLabel is case-insensitive`() {
+        assertEquals("DRILL", GameSummaryBottomSheet.actionBadgeLabel("drill"))
+        assertEquals("PUZZLE", GameSummaryBottomSheet.actionBadgeLabel("Puzzle"))
+    }
+
+    // ------------------------------------------------------------------
+    // 13–14  formatTopic / formatFormat
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `formatTopic capitalises first letter and replaces underscores with spaces`() {
+        assertEquals("Topic: Endgame technique", GameSummaryBottomSheet.formatTopic("endgame_technique"))
+        assertEquals("Topic: Tactics", GameSummaryBottomSheet.formatTopic("tactics"))
+    }
+
+    @Test
+    fun `formatFormat capitalises first letter`() {
+        assertEquals("Format: Puzzle", GameSummaryBottomSheet.formatFormat("puzzle"))
+        assertEquals("Format: Drill", GameSummaryBottomSheet.formatFormat("drill"))
+    }
+
+    // ------------------------------------------------------------------
+    // 15  formatGain
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `formatGain adds plus prefix`() {
+        assertEquals("+14 Elo", GameSummaryBottomSheet.formatGain(14f))
+        assertEquals("+0 Elo", GameSummaryBottomSheet.formatGain(0f))
+    }
+
+    // ------------------------------------------------------------------
+    // 16–17  difficultyProgress
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `difficultyProgress 0_7 returns 70`() {
+        assertEquals(70, GameSummaryBottomSheet.difficultyProgress(0.7f))
+    }
+
+    @Test
+    fun `difficultyProgress clamps values outside 0 to 1`() {
+        assertEquals(0, GameSummaryBottomSheet.difficultyProgress(-0.1f))
+        assertEquals(100, GameSummaryBottomSheet.difficultyProgress(1.1f))
+    }
+
+    // ------------------------------------------------------------------
+    // 18  Null weakness/reason in CoachActionDto doesn't affect badge
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `null weakness and reason in coachAction does not affect badge label`() {
+        val resp = makeResponse(actionType = "REFLECT", weakness = null, reason = null)
+        assertEquals("REFLECT", GameSummaryBottomSheet.actionBadgeLabel(resp.coachAction.type))
+    }
+
+    // ------------------------------------------------------------------
+    // 19  Empty description handled as a valid (empty) string
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `empty coach content description is accepted without crash`() {
+        val resp = makeResponse(description = "")
+        // Should not throw; the view binding would simply show ""
+        assertEquals("", resp.coachContent.description)
+    }
+
+    // ------------------------------------------------------------------
+    // 20  Full response produces correct formatted strings end-to-end
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `full GameFinishResponse produces expected formatted strings`() {
+        val resp = makeResponse(
+            newRating = 1350f,
+            confidence = 0.85f,
+            actionType = "DRILL",
+            title = "Work on tactics",
+            description = "You missed a fork on move 12.",
+        )
+        assertEquals("Rating: 1350",    GameSummaryBottomSheet.formatRating(resp.newRating))
+        assertEquals("Confidence: 85%", GameSummaryBottomSheet.formatConfidence(resp.confidence))
+        assertEquals(85,                GameSummaryBottomSheet.confidenceProgress(resp.confidence))
+        assertEquals("DRILL",           GameSummaryBottomSheet.actionBadgeLabel(resp.coachAction.type))
+        assertEquals("Work on tactics", resp.coachContent.title)
+    }
+}

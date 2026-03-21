@@ -39,7 +39,9 @@ class MainActivity : AppCompatActivity() {
 
     // ── Game session state ───────────────────────────────────────────────────
     private lateinit var gameApiClient: GameApiClient
+    private lateinit var authApiClient: AuthApiClient
     private lateinit var authRepo: AuthRepository
+    private lateinit var txtRatingHeader: TextView
     private var currentPlayerId: String = "demo"
     private val moveClassifications = mutableListOf<MistakeClassification>()
 
@@ -73,6 +75,7 @@ class MainActivity : AppCompatActivity() {
                 apiKey = BuildConfig.COACH_API_KEY,
                 tokenProvider = { authRepo.getToken() },
             )
+        authApiClient = HttpAuthApiClient(baseUrl = BuildConfig.COACH_API_BASE)
 
         setContentView(R.layout.activity_main)
 
@@ -88,9 +91,11 @@ class MainActivity : AppCompatActivity() {
         txtEngineScore = findViewById(R.id.txtEngineScore)
         txtMistakeCategory = findViewById(R.id.txtMistakeCategory)
 
+        txtRatingHeader = findViewById(R.id.txtRatingHeader)
         val btnReset = findViewById<Button>(R.id.btnReset)
         val btnUndo = findViewById<Button>(R.id.btnUndo)
         val btnChat = findViewById<Button>(R.id.btnChat)
+        val btnLogout = findViewById<Button>(R.id.btnLogout)
 
         // START PULSE ANIMATION
         startPulseAnimation()
@@ -146,6 +151,17 @@ class MainActivity : AppCompatActivity() {
 
         btnChat.setOnClickListener {
             openChat()
+        }
+
+        btnLogout.setOnClickListener {
+            performLogout()
+        }
+
+        // Show persisted rating if available
+        val storedRating = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .getFloat(PREF_RATING, -1f)
+        if (storedRating >= 0f) {
+            txtRatingHeader.text = "Rating: %.0f".format(storedRating)
         }
 
         // -------- ROBUST GESTURE FOR THE WHOLE DOCK --------
@@ -245,6 +261,26 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    companion object {
+        const val PREFS_NAME = "chesscoach_prefs"
+        const val PREF_RATING = "last_rating"
+    }
+
+    private fun performLogout() {
+        val token = authRepo.getToken()
+        lifecycleScope.launch {
+            if (token != null) {
+                authApiClient.logout(token)   // best-effort; ignore result
+            }
+            authRepo.clearToken()
+            startActivity(
+                Intent(this@MainActivity, LoginActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
+            )
+            finish()
+        }
+    }
+
     private fun startPulseAnimation() {
         val pulse = AlphaAnimation(1.0f, 0.3f).apply {
             duration = 1000
@@ -322,29 +358,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showCoachingResult(response: GameFinishResponse) {
-        val action = response.coachAction
-        val content = response.coachContent
-        val ratingText = "New rating: %.0f".format(response.newRating)
-        val message = "${content.description}\n\n$ratingText"
+        coachText.text = response.coachContent.title
 
-        coachText.text = content.title
+        // Update rating header immediately so it's visible when the drawer is open
+        txtRatingHeader.text = "Rating: %.0f".format(response.newRating)
 
-        AlertDialog.Builder(this)
-            .setTitle("${actionTypeLabel(action.type)} — ${content.title}")
-            .setMessage(message)
-            .setPositiveButton("OK", null)
-            .show()
+        if (supportFragmentManager.isStateSaved) return
+        val sheet = GameSummaryBottomSheet.newInstance(response, currentPlayerId)
+        sheet.gameApiClient = gameApiClient
+        sheet.show(supportFragmentManager, "GameSummaryBottomSheet")
     }
-
-    private fun actionTypeLabel(type: String): String =
-        when (type.uppercase()) {
-            "DRILL" -> "Drill"
-            "PUZZLE" -> "Puzzle"
-            "REFLECT" -> "Reflect"
-            "PLAN_UPDATE" -> "Plan update"
-            "REST" -> "Rest"
-            else -> "Coach"
-        }
 
     private fun showPromotionDialog(r: Int, c: Int) {
         val dialog = Dialog(this)

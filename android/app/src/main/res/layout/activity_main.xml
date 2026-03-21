@@ -147,6 +147,16 @@
         android:paddingBottom="48dp">
 
         <TextView
+            android:id="@+id/txtRatingHeader"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Rating: —"
+            android:textColor="#00FFFF"
+            android:textSize="14sp"
+            android:typeface="monospace"
+            android:paddingBottom="16dp"/>
+
+        <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="GAME OPTIONS"
@@ -211,6 +221,18 @@
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"/>
+
+        <Button
+            android:id="@+id/btnLogout"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="SIGN OUT"
+            android:textColor="#FF4444"
+            android:backgroundTint="#1F242A"
+            android:textAllCaps="true"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:layout_marginBottom="8dp"/>
 
         <TextView
             android:layout_width="match_parent"

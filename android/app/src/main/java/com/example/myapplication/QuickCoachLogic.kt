@@ -127,8 +127,9 @@ object QuickCoachLogic {
         bestMove: String? = null,
         liveHint: String? = null,
         engineAvailable: Boolean = true,
+        classificationOverride: MistakeClassification? = null,
     ): QuickCoachUpdate {
-        val classification = classifyCapture(capturedPiece)
+        val classification = classificationOverride ?: classifyCapture(capturedPiece)
         return QuickCoachUpdate(
             scoreText = formatCentipawns(engineScore),
             classification = classification,
@@ -136,5 +137,19 @@ object QuickCoachLogic {
             bestMove = bestMove,
             engineAvailable = engineAvailable,
         )
+    }
+
+    /**
+     * Map the backend's move_quality string to a [MistakeClassification].
+     *
+     * The backend returns one of: "GOOD", "INACCURACY", "MISTAKE", "BLUNDER"
+     * (or legacy "best" / "ok" treated as GOOD).
+     * Any unrecognised string falls back to GOOD (fail-safe).
+     */
+    fun fromBackendString(s: String): MistakeClassification = when (s.uppercase()) {
+        "BLUNDER"    -> MistakeClassification.BLUNDER
+        "MISTAKE"    -> MistakeClassification.MISTAKE
+        "INACCURACY" -> MistakeClassification.INACCURACY
+        else         -> MistakeClassification.GOOD
     }
 }

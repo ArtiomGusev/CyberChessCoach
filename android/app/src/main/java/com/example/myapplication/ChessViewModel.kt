@@ -188,7 +188,11 @@ class ChessViewModel(
                     val score = evalSuccess?.data?.score
                     val bestMove = evalSuccess?.data?.bestMove
                     val engineAvailable = evalResult == null || evalResult is ApiResult.Success
-                    val liveHint = (liveResult as? ApiResult.Success)?.data?.hint?.takeIf { it.isNotBlank() }
+                    val liveSuccess = liveResult as? ApiResult.Success
+                    val liveHint = liveSuccess?.data?.hint?.takeIf { it.isNotBlank() }
+                    val backendClassification = liveSuccess?.data?.moveQuality
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { QuickCoachLogic.fromBackendString(it) }
 
                     val update = QuickCoachLogic.buildUpdateFromEngine(
                         capturedPiece,
@@ -196,6 +200,7 @@ class ChessViewModel(
                         bestMove,
                         liveHint,
                         engineAvailable,
+                        backendClassification,
                     )
                     onQuickCoachUpdate?.invoke(update)
                 }
