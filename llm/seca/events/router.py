@@ -268,3 +268,36 @@ def finish_game(
             "payload": coach_content.payload,
         },
     }
+
+
+@router.get("/history")
+def game_history(
+    player=Depends(get_current_player),
+    db: DBSession = Depends(get_db),
+):
+    events = (
+        db.query(GameEvent)
+        .filter(GameEvent.player_id == player.id)
+        .order_by(GameEvent.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    games = []
+    for ev in events:
+        rating_update = (
+            db.query(RatingUpdate)
+            .filter(RatingUpdate.event_id == str(ev.id))
+            .first()
+        )
+        games.append(
+            {
+                "id": str(ev.id),
+                "result": ev.result,
+                "accuracy": ev.accuracy,
+                "created_at": ev.created_at.isoformat() if ev.created_at else None,
+                "rating_after": float(rating_update.rating_after)
+                if rating_update
+                else None,
+            }
+        )
+    return {"games": games}

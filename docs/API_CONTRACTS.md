@@ -260,7 +260,39 @@ Any client expecting a standalone `/coach` endpoint will receive HTTP 404.
 
 ---
 
-## 7. `POST /auth/change-password`
+## 7. `GET /game/history`
+
+**Host:** `llm/seca/events/router.py`
+**Auth:** `Authorization: Bearer <token>` required
+
+### Response
+
+```json
+{
+  "games": [
+    {
+      "id":           <string>,
+      "result":       <"win" | "loss" | "draw">,
+      "accuracy":     <float 0..1>,
+      "created_at":   <string | null>,
+      "rating_after": <float | null>
+    }
+  ]
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `games` | `array` | Up to 20 entries, ordered newest-first |
+| `id` | `string` | Game event UUID |
+| `result` | `string` | One of `"win"`, `"loss"`, `"draw"` |
+| `accuracy` | `float` | 0.0–1.0 as submitted via `POST /game/finish` |
+| `created_at` | `string \| null` | ISO-8601 datetime string |
+| `rating_after` | `float \| null` | Rating after this game; `null` if no rating update was stored |
+
+---
+
+## 8. `POST /auth/change-password`
 
 **Host:** `llm/seca/auth/router.py`
 **Auth:** `Authorization: Bearer <token>` required
@@ -293,7 +325,7 @@ Any client expecting a standalone `/coach` endpoint will receive HTTP 404.
 
 ---
 
-## 8. `POST /game/coach-feedback`
+## 9. `POST /game/coach-feedback`
 
 **Host:** `llm/seca/events/router.py`
 **Auth:** `Authorization: Bearer <token>` required

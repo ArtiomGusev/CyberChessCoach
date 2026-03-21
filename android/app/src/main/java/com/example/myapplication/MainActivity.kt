@@ -96,6 +96,7 @@ class MainActivity : AppCompatActivity() {
         val btnReset = findViewById<Button>(R.id.btnReset)
         val btnUndo = findViewById<Button>(R.id.btnUndo)
         val btnChat = findViewById<Button>(R.id.btnChat)
+        val btnGameHistory = findViewById<Button>(R.id.btnGameHistory)
         val btnChangePassword = findViewById<Button>(R.id.btnChangePassword)
         val btnLogout = findViewById<Button>(R.id.btnLogout)
 
@@ -153,6 +154,13 @@ class MainActivity : AppCompatActivity() {
 
         btnChat.setOnClickListener {
             openChat()
+        }
+
+        btnGameHistory.setOnClickListener {
+            drawerLayout.closeDrawer(GravityCompat.END)
+            val sheet = GameHistoryBottomSheet()
+            sheet.gameApiClient = gameApiClient
+            sheet.show(supportFragmentManager, "GameHistoryBottomSheet")
         }
 
         btnChangePassword.setOnClickListener {
@@ -255,7 +263,10 @@ class MainActivity : AppCompatActivity() {
 
         // Wire real Stockfish evaluation: after each AI move, ChessViewModel calls
         // POST /engine/eval and optionally POST /live/move, then emits the result here.
-        viewModel.engineEvalClient = HttpEngineEvalClient(BuildConfig.COACH_API_BASE)
+        viewModel.engineEvalClient = HttpEngineEvalClient(
+            baseUrl = BuildConfig.COACH_API_BASE,
+            apiKey = BuildConfig.COACH_API_KEY,
+        )
         viewModel.liveCoachClient = HttpLiveMoveClient(
             baseUrl = BuildConfig.COACH_API_BASE,
             apiKey = BuildConfig.COACH_API_KEY,

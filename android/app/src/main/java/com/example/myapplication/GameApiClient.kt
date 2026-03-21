@@ -38,6 +38,17 @@ interface GameApiClient {
      */
     suspend fun getNextCurriculum(playerId: String): ApiResult<CurriculumRecommendation> =
         ApiResult.HttpError(501)
+
+    /**
+     * GET /game/history.
+     *
+     * Returns the 20 most recent games for the authenticated player, ordered
+     * newest-first. Requires Bearer token authentication.
+     *
+     * Default implementation returns [ApiResult.HttpError(501)] so test fakes
+     * do not need to override this method.
+     */
+    suspend fun getGameHistory(): ApiResult<List<GameHistoryItem>> = ApiResult.HttpError(501)
 }
 
 // ── HTTP implementation ───────────────────────────────────────────────────────
@@ -77,39 +88,41 @@ class HttpGameApiClient(
         }
 
     override suspend fun finishGame(req: GameFinishRequest): ApiResult<GameFinishResponse> =
-        withContext(Dispatchers.IO) {
-            try {
-                val conn = openConnection("$baseUrl/game/finish")
-                conn.setRequestProperty("X-Api-Key", apiKey)
-                tokenProvider?.invoke()?.let { token ->
-                    conn.setRequestProperty("Authorization", "Bearer $token")
+        withRetry(maxAttempts = 3) {
+            withContext(Dispatchers.IO) {
+                try {
+                    val conn = openConnection("$baseUrl/game/finish")
+                    conn.setRequestProperty("X-Api-Key", apiKey)
+                    tokenProvider?.invoke()?.let { token ->
+                        conn.setRequestProperty("Authorization", "Bearer $token")
+                    }
+
+                    val weaknessesJson = JSONObject()
+                    req.weaknesses.forEach { (k, v) -> weaknessesJson.put(k, v) }
+
+                    val body =
+                        JSONObject()
+                            .put("pgn", req.pgn)
+                            .put("result", req.result)
+                            .put("accuracy", req.accuracy)
+                            .put("weaknesses", weaknessesJson)
+                            .apply { req.playerId?.let { put("player_id", it) } }
+                            .toString()
+
+                    conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+
+                    val code = conn.responseCode
+                    if (code == 200) {
+                        val text = conn.inputStream.bufferedReader().readText()
+                        ApiResult.Success(parseFinishResponse(text))
+                    } else {
+                        ApiResult.HttpError(code)
+                    }
+                } catch (e: SocketTimeoutException) {
+                    ApiResult.Timeout
+                } catch (e: Exception) {
+                    ApiResult.NetworkError(e)
                 }
-
-                val weaknessesJson = JSONObject()
-                req.weaknesses.forEach { (k, v) -> weaknessesJson.put(k, v) }
-
-                val body =
-                    JSONObject()
-                        .put("pgn", req.pgn)
-                        .put("result", req.result)
-                        .put("accuracy", req.accuracy)
-                        .put("weaknesses", weaknessesJson)
-                        .apply { req.playerId?.let { put("player_id", it) } }
-                        .toString()
-
-                conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-
-                val code = conn.responseCode
-                if (code == 200) {
-                    val text = conn.inputStream.bufferedReader().readText()
-                    ApiResult.Success(parseFinishResponse(text))
-                } else {
-                    ApiResult.HttpError(code)
-                }
-            } catch (e: SocketTimeoutException) {
-                ApiResult.Timeout
-            } catch (e: Exception) {
-                ApiResult.NetworkError(e)
             }
         }
 
@@ -146,6 +159,27 @@ class HttpGameApiClient(
                 if (code == 200) {
                     val text = conn.inputStream.bufferedReader().readText()
                     ApiResult.Success(parseCurriculumResponse(text))
+                } else {
+                    ApiResult.HttpError(code)
+                }
+            } catch (e: SocketTimeoutException) {
+                ApiResult.Timeout
+            } catch (e: Exception) {
+                ApiResult.NetworkError(e)
+            }
+        }
+
+    override suspend fun getGameHistory(): ApiResult<List<GameHistoryItem>> =
+        withContext(Dispatchers.IO) {
+            try {
+                val conn = openGetConnection("$baseUrl/game/history")
+                tokenProvider?.invoke()?.let { token ->
+                    conn.setRequestProperty("Authorization", "Bearer $token")
+                }
+                val code = conn.responseCode
+                if (code == 200) {
+                    val text = conn.inputStream.bufferedReader().readText()
+                    ApiResult.Success(parseHistoryResponse(text))
                 } else {
                     ApiResult.HttpError(code)
                 }
@@ -195,6 +229,22 @@ class HttpGameApiClient(
             exerciseType = json.optString("exercise_type", ""),
             payload = payload,
         )
+    }
+
+    private fun parseHistoryResponse(text: String): List<GameHistoryItem> {
+        val json = JSONObject(text)
+        val arr = json.optJSONArray("games") ?: return emptyList()
+        return (0 until arr.length()).map { i ->
+            val g = arr.getJSONObject(i)
+            GameHistoryItem(
+                id = g.optString("id", ""),
+                result = g.optString("result", ""),
+                accuracy = g.optDouble("accuracy", 0.0).toFloat(),
+                ratingAfter = if (g.isNull("rating_after")) null
+                              else g.optDouble("rating_after").toFloat(),
+                createdAt = g.optString("created_at", ""),
+            )
+        }
     }
 
     private fun parseFinishResponse(text: String): GameFinishResponse {
