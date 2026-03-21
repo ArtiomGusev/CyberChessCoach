@@ -130,13 +130,17 @@ def _build_context_block(
     engine_signal: dict,
     player_profile: dict | None,
     past_mistakes: list[str] | None,
+    move_count: int | None = None,
 ) -> str:
     """Assemble all available coaching context into a single paragraph.
 
-    Always leads with the engine evaluation reference.  Player profile
-    and past mistakes are appended when present.
+    Always leads with the engine evaluation reference.  Player profile,
+    past mistakes, and move count are appended when present.
     """
     parts = [_format_engine_context(engine_signal)]
+
+    if move_count is not None:
+        parts.append(f"This is move {move_count} of the game.")
 
     if player_profile:
         skill = player_profile.get("skill_estimate", "")
@@ -214,6 +218,7 @@ def generate_chat_reply(
     messages: list[ChatTurn],
     player_profile: dict | None = None,
     past_mistakes: list[str] | None = None,
+    move_count: int | None = None,
 ) -> ChatReply:
     """Generate a deterministic coaching reply for the current chat turn.
 
@@ -230,6 +235,10 @@ def generate_chat_reply(
         common_mistakes (list of {tag, count}), and strengths (list[str]).
     past_mistakes:
         Optional list of MistakeCategory strings from the analytics layer.
+    move_count:
+        Optional number of half-moves played so far; injected into the
+        context block so the LLM knows the game phase ("This is move N of
+        the game.").  None omits the field.
 
     Returns
     -------
@@ -245,7 +254,9 @@ def generate_chat_reply(
     base_explanation = _safe_explainer.explain(engine_signal)
 
     # Context block (always includes engine evaluation reference)
-    context_block = _build_context_block(engine_signal, player_profile, past_mistakes)
+    context_block = _build_context_block(
+        engine_signal, player_profile, past_mistakes, move_count
+    )
 
     # Latest user message (may be empty for session-open call)
     user_turns = [t for t in messages if t.role == "user"]

@@ -54,4 +54,10 @@ data class QuickCoachUpdate(
     val bestMove: String? = null,
     /** False when the eval request failed; used to show the ⚠ indicator. */
     val engineAvailable: Boolean = true,
+    /**
+     * Engine context signal from POST /live/move; null when the live coaching
+     * pipeline is not wired or the backend omitted the field.
+     * Reuses [EngineSignalDto] from the chat pipeline so display logic is shared.
+     */
+    val engineSignal: EngineSignalDto? = null,
 )

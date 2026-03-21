@@ -41,14 +41,26 @@ class ChessViewModel(
     /** Number of half-moves played so far (human + AI combined). */
     val moveCount: Int get() = moveHistory.size
 
-    /** Returns the game moves as a minimal coordinate-notation PGN string. */
+    /**
+     * Returns the game moves as a well-formed PGN string including the four
+     * mandatory headers required by the backend [GameFinishRequest] validator.
+     *
+     * Without headers the backend raises a 422 "invalid PGN: no PGN headers
+     * found" error, silently failing every /game/finish call.
+     */
     fun exportPGN(): String {
         if (moveHistory.isEmpty()) return "(no moves)"
-        return moveHistory
+        val moves = moveHistory
             .mapIndexed { index, uci ->
                 if (index % 2 == 0) "${index / 2 + 1}. $uci" else uci
             }
             .joinToString(" ")
+        return """[Event "Chess Coach Game"]
+[White "Player"]
+[Black "Engine"]
+[Result "*"]
+
+$moves"""
     }
 
     private fun uciFromCoords(fr: Int, fc: Int, tr: Int, tc: Int): String {
@@ -193,6 +205,7 @@ class ChessViewModel(
                     val backendClassification = liveSuccess?.data?.moveQuality
                         ?.takeIf { it.isNotBlank() }
                         ?.let { QuickCoachLogic.fromBackendString(it) }
+                    val liveEngineSignal = liveSuccess?.data?.engineSignal
 
                     val update = QuickCoachLogic.buildUpdateFromEngine(
                         capturedPiece,
@@ -201,6 +214,7 @@ class ChessViewModel(
                         liveHint,
                         engineAvailable,
                         backendClassification,
+                        liveEngineSignal,
                     )
                     onQuickCoachUpdate?.invoke(update)
                 }

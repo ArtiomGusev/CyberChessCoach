@@ -97,11 +97,26 @@ class HttpLiveMoveClient(
 
     private fun parseResponse(body: String): LiveMoveResponse {
         val root = JSONObject(body)
+        val sigObj = root.optJSONObject("engine_signal")
+        val engineSignal = sigObj?.let { sig ->
+            val evalObj = sig.optJSONObject("evaluation")
+            val evaluation = evalObj?.let { ev ->
+                EvaluationDto(
+                    band = ev.optString("band", "").takeIf { it.isNotEmpty() },
+                    side = ev.optString("side", "").takeIf { it.isNotEmpty() },
+                )
+            }
+            EngineSignalDto(
+                evaluation = evaluation,
+                phase = sig.optString("phase", "").takeIf { it.isNotEmpty() },
+            )
+        }
         return LiveMoveResponse(
             status = root.optString("status", "ok"),
             hint = root.optString("hint", ""),
             moveQuality = root.optString("move_quality", "unknown"),
             mode = root.optString("mode", "LIVE_V1"),
+            engineSignal = engineSignal,
         )
     }
 }

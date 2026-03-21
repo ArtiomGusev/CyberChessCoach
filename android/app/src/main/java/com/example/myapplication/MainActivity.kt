@@ -157,11 +157,30 @@ class MainActivity : AppCompatActivity() {
             performLogout()
         }
 
-        // Show persisted rating if available
+        // Show persisted rating if available (updated below if /auth/me succeeds)
         val storedRating = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
             .getFloat(PREF_RATING, -1f)
         if (storedRating >= 0f) {
             txtRatingHeader.text = "Rating: %.0f".format(storedRating)
+        }
+
+        // Sync profile rating from server at cold-start so the header is
+        // populated even before the first game ends.
+        val authToken = authRepo.getToken()
+        if (authToken != null) {
+            lifecycleScope.launch {
+                when (val r = authApiClient.me(authToken)) {
+                    is ApiResult.Success -> {
+                        txtRatingHeader.text = "Rating: %.0f".format(r.data.rating)
+                        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                            .putFloat(PREF_RATING, r.data.rating)
+                            .apply()
+                    }
+                    is ApiResult.HttpError -> Log.d("AUTH", "me() HTTP ${r.code}")
+                    is ApiResult.NetworkError -> Log.d("AUTH", "me() network error", r.cause)
+                    ApiResult.Timeout -> Log.d("AUTH", "me() timed out")
+                }
+            }
         }
 
         // -------- ROBUST GESTURE FOR THE WHOLE DOCK --------
@@ -203,9 +222,10 @@ class MainActivity : AppCompatActivity() {
                     GameResult.DRAW -> "draw"
                 }
             val accuracy = computeAccuracy()
+            val weaknesses = computeWeaknesses(moveClassifications)
             moveClassifications.clear()
             lifecycleScope.launch {
-                when (val r = gameApiClient.finishGame(GameFinishRequest(pgn, resultStr, accuracy, emptyMap(), currentPlayerId))) {
+                when (val r = gameApiClient.finishGame(GameFinishRequest(pgn, resultStr, accuracy, weaknesses, currentPlayerId))) {
                     is ApiResult.Success -> {
                         lastGameFinishResponse = r.data
                         showCoachingResult(r.data)
@@ -264,6 +284,27 @@ class MainActivity : AppCompatActivity() {
     companion object {
         const val PREFS_NAME = "chesscoach_prefs"
         const val PREF_RATING = "last_rating"
+
+        /**
+         * Compute weakness rates from the accumulated move classifications.
+         *
+         * Returned map keys match the backend SECA schema:
+         *  - "blunder_rate"    — fraction of moves classified as BLUNDER
+         *  - "mistake_rate"    — fraction classified as MISTAKE
+         *  - "inaccuracy_rate" — fraction classified as INACCURACY
+         *
+         * Returns emptyMap() when [classifications] is empty (avoids division
+         * by zero and matches the previous safe fallback).
+         */
+        fun computeWeaknesses(classifications: List<MistakeClassification>): Map<String, Float> {
+            val total = classifications.size.toFloat()
+            if (total == 0f) return emptyMap()
+            return mapOf(
+                "blunder_rate"    to classifications.count { it == MistakeClassification.BLUNDER }    / total,
+                "mistake_rate"    to classifications.count { it == MistakeClassification.MISTAKE }    / total,
+                "inaccuracy_rate" to classifications.count { it == MistakeClassification.INACCURACY } / total,
+            )
+        }
     }
 
     private fun performLogout() {

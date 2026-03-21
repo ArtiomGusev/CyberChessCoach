@@ -33,6 +33,38 @@ interface AuthApiClient {
      * @return [ApiResult.Success(Unit)] on HTTP 200; error variants otherwise.
      */
     suspend fun logout(token: String): ApiResult<Unit>
+
+    /**
+     * GET /auth/me.
+     *
+     * Returns the authenticated player's profile (id, email, rating, confidence).
+     * Called at cold-start so the rating header is populated before the first game.
+     *
+     * Default implementation returns [ApiResult.HttpError(501)] so that test
+     * fakes that only override login/logout do not need to implement this method.
+     *
+     * @return [ApiResult.Success] with [MeResponse] on HTTP 200;
+     *         [ApiResult.HttpError(401)] when token is invalid or expired;
+     *         [ApiResult.Timeout] or [ApiResult.NetworkError] on transport failures.
+     */
+    suspend fun me(token: String): ApiResult<MeResponse> = ApiResult.HttpError(501)
+
+    /**
+     * POST /auth/register.
+     *
+     * Creates a new player account.  Returns the same shape as [login] on
+     * success (HTTP 200/201) so the caller can immediately save the token
+     * and navigate to [MainActivity].
+     *
+     * Default implementation returns [ApiResult.HttpError(501)] so that test
+     * fakes do not need to override this method.
+     *
+     * @return [ApiResult.Success] with [LoginResponse] on success;
+     *         [ApiResult.HttpError(409)] when email is already registered;
+     *         [ApiResult.Timeout] or [ApiResult.NetworkError] on transport failures.
+     */
+    suspend fun register(email: String, password: String): ApiResult<LoginResponse> =
+        ApiResult.HttpError(501)
 }
 
 /**
@@ -56,6 +88,8 @@ class HttpAuthApiClient(
         const val DEFAULT_READ_TIMEOUT_MS = 15_000
         private const val LOGIN_PATH = "/auth/login"
         private const val LOGOUT_PATH = "/auth/logout"
+        private const val ME_PATH = "/auth/me"
+        private const val REGISTER_PATH = "/auth/register"
     }
 
     override suspend fun login(
@@ -118,6 +152,31 @@ class HttpAuthApiClient(
         }
     }
 
+    override suspend fun me(
+        token: String,
+    ): ApiResult<MeResponse> = withContext(Dispatchers.IO) {
+        try {
+            val url = URL("$baseUrl$ME_PATH")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.setRequestProperty("Authorization", "Bearer $token")
+            conn.connectTimeout = connectTimeoutMs
+            conn.readTimeout = readTimeoutMs
+
+            val code = conn.responseCode
+            if (code == HttpURLConnection.HTTP_OK) {
+                val raw = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
+                ApiResult.Success(parseMeResponse(raw))
+            } else {
+                ApiResult.HttpError(code)
+            }
+        } catch (_: SocketTimeoutException) {
+            ApiResult.Timeout
+        } catch (e: Exception) {
+            ApiResult.NetworkError(e)
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Private helpers
     // -----------------------------------------------------------------------
@@ -128,6 +187,51 @@ class HttpAuthApiClient(
             accessToken = root.getString("access_token"),
             playerId = root.optString("player_id", ""),
             tokenType = root.optString("token_type", "bearer"),
+        )
+    }
+
+    override suspend fun register(
+        email: String,
+        password: String,
+    ): ApiResult<LoginResponse> = withContext(Dispatchers.IO) {
+        try {
+            val body = JSONObject().apply {
+                put("email", email)
+                put("password", password)
+                put("device_info", "android")
+            }.toString()
+
+            val url = URL("$baseUrl$REGISTER_PATH")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.doOutput = true
+            conn.connectTimeout = connectTimeoutMs
+            conn.readTimeout = readTimeoutMs
+
+            conn.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(body) }
+
+            val code = conn.responseCode
+            if (code == HttpURLConnection.HTTP_OK || code == HttpURLConnection.HTTP_CREATED) {
+                val raw = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
+                ApiResult.Success(parseLoginResponse(raw))
+            } else {
+                ApiResult.HttpError(code)
+            }
+        } catch (_: SocketTimeoutException) {
+            ApiResult.Timeout
+        } catch (e: Exception) {
+            ApiResult.NetworkError(e)
+        }
+    }
+
+    private fun parseMeResponse(body: String): MeResponse {
+        val root = JSONObject(body)
+        return MeResponse(
+            id = root.optString("id", ""),
+            email = root.optString("email", ""),
+            rating = root.optDouble("rating", 0.0).toFloat(),
+            confidence = root.optDouble("confidence", 0.0).toFloat(),
         )
     }
 }

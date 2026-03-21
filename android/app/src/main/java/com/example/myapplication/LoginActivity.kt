@@ -29,6 +29,7 @@ class LoginActivity : AppCompatActivity() {
     private lateinit var etEmail: TextInputEditText
     private lateinit var etPassword: TextInputEditText
     private lateinit var btnLogin: Button
+    private lateinit var btnRegister: Button
     private lateinit var tvError: TextView
     private lateinit var progressBar: ProgressBar
 
@@ -55,6 +56,7 @@ class LoginActivity : AppCompatActivity() {
         etEmail = findViewById(R.id.etEmail)
         etPassword = findViewById(R.id.etPassword)
         btnLogin = findViewById(R.id.btnLogin)
+        btnRegister = findViewById(R.id.btnRegister)
         tvError = findViewById(R.id.tvError)
         progressBar = findViewById(R.id.progressBar)
 
@@ -68,6 +70,18 @@ class LoginActivity : AppCompatActivity() {
             }
 
             performLogin(email, password)
+        }
+
+        btnRegister.setOnClickListener {
+            val email = etEmail.text?.toString()?.trim().orEmpty()
+            val password = etPassword.text?.toString().orEmpty()
+
+            if (email.isEmpty() || password.isEmpty()) {
+                showError("Please enter an email and password to create an account.")
+                return@setOnClickListener
+            }
+
+            performRegister(email, password)
         }
     }
 
@@ -106,9 +120,40 @@ class LoginActivity : AppCompatActivity() {
         }
     }
 
+    private fun performRegister(email: String, password: String) {
+        progressBar.visibility = View.VISIBLE
+        btnLogin.isEnabled = false
+        btnRegister.isEnabled = false
+        tvError.visibility = View.GONE
+
+        lifecycleScope.launch {
+            when (val result = authApiClient.register(email, password)) {
+                is ApiResult.Success -> {
+                    authRepository.saveToken(result.data.accessToken)
+                    launchMain()
+                }
+
+                is ApiResult.HttpError -> {
+                    val message = when (result.code) {
+                        409 -> "An account with this email already exists."
+                        else -> "Registration failed (${result.code}). Please try again."
+                    }
+                    showError(message)
+                }
+
+                is ApiResult.NetworkError ->
+                    showError("Cannot reach the coach server. Check your connection.")
+
+                ApiResult.Timeout ->
+                    showError("Connection timed out. Please try again.")
+            }
+        }
+    }
+
     private fun showError(message: String) {
         progressBar.visibility = View.GONE
         btnLogin.isEnabled = true
+        btnRegister.isEnabled = true
         tvError.text = message
         tvError.visibility = View.VISIBLE
     }

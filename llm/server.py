@@ -570,6 +570,7 @@ class ChatRequest(BaseModel):
     messages: list[ChatTurnModel]
     player_profile: dict | None = None
     past_mistakes: list[str] | None = None
+    move_count: int | None = None
 
     @field_validator("fen")
     @classmethod
@@ -588,6 +589,13 @@ class ChatRequest(BaseModel):
     def validate_past_mistakes(cls, v: list | None) -> list | None:
         if v is not None and len(v) > 20:
             raise ValueError("past_mistakes list too long (max 20)")
+        return v
+
+    @field_validator("move_count")
+    @classmethod
+    def validate_move_count(cls, v: int | None) -> int | None:
+        if v is not None and not (0 <= v <= 10_000):
+            raise ValueError("move_count must be 0–10000")
         return v
 
 
@@ -854,6 +862,7 @@ def chat(
         messages=turns,
         player_profile=req.player_profile,
         past_mistakes=req.past_mistakes,
+        move_count=req.move_count,
     )
     return {
         "reply": result.reply,
