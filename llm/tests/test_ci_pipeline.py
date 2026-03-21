@@ -495,9 +495,9 @@ def test_android_build_job_apk_step_uses_vars_not_secrets():
     assert apk_step["run"] == "./gradlew assembleRelease --no-daemon"
 
     api_base_ref = apk_step["env"]["COACH_API_BASE"]
-    assert "vars.COACH_API_BASE" in api_base_ref, (
-        "COACH_API_BASE is visible in the APK; use vars.COACH_API_BASE (not secrets.*)"
-    )
+    assert (
+        "vars.COACH_API_BASE" in api_base_ref
+    ), "COACH_API_BASE is visible in the APK; use vars.COACH_API_BASE (not secrets.*)"
     assert "secrets.COACH_API_BASE" not in api_base_ref
 
     assert "secrets.COACH_API_KEY" in apk_step["env"]["COACH_API_KEY"]
@@ -518,9 +518,9 @@ def test_build_gradle_kts_release_enforces_https_and_obfuscation():
     assert "proguard-android-optimize.txt" in gradle
     assert "proguard-rules.pro" in gradle
 
-    assert 'startsWith("https://")' in gradle, (
-        "Release build must hard-fail when COACH_API_BASE does not start with https://"
-    )
+    assert (
+        'startsWith("https://")' in gradle
+    ), "Release build must hard-fail when COACH_API_BASE does not start with https://"
     assert "error(" in gradle, "Hard-fail guard for non-HTTPS COACH_API_BASE must be present"
 
     assert 'System.getenv("COACH_API_BASE")' in gradle
@@ -534,12 +534,12 @@ def test_build_gradle_kts_debug_reads_api_endpoint_from_env():
     gradle = (ROOT / "android" / "app" / "build.gradle.kts").read_text(encoding="utf-8")
 
     # Must appear in both release and debug blocks — count must be >= 2
-    assert gradle.count('System.getenv("COACH_API_BASE")') >= 2, (
-        "COACH_API_BASE env-var override must appear in both debug and release build types"
-    )
-    assert gradle.count('System.getenv("COACH_API_KEY")') >= 2, (
-        "COACH_API_KEY env-var override must appear in both debug and release build types"
-    )
+    assert (
+        gradle.count('System.getenv("COACH_API_BASE")') >= 2
+    ), "COACH_API_BASE env-var override must appear in both debug and release build types"
+    assert (
+        gradle.count('System.getenv("COACH_API_KEY")') >= 2
+    ), "COACH_API_KEY env-var override must appear in both debug and release build types"
 
 
 def test_proguard_rules_preserve_api_model_classes():
@@ -548,21 +548,19 @@ def test_proguard_rules_preserve_api_model_classes():
     """
     proguard = (ROOT / "android" / "app" / "proguard-rules.pro").read_text(encoding="utf-8")
 
-    assert "-keepattributes SourceFile,LineNumberTable" in proguard, (
-        "Stack-trace line numbers must be preserved for crash reporting"
-    )
-    assert "com.example.myapplication" in proguard, (
-        "API model classes in com.example.myapplication must be kept"
-    )
-    assert "public *" in proguard, (
-        "Public members of model classes must be kept for org.json field access"
-    )
-    assert "kotlinx.coroutines" in proguard, (
-        "Kotlin coroutine internals must be preserved"
-    )
-    assert "androidx.security.crypto" in proguard, (
-        "AndroidX EncryptedSharedPreferences must be preserved"
-    )
+    assert (
+        "-keepattributes SourceFile,LineNumberTable" in proguard
+    ), "Stack-trace line numbers must be preserved for crash reporting"
+    assert (
+        "com.example.myapplication" in proguard
+    ), "API model classes in com.example.myapplication must be kept"
+    assert (
+        "public *" in proguard
+    ), "Public members of model classes must be kept for org.json field access"
+    assert "kotlinx.coroutines" in proguard, "Kotlin coroutine internals must be preserved"
+    assert (
+        "androidx.security.crypto" in proguard
+    ), "AndroidX EncryptedSharedPreferences must be preserved"
 
 
 # ---------------------------------------------------------------------------
@@ -596,9 +594,7 @@ def test_docker_compose_prod_health_and_immutable_image():
     """Production compose must: pull a pre-built image (not build from source),
     expose api internally only, gate Caddy startup on api health, and rotate logs.
     """
-    compose = yaml.safe_load(
-        (ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")
-    )
+    compose = yaml.safe_load((ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8"))
 
     api = compose["services"]["api"]
 
@@ -612,9 +608,9 @@ def test_docker_compose_prod_health_and_immutable_image():
 
     caddy = compose["services"]["caddy"]
     caddy_api_dep = caddy["depends_on"]["api"]
-    assert caddy_api_dep.get("condition") == "service_healthy", (
-        "Caddy must wait for api service_healthy before starting"
-    )
+    assert (
+        caddy_api_dep.get("condition") == "service_healthy"
+    ), "Caddy must wait for api service_healthy before starting"
 
     assert "logging" in api
     assert api["logging"]["driver"] == "json-file"

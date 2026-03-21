@@ -300,9 +300,10 @@ jobs:
       - name: Validate Caddyfile syntax
         run: |
           docker run --rm \
+            -e DOMAIN=test.example.com \
             -v "$GITHUB_WORKSPACE/Caddyfile:/etc/caddy/Caddyfile:ro" \
             caddy:2-alpine \
-            caddy fmt /etc/caddy/Caddyfile > /dev/null
+            caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /dev/null
 
   docker-images:
     name: Build and publish Docker images
