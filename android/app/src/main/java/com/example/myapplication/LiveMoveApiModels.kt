@@ -25,14 +25,18 @@ data class LiveMoveRequest(
 /**
  * Response from POST /live/move.
  *
- * [status]      Always "ok" on success.
- * [hint]        Coaching hint referencing engine evaluation, phase, and move quality.
- * [moveQuality] last_move_quality from the engine signal ("best", "blunder", etc.).
- * [mode]        Always "LIVE_V1" for this pipeline version.
+ * [status]       Always "ok" on success.
+ * [hint]         Coaching hint referencing engine evaluation, phase, and move quality.
+ * [moveQuality]  last_move_quality from the engine signal ("best", "blunder", etc.).
+ * [mode]         Always "LIVE_V1" for this pipeline version.
+ * [engineSignal] Structured evaluation context from the backend engine signal;
+ *                null when absent or unparseable.  Matches [EngineSignalDto] from
+ *                the /chat response so the same display logic can be reused.
  */
 data class LiveMoveResponse(
     val status: String,
     val hint: String,
     val moveQuality: String,
     val mode: String,
+    val engineSignal: EngineSignalDto? = null,
 )

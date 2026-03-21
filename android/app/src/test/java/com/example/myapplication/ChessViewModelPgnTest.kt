@@ -29,13 +29,14 @@ import org.junit.Test
  *  1.  PGN_EMPTY_NEW_GAME:         exportPGN returns "(no moves)" on a fresh ViewModel.
  *  2.  PGN_AFTER_HUMAN_MOVE:       exportPGN contains the human's UCI move after SUCCESS.
  *  3.  PGN_AFTER_FULL_ROUND:       exportPGN contains both human and AI UCI moves.
- *  4.  PGN_MOVE_NUMBERING:         exportPGN prefixes move pairs with "1. ", "2. ", etc.
+ *  4.  PGN_MOVE_NUMBERING:         exportPGN move section starts with "1. ".
+ *  4b. PGN_HAS_EVENT_HEADER:      exportPGN output starts with [Event PGN header.
  *  5.  PGN_RESET_CLEARS:           exportPGN returns "(no moves)" after reset().
  *  6.  PGN_HUMAN_FAILED_NOT_ADDED: exportPGN unchanged when human move returns FAILED.
  *  7.  PGN_UCI_E2E4:               Human move (row 6,col 4)→(row 4,col 4) encodes as "e2e4".
  *  8.  PGN_AI_UCI_A8B7:            FakeEngine move (0,0)→(1,1) encodes as "a8b7".
  *  9.  PGN_MULTI_RESET:            Multiple resets each clear history independently.
- * 10.  PGN_FORMAT_SINGLE_ROUND:    After one full round PGN starts with "1. e2e4 a8b7".
+ * 10.  PGN_FORMAT_SINGLE_ROUND:    After one full round move section is "1. e2e4 a8b7".
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChessViewModelPgnTest {
@@ -105,9 +106,18 @@ class ChessViewModelPgnTest {
     }
 
     @Test
-    fun `exportPGN prefixes first move pair with move number`() {
+    fun `exportPGN output starts with Event PGN header`() {
         playRound()
-        assertTrue("Expected '1. ' prefix", viewModel.exportPGN().startsWith("1. "))
+        assertTrue(
+            "Expected PGN to start with [Event header",
+            viewModel.exportPGN().startsWith("""[Event "Chess Coach Game"]"""),
+        )
+    }
+
+    @Test
+    fun `exportPGN move section starts with move number prefix`() {
+        playRound()
+        assertTrue("Expected '1. ' in PGN move section", viewModel.exportPGN().contains("1. "))
     }
 
     @Test
@@ -158,6 +168,9 @@ class ChessViewModelPgnTest {
     fun `after one full round PGN has correct format with both moves`() {
         playRound() // human: e2e4 (fr=6,fc=4,tr=4,tc=4), AI: a8b7
         val pgn = viewModel.exportPGN()
-        assertEquals("1. e2e4 a8b7", pgn)
+        // Headers must be present (P0-A fix: backend requires PGN headers)
+        assertTrue("Expected [Event header", pgn.contains("""[Event "Chess Coach Game"]"""))
+        // Move section must be correctly formatted
+        assertTrue("Expected move line '1. e2e4 a8b7'", pgn.contains("1. e2e4 a8b7"))
     }
 }

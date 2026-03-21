@@ -1,5 +1,28 @@
 package com.example.myapplication
 
+// ── /curriculum/next ─────────────────────────────────────────────────────────
+
+/**
+ * Training recommendation returned by POST /curriculum/next.
+ *
+ * Driven by the SECA brain using real per-player history — more accurate than
+ * [TrainingRecommendation] from /next-training which uses hardcoded demo weights.
+ *
+ * **Schema note:** field names differ from [TrainingRecommendation]:
+ *  - [exerciseType] (not `format`) — exercise type string
+ *  - [payload] (not `expectedGain`) — type-specific parameters dict
+ *
+ * Clients MUST NOT conflate this type with [TrainingRecommendation].
+ *
+ * Backend contract: docs/API_CONTRACTS.md §2 (schema conflict note).
+ */
+data class CurriculumRecommendation(
+    val topic: String,
+    val difficulty: Float,
+    val exerciseType: String,
+    val payload: Map<String, String> = emptyMap(),
+)
+
 // ── /next-training/{player_id} ───────────────────────────────────────────────
 
 /**
@@ -55,4 +78,9 @@ data class GameFinishResponse(
     val confidence: Float,
     val coachAction: CoachActionDto,
     val coachContent: CoachContentDto,
+    /**
+     * Status string from the `learning` object in the /game/finish response
+     * (e.g. "stored", "updated").  Null when the backend omitted the field.
+     */
+    val learningStatus: String? = null,
 )

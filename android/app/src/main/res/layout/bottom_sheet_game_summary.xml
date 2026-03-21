@@ -96,7 +96,28 @@
         android:text=""
         android:textColor="#AAAAAA"
         android:textSize="14sp"
-        android:layout_marginBottom="24dp"/>
+        android:layout_marginBottom="8dp"/>
+
+    <!-- P3-A: Coach content payload detail section (DRILL/PUZZLE only) -->
+    <LinearLayout
+        android:id="@+id/layoutPayload"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginBottom="8dp"
+        android:visibility="gone"/>
+
+    <!-- P3-B: Learning status indicator -->
+    <TextView
+        android:id="@+id/txtLearningStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textColor="#00FF88"
+        android:textSize="12sp"
+        android:typeface="monospace"
+        android:layout_marginBottom="16dp"
+        android:visibility="gone"/>
 
     <!-- Training card (initially hidden) -->
     <LinearLayout

@@ -214,7 +214,44 @@ interchangeable. Clients MUST NOT assume the two endpoints return the same shape
 
 ---
 
-## 5. `/coach` — NOT IMPLEMENTED
+## 5. `POST /chat`
+
+**Host:** `server.py`
+**Auth:** `X-Api-Key` required
+
+### Request body
+
+```json
+{
+  "fen":            <string>,
+  "messages":       <array of {role, content}>,
+  "player_profile": <object | null>,
+  "past_mistakes":  <string[] | null>,
+  "move_count":     <int | null>
+}
+```
+
+| Field | Type | Constraints |
+|-------|------|-------------|
+| `fen` | `string` | Valid FEN or `"startpos"` |
+| `messages` | `array` | ≤ 50 turns; each message content ≤ 2000 chars |
+| `player_profile` | `object \| null` | Optional — keys: `skill_estimate`, `common_mistakes`, `strengths` |
+| `past_mistakes` | `string[] \| null` | Optional — ≤ 20 items |
+| `move_count` | `int \| null` | Optional — 0–10 000; injects "This is move N of the game." into the context block |
+
+### Response
+
+```json
+{
+  "reply":         <string>,
+  "engine_signal": <object>,
+  "mode":          "CHAT_V1"
+}
+```
+
+---
+
+## 6. `/coach` — NOT IMPLEMENTED
 
 The `/coach` endpoint does not exist. Coaching decisions are embedded in
 the `POST /game/finish` response (`coach_action` + `coach_content` fields).

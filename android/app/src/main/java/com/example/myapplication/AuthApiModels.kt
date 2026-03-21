@@ -34,6 +34,21 @@ data class LoginResponse(
 data class LogoutResponse(val status: String)
 
 /**
+ * Response from GET /auth/me.
+ *
+ * Returns the authenticated player's current profile.  Used to sync the
+ * rating display at cold-start without waiting for a /game/finish round.
+ *
+ * Backend field names: id, email, rating, confidence.
+ */
+data class MeResponse(
+    val id: String,
+    val email: String,
+    val rating: Float,
+    val confidence: Float,
+)
+
+/**
  * Current authentication state of the user in the application.
  *
  * Callers must handle both variants; use an exhaustive `when` expression.

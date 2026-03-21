@@ -9,6 +9,7 @@ import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -38,6 +39,10 @@ import org.junit.Test
  * 11. INT_LIVE_HTTP_NON_200     non-200 response → ApiResult.HttpError with correct code.
  * 12. INT_LIVE_TIMEOUT          connection timeout → ApiResult.Timeout.
  * 13. INT_LIVE_EMPTY_HINT       empty hint string is preserved (not replaced with null).
+ * 14. INT_LIVE_ENGINE_SIGNAL_PARSED   engine_signal object is deserialised into EngineSignalDto.
+ * 15. INT_LIVE_ENGINE_SIGNAL_BAND     engine_signal.evaluation.band is parsed correctly.
+ * 16. INT_LIVE_ENGINE_SIGNAL_PHASE    engine_signal.phase is parsed correctly.
+ * 17. INT_LIVE_ENGINE_SIGNAL_ABSENT   missing engine_signal field → engineSignal is null.
  */
 class LiveMoveApiClientIntegrationTest {
 
@@ -257,5 +262,54 @@ class LiveMoveApiClientIntegrationTest {
         val data = (result as ApiResult.Success<*>).data as LiveMoveResponse
         assertNotNull("hint must not be null even when empty", data.hint)
         assertEquals("", data.hint)
+    }
+
+    // ---------------------------------------------------------------------------
+    // 14–17  engine_signal deserialisation
+    // ---------------------------------------------------------------------------
+
+    @Test
+    fun `INT_LIVE_ENGINE_SIGNAL_PARSED - engine_signal is deserialised into EngineSignalDto`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody(LIVE_OK_BODY))
+        val result = client().getLiveCoaching(startingFen, testUci)
+        assertTrue(result is ApiResult.Success<*>)
+        val data = (result as ApiResult.Success<*>).data as LiveMoveResponse
+        assertNotNull("engineSignal must be non-null when engine_signal is present", data.engineSignal)
+    }
+
+    @Test
+    fun `INT_LIVE_ENGINE_SIGNAL_BAND - engine_signal evaluation band is parsed correctly`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody(LIVE_OK_BODY))
+        val result = client().getLiveCoaching(startingFen, testUci)
+        assertTrue(result is ApiResult.Success<*>)
+        val data = (result as ApiResult.Success<*>).data as LiveMoveResponse
+        assertEquals(
+            "evaluation.band must be 'equal' for the LIVE_OK_BODY fixture",
+            "equal",
+            data.engineSignal?.evaluation?.band,
+        )
+    }
+
+    @Test
+    fun `INT_LIVE_ENGINE_SIGNAL_PHASE - engine_signal phase is parsed correctly`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody(LIVE_OK_BODY))
+        val result = client().getLiveCoaching(startingFen, testUci)
+        assertTrue(result is ApiResult.Success<*>)
+        val data = (result as ApiResult.Success<*>).data as LiveMoveResponse
+        assertEquals(
+            "phase must be 'opening' for the LIVE_OK_BODY fixture",
+            "opening",
+            data.engineSignal?.phase,
+        )
+    }
+
+    @Test
+    fun `INT_LIVE_ENGINE_SIGNAL_ABSENT - missing engine_signal field results in null`() = runBlocking {
+        val body = """{"status":"ok","hint":"","move_quality":"unknown","mode":"LIVE_V1"}"""
+        server.enqueue(MockResponse().setResponseCode(200).setBody(body))
+        val result = client().getLiveCoaching(startingFen, testUci)
+        assertTrue(result is ApiResult.Success<*>)
+        val data = (result as ApiResult.Success<*>).data as LiveMoveResponse
+        assertNull("engineSignal must be null when engine_signal absent from response", data.engineSignal)
     }
 }

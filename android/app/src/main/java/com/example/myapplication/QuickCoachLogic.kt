@@ -128,6 +128,7 @@ object QuickCoachLogic {
         liveHint: String? = null,
         engineAvailable: Boolean = true,
         classificationOverride: MistakeClassification? = null,
+        engineSignal: EngineSignalDto? = null,
     ): QuickCoachUpdate {
         val classification = classificationOverride ?: classifyCapture(capturedPiece)
         return QuickCoachUpdate(
@@ -136,6 +137,7 @@ object QuickCoachLogic {
             explanation = liveHint ?: deriveExplanation(classification),
             bestMove = bestMove,
             engineAvailable = engineAvailable,
+            engineSignal = engineSignal,
         )
     }
 
