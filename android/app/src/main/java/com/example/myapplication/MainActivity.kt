@@ -194,7 +194,13 @@ class MainActivity : AppCompatActivity() {
                         lastGameFinishResponse = r.data
                         showCoachingResult(r.data)
                     }
-                    is ApiResult.HttpError -> Log.w("GAME", "finishGame HTTP ${r.code}")
+                    is ApiResult.HttpError -> {
+                        if (r.code == 401) {
+                            handleSessionExpired()
+                        } else {
+                            Log.w("GAME", "finishGame HTTP ${r.code}")
+                        }
+                    }
                     is ApiResult.NetworkError -> Log.w("GAME", "finishGame network error", r.cause)
                     ApiResult.Timeout -> Log.w("GAME", "finishGame timed out")
                 }
@@ -205,14 +211,22 @@ class MainActivity : AppCompatActivity() {
         startNewGameSession()
 
         // Wire real Stockfish evaluation: after each AI move, ChessViewModel calls
-        // POST /engine/eval and emits the result here with the centipawn score.
+        // POST /engine/eval and optionally POST /live/move, then emits the result here.
         viewModel.engineEvalClient = HttpEngineEvalClient(BuildConfig.COACH_API_BASE)
+        viewModel.liveCoachClient = HttpLiveMoveClient(
+            baseUrl = BuildConfig.COACH_API_BASE,
+            apiKey = BuildConfig.COACH_API_KEY,
+        )
         viewModel.onQuickCoachUpdate = { update ->
             // Track for end-of-game accuracy computation
             moveClassifications.add(update.classification)
 
-            // Show engine score badge
-            txtEngineScore.text = update.scoreText
+            // Show engine score badge; degrade gracefully when engine is unavailable
+            txtEngineScore.text = if (update.engineAvailable) {
+                update.scoreText
+            } else {
+                "⚠ Eval N/A"
+            }
 
             // Show mistake category badge with severity colour
             txtMistakeCategory.text = update.classification.label()
@@ -247,6 +261,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val boardSnapshot = chessBoard.exportFEN()
+        val currentMoveCount = viewModel.moveCount
 
         // Build player context from the last completed game, if available.
         val profile = lastGameFinishResponse?.let {
@@ -255,8 +270,30 @@ class MainActivity : AppCompatActivity() {
         val mistakes = lastGameFinishResponse?.coachAction?.weakness?.let { listOf(it) }
 
         ChatBottomSheet
-            .newInstance(boardSnapshot, profile, mistakes)
+            .newInstance(boardSnapshot, profile, mistakes, currentMoveCount)
             .show(supportFragmentManager, "ChatBottomSheet")
+    }
+
+    /**
+     * Called when the backend returns HTTP 401 during an active game session.
+     * Shows a non-disruptive dialog instead of silently breaking the game flow.
+     * The user can choose to re-authenticate or dismiss and continue offline.
+     */
+    private fun handleSessionExpired() {
+        if (isFinishing || isDestroyed) return
+        AlertDialog.Builder(this)
+            .setTitle("Session expired")
+            .setMessage("Your session has expired. Log in again to save your game progress.")
+            .setPositiveButton("Log in") { _, _ ->
+                authRepo.clearToken()
+                startActivity(
+                    Intent(this, LoginActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
+                )
+                finish()
+            }
+            .setNegativeButton("Dismiss", null)
+            .show()
     }
 
     private fun startNewGameSession() {

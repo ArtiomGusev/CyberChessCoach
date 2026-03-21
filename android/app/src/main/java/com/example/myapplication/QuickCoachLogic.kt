@@ -113,21 +113,28 @@ object QuickCoachLogic {
      *
      * Use this path when [EngineEvalClient.evaluate] has returned successfully.
      *
-     * @param capturedPiece Piece char captured by the AI (or '.' for none).
-     * @param engineScore   Centipawn score from [EngineEvalResponse.score]; null if unavailable.
-     * @param bestMove      UCI string from [EngineEvalResponse.bestMove]; null if unavailable.
+     * @param capturedPiece    Piece char captured by the AI (or '.' for none).
+     * @param engineScore      Centipawn score from [EngineEvalResponse.score]; null if unavailable.
+     * @param bestMove         UCI string from [EngineEvalResponse.bestMove]; null if unavailable.
+     * @param liveHint         Coaching hint from POST /live/move; overrides the static
+     *                         [deriveExplanation] when non-null.
+     * @param engineAvailable  False when the eval request failed; propagated to the update
+     *                         so the UI can display a degraded-mode indicator.
      */
     fun buildUpdateFromEngine(
         capturedPiece: Char,
         engineScore: Int?,
         bestMove: String? = null,
+        liveHint: String? = null,
+        engineAvailable: Boolean = true,
     ): QuickCoachUpdate {
         val classification = classifyCapture(capturedPiece)
         return QuickCoachUpdate(
             scoreText = formatCentipawns(engineScore),
             classification = classification,
-            explanation = deriveExplanation(classification),
+            explanation = liveHint ?: deriveExplanation(classification),
             bestMove = bestMove,
+            engineAvailable = engineAvailable,
         )
     }
 }

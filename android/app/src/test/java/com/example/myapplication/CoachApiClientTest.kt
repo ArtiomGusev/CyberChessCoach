@@ -96,6 +96,7 @@ class CoachApiClientTest {
             messages: List<ChatMessageDto>,
             playerProfile: PlayerProfileDto?,
             pastMistakes: List<String>?,
+            moveCount: Int?,
         ): ApiResult<ChatResponseBody> {
             callCount++
             lastFen = fen

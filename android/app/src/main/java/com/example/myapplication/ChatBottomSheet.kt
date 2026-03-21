@@ -66,6 +66,14 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
      */
     private var pastMistakes: List<String>? = null
 
+    /**
+     * Number of half-moves played so far in the current game.
+     * Passed to [CoachApiClient.chat] as `move_count` so the backend can infer
+     * game phase during mid-game chat (opening / middlegame / endgame).
+     * Zero when chat is opened before any moves have been played.
+     */
+    private var moveCount: Int = 0
+
     private val sessionStore = ChatSessionStore(maxMessages = 50)
     private val chatAdapter = ChatAdapter()
 
@@ -94,6 +102,7 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
         private const val ARG_PLAYER_RATING = "arg_player_rating"
         private const val ARG_PLAYER_CONFIDENCE = "arg_player_confidence"
         private const val ARG_PAST_MISTAKES = "arg_past_mistakes"
+        private const val ARG_MOVE_COUNT = "arg_move_count"
 
         private const val STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
@@ -114,6 +123,7 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
             fen: String,
             playerProfile: PlayerProfileDto? = null,
             pastMistakes: List<String>? = null,
+            moveCount: Int = 0,
         ): ChatBottomSheet {
             val fragment = ChatBottomSheet()
             val args = Bundle()
@@ -124,6 +134,7 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
                 args.putFloat(ARG_PLAYER_CONFIDENCE, playerProfile.confidence)
             }
             pastMistakes?.let { args.putStringArrayList(ARG_PAST_MISTAKES, ArrayList(it)) }
+            args.putInt(ARG_MOVE_COUNT, moveCount)
             fragment.arguments = args
             return fragment
         }
@@ -147,6 +158,7 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
             playerProfile = PlayerProfileDto(rating = rating, confidence = confidence)
         }
         pastMistakes = arguments?.getStringArrayList(ARG_PAST_MISTAKES)?.toList()
+        moveCount = arguments?.getInt(ARG_MOVE_COUNT, 0) ?: 0
         isCancelable = true
     }
 
@@ -253,15 +265,23 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
 
     /**
      * Called when the backend returns HTTP 401, indicating the stored JWT has
-     * expired or been invalidated. Clears the local token and redirects to
-     * [LoginActivity] with CLEAR_TASK so the user must re-authenticate.
+     * expired or been invalidated. Shows a non-disruptive dialog so the user
+     * can choose to re-authenticate without losing the current game state.
      */
     private fun handleTokenExpiry() {
+        val ctx = context ?: return
         authRepository?.clearToken()
-        val intent =
-            Intent(requireContext(), LoginActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-        startActivity(intent)
+        android.app.AlertDialog.Builder(ctx)
+            .setTitle("Session expired")
+            .setMessage("Your session has expired. Log in again to continue with coaching.")
+            .setPositiveButton("Log in") { _, _ ->
+                val intent =
+                    Intent(ctx, LoginActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                startActivity(intent)
+            }
+            .setNegativeButton("Dismiss", null)
+            .show()
     }
 
     // ---------------------------------------------------------------------------
@@ -294,6 +314,7 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
                             messages = messages,
                             playerProfile = playerProfile,
                             pastMistakes = pastMistakes,
+                            moveCount = moveCount.takeIf { it > 0 },
                         )
                 ) {
                     is ApiResult.Success -> Pair(result.data.reply, result.data.engineSignal)
