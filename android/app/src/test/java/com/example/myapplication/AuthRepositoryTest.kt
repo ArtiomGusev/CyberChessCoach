@@ -37,6 +37,9 @@ import org.junit.Test
  * 18.  AUTHENTICATED_HOLDS_TOKEN:   authState() Authenticated stores the raw token.
  * 19.  SAVE_UNICODE_TOKEN:          Token with unicode characters round-trips.
  * 20.  AUTH_STATE_AFTER_OVERWRITE:  authState reflects the most-recent token.
+ * 21.  KEYSTORE_CORRUPT_GET_NULL:   getToken() returns null when storage.load() throws.
+ * 22.  KEYSTORE_CORRUPT_AUTH_UNAUTH: authState() returns Unauthenticated when load throws.
+ * 23.  KEYSTORE_CORRUPT_CLEARS:     storage.clear() is called when load() throws.
  */
 class AuthRepositoryTest {
 
@@ -50,6 +53,17 @@ class AuthRepositoryTest {
         override fun save(token: String) { stored = token }
         override fun load(): String? = stored
         override fun clear() { stored = null }
+    }
+
+    /**
+     * [TokenStorage] that throws on [load], simulating Android Keystore corruption.
+     * Tracks whether [clear] was called so tests can assert the recovery path.
+     */
+    private class ThrowingTokenStorage : TokenStorage {
+        var clearCalled = false
+        override fun save(token: String) {}
+        override fun load(): String? = throw RuntimeException("Keystore corrupted")
+        override fun clear() { clearCalled = true }
     }
 
     // ------------------------------------------------------------------
@@ -256,5 +270,43 @@ class AuthRepositoryTest {
         repo.saveToken(futureToken("new-player"))
         val state = repo.authState() as AuthState.Authenticated
         assertEquals("new-player", state.playerId)
+    }
+
+    // ------------------------------------------------------------------
+    // 21–23  Keystore corruption recovery
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `getToken returns null when storage load throws`() {
+        // KEYSTORE_CORRUPT_GET_NULL: EncryptedSharedPreferences can throw on
+        // Keystore corruption; getToken() must swallow the exception and return null
+        // so callers never receive an unhandled crash.
+        val repo = AuthRepository(ThrowingTokenStorage())
+        assertNull(repo.getToken())
+    }
+
+    @Test
+    fun `authState returns Unauthenticated when storage load throws`() {
+        // KEYSTORE_CORRUPT_AUTH_UNAUTH: authState() must return Unauthenticated
+        // (not crash) when the backing store throws, so the app redirects to login.
+        val repo = AuthRepository(ThrowingTokenStorage())
+        val state = repo.authState()
+        assertTrue(
+            "Expected Unauthenticated when keystore corrupted, got $state",
+            state is AuthState.Unauthenticated,
+        )
+    }
+
+    @Test
+    fun `storage clear is called when load throws`() {
+        // KEYSTORE_CORRUPT_CLEARS: after a load failure the corrupted credentials
+        // must be cleared so subsequent launches do not loop on the exception.
+        val throwingStorage = ThrowingTokenStorage()
+        val repo = AuthRepository(throwingStorage)
+        repo.getToken()
+        assertTrue(
+            "storage.clear() must be called when load() throws to evict corrupted data",
+            throwingStorage.clearCalled,
+        )
     }
 }

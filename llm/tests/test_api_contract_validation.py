@@ -384,7 +384,17 @@ def _call_finish_game(
 
 
 _DEFAULT_FINISH_REQ = {
-    "pgn": "1. e4 e5 *",
+    "pgn": (
+        '[Event "Test"]\n'
+        '[Site "?"]\n'
+        '[Date "2025.01.01"]\n'
+        '[Round "1"]\n'
+        '[White "Player1"]\n'
+        '[Black "Player2"]\n'
+        '[Result "1-0"]\n'
+        "\n"
+        "1. e4 e5 2. Nf3 Nc6 1-0"
+    ),
     "result": "win",
     "accuracy": 0.85,
     "weaknesses": {"tactics": 0.6},
@@ -660,7 +670,11 @@ class TestCoachExecutorHandlerGap:
         )
         result = _call_finish_game(
             {
-                "pgn": "1. e4 e5 *",
+                "pgn": (
+                    '[Event "Test"]\n[Site "?"]\n[Date "2025.01.01"]\n'
+                    '[Round "1"]\n[White "Player1"]\n[Black "Player2"]\n'
+                    '[Result "*"]\n\n1. e4 e5 *'
+                ),
                 "result": "loss",
                 "accuracy": 0.60,
                 "weaknesses": {"tactics": 0.5},

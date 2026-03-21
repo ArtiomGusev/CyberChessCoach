@@ -1,6 +1,11 @@
+import io
 import json
 import logging
+import re
 
+import chess.pgn
+
+_PGN_HEADER_RE = re.compile(r'^\s*\[\s*\w+\s+"[^"]*"\s*\]', re.MULTILINE)
 from fastapi import APIRouter, Depends, Request, HTTPException
 from pydantic import BaseModel, field_validator
 
@@ -37,6 +42,16 @@ class GameFinishRequest(BaseModel):
             raise ValueError("pgn must not be empty")
         if len(v) > 100_000:
             raise ValueError("pgn too large (max 100 000 chars)")
+        if not _PGN_HEADER_RE.search(v):
+            raise ValueError("invalid PGN: no PGN headers found")
+        try:
+            game = chess.pgn.read_game(io.StringIO(v))
+        except Exception as exc:
+            raise ValueError(f"invalid PGN: {exc}") from exc
+        if game is None:
+            raise ValueError("invalid PGN: no game found")
+        if game.errors:
+            raise ValueError(f"invalid PGN: {game.errors[0]}")
         return v
 
     @field_validator("result")
@@ -195,7 +210,7 @@ def finish_game(
         coach_content = executor.execute(coach_action)
     except Exception:
         logger.exception("Coach pipeline failed")
-        coach_action = SimpleNamespace(type="default", weakness=None, reason="fallback")
+        coach_action = SimpleNamespace(type="ERROR", weakness=None, reason="coach_pipeline_error")
         coach_content = SimpleNamespace(
             title="Keep playing",
             description="No special training needed right now.",
