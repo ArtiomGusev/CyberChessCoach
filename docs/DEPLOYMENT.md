@@ -91,14 +91,65 @@ docker compose up --build
 
 ## 5. Smoke Tests After Deploy
 
+Run the automated smoke test script (requires `curl` and `python3`):
+
+```bash
+# From the repo root on any machine with network access to the server:
+./scripts/smoke_test.sh https://api.yourdomain.com "$SECA_API_KEY"
+
+# Or locally against a running dev instance:
+./scripts/smoke_test.sh http://localhost:8000 dev-key
+```
+
+The script performs three checks and exits non-zero on any failure:
+
 1. `GET /health` → `{"status": "ok"}`
 2. `GET /debug/engine` with `X-Api-Key: <key>` → `pool_size > 0`
-3. `POST /engine/eval` with a start-position FEN → `best_move` is non-null
-4. Check server logs for startup warnings (CORS, engine pool, DB).
+3. `POST /engine/eval` with the starting FEN → `best_move` is non-null
+
+After confirming the script passes, check the server logs for startup warnings
+(CORS, engine pool, DB, Ollama).
 
 ---
 
-## 6. References
+## 6. CI/CD Secrets and Variables
+
+These must be configured in the GitHub repository before the `deploy` job will
+run. Go to **Settings → Secrets and variables → Actions**.
+
+### Secrets (encrypted, never logged)
+
+| Secret name | Where used | How to obtain |
+|-------------|------------|---------------|
+| `HETZNER_HOST` | SSH deploy step — target address | IP or hostname of your Hetzner VPS |
+| `HETZNER_SSH_KEY` | SSH deploy step — private key | Generate with `ssh-keygen -t ed25519`; add the public key to `/home/deploy/.ssh/authorized_keys` on the server (user `deploy`) |
+| `COACH_API_KEY` | Android release APK build — baked in as `X-Api-Key` | Any non-empty string; **must match `SECA_API_KEY` in `.env.prod` on the server** |
+
+> `GITHUB_TOKEN` is auto-provisioned by Actions. It is used for GHCR push,
+> image attestation, and Trivy scanning. No configuration required.
+
+### Variables (plaintext, visible in logs)
+
+| Variable name | Where used | Example |
+|---------------|------------|---------|
+| `COACH_API_BASE` | Android release APK build — backend URL | `https://api.yourdomain.com` |
+
+### Server-side environment (Hetzner `/opt/chesscoach/`)
+
+These are not GitHub secrets — they live on the server itself:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DOMAIN` | yes | Domain Caddy uses for TLS (e.g. `api.yourdomain.com`) |
+| `GHCR_IMAGE` | yes | Full GHCR reference for the api container (e.g. `ghcr.io/owner/cyberchesscoach-llm-api:latest`); referenced by `docker-compose.prod.yml` |
+
+All other backend variables (`SECA_API_KEY`, `SECRET_KEY`, `DATABASE_URL`,
+`POSTGRES_*`, etc.) go into `/opt/chesscoach/.env.prod` — see section 1 and
+`.env.example` for the full list.
+
+---
+
+## 7. References
 
 - `.env.example` — full variable reference with comments
 - `docs/OPERATIONS.md` — runtime monitoring, telemetry, incident response

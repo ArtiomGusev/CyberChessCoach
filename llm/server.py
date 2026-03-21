@@ -23,6 +23,7 @@ except ImportError:
 from llm.seca.auth.router import router as auth_router
 from llm.seca.events.router import router as game_router
 from llm.seca.curriculum.router import router as curriculum_router
+from llm.seca.inference.router import router as inference_router
 
 # register SECA models
 import llm.seca.events.models
@@ -154,6 +155,12 @@ app.include_router(player_router)
 app.include_router(auth_router)
 app.include_router(game_router)
 app.include_router(curriculum_router)
+app.include_router(
+    inference_router,
+    prefix="/seca",
+    tags=["seca-inference"],
+    dependencies=[Depends(verify_api_key)],
+)
 tracker = ExplanationOutcomeTracker()
 player_skill_memory: dict[str, SkillState] = {}
 scheduler: CurriculumScheduler | None = None
