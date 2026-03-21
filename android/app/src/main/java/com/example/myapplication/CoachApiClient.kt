@@ -27,6 +27,8 @@ interface CoachApiClient {
      *                      coaching; omitted from the request when null.
      * @param pastMistakes  Optional list of weakness categories from the last game; omitted
      *                      from the request when null.
+     * @param moveCount     Number of half-moves played so far; gives the backend context
+     *                      about game phase during mid-game chat (null omits the field).
      * @return              [ApiResult.Success] on HTTP 200 with a valid body;
      *                      [ApiResult.HttpError] on non-200; [ApiResult.Timeout]
      *                      on deadline exceeded; [ApiResult.NetworkError] otherwise.
@@ -36,6 +38,7 @@ interface CoachApiClient {
         messages: List<ChatMessageDto>,
         playerProfile: PlayerProfileDto? = null,
         pastMistakes: List<String>? = null,
+        moveCount: Int? = null,
     ): ApiResult<ChatResponseBody>
 }
 
@@ -77,6 +80,7 @@ class HttpCoachApiClient(
         messages: List<ChatMessageDto>,
         playerProfile: PlayerProfileDto?,
         pastMistakes: List<String>?,
+        moveCount: Int?,
     ): ApiResult<ChatResponseBody> = withContext(Dispatchers.IO) {
         try {
             val url = URL("$baseUrl$CHAT_PATH")
@@ -93,7 +97,7 @@ class HttpCoachApiClient(
             conn.readTimeout = readTimeoutMs
 
             conn.outputStream.bufferedWriter(Charsets.UTF_8).use {
-                it.write(buildJson(fen, messages, playerProfile, pastMistakes))
+                it.write(buildJson(fen, messages, playerProfile, pastMistakes, moveCount))
             }
 
             val code = conn.responseCode
@@ -119,6 +123,7 @@ class HttpCoachApiClient(
         messages: List<ChatMessageDto>,
         playerProfile: PlayerProfileDto?,
         pastMistakes: List<String>?,
+        moveCount: Int?,
     ): String {
         val arr = JSONArray()
         for (msg in messages) {
@@ -149,6 +154,8 @@ class HttpCoachApiClient(
                     for (mistake in it) arr2.put(mistake)
                     put("past_mistakes", arr2)
                 }
+                // Move count gives the backend phase context during mid-game chat.
+                moveCount?.let { put("move_count", it) }
             }
             .toString()
     }

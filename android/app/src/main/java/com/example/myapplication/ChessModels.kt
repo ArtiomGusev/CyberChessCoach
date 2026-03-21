@@ -31,14 +31,19 @@ enum class MistakeClassification {
 /**
  * Structured update emitted after each AI move for the Quick Coach dock.
  *
- * [scoreText]      Formatted score shown in the dock (e.g. "+1.52", "Equal", "?").
- *                  When built from the engine, this is the centipawn evaluation
- *                  formatted by [QuickCoachLogic.formatCentipawns]; when built
- *                  from local material balance it uses [QuickCoachLogic.formatScore].
- * [classification] Severity of the human's last move.
- * [explanation]    One-line coaching hint; null when position is solid.
- * [bestMove]       Engine's preferred response in UCI notation (e.g. "e2e4");
- *                  null when no engine call was made or engine unavailable.
+ * [scoreText]       Formatted score shown in the dock (e.g. "+1.52", "Equal", "?").
+ *                   When built from the engine, this is the centipawn evaluation
+ *                   formatted by [QuickCoachLogic.formatCentipawns]; when built
+ *                   from local material balance it uses [QuickCoachLogic.formatScore].
+ * [classification]  Severity of the human's last move.
+ * [explanation]     Coaching hint for the position; null when position is solid.
+ *                   When the live coaching pipeline is wired, this is the hint
+ *                   from POST /live/move; otherwise a static derived string.
+ * [bestMove]        Engine's preferred response in UCI notation (e.g. "e2e4");
+ *                   null when no engine call was made or engine unavailable.
+ * [engineAvailable] False when the engine eval call failed (Timeout / NetworkError /
+ *                   HttpError).  True in all other cases, including when
+ *                   [engineEvalClient] is null (score is shown as "?").
  */
 data class QuickCoachUpdate(
     val scoreText: String,
@@ -47,4 +52,6 @@ data class QuickCoachUpdate(
     val explanation: String?,
     /** null when built from local heuristic or when engine is unavailable. */
     val bestMove: String? = null,
+    /** False when the eval request failed; used to show the ⚠ indicator. */
+    val engineAvailable: Boolean = true,
 )

@@ -163,23 +163,67 @@ interchangeable. Clients MUST NOT assume the two endpoints return the same shape
 | `coach_content.description` | `string` | Content description |
 | `coach_content.payload` | `object` | Type-specific content payload |
 
-### ⚠ Executor handler gap (contract mismatch)
+### Executor handler coverage
 
-`CoachExecutor` has **no handlers** for `PUZZLE` or `PLAN_UPDATE` action types
-(only `drill`, `reflect`, `rest` have dedicated handlers; `puzzle_set` is
-unreachable because the controller never emits `"PUZZLE_SET"`).
+All five `coach_action.type` values (`NONE`, `REFLECT`, `DRILL`, `PUZZLE`,
+`PLAN_UPDATE`) have dedicated handlers in `CoachExecutor`. When `type` is
+`PUZZLE` or `PLAN_UPDATE` the returned `coach_content` references the weakness
+theme — it is never the generic `"Keep playing"` fallback.
 
-Consequence: when `coach_action.type` is `"PUZZLE"` or `"PLAN_UPDATE"`, the
-`coach_content` silently falls back to the default `"Keep playing"` content.
-The response is **internally inconsistent**: `coach_action.type` indicates a
-specific training recommendation but `coach_content` gives generic text.
-
-This mismatch is captured by `TestCoachExecutorHandlerGap` in
-`test_api_contract_validation.py`.
+Verified by `TestCoachExecutorHandlerGap` in `test_api_contract_validation.py`.
 
 ---
 
-## 4. `/coach` — NOT IMPLEMENTED
+## 4. `POST /live/move`
+
+**Host:** `server.py`
+**Auth:** `X-Api-Key` required
+
+### Request body
+
+```json
+{
+  "fen":       <string>,
+  "uci":       <string>,
+  "player_id": <string | null>
+}
+```
+
+| Field | Type | Constraints |
+|-------|------|-------------|
+| `fen` | `string` | Valid FEN string; non-empty |
+| `uci` | `string` | UCI move (4–5 chars, e.g. `"e2e4"`, `"e7e8q"`) |
+| `player_id` | `string \| null` | Optional player identifier |
+
+### Response
+
+```json
+{
+  "status":        "ok",
+  "hint":          <string>,
+  "engine_signal": <object>,
+  "move_quality":  <string>,
+  "mode":          "LIVE_V1"
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `status` | `string` | Always `"ok"` on success |
+| `hint` | `string` | Human-readable coaching hint; may be empty string `""` |
+| `engine_signal` | `object` | Structured evaluation context (see `EngineSignalDto`) |
+| `move_quality` | `string` | Quality label: `"good"`, `"inaccuracy"`, `"mistake"`, `"blunder"` |
+| `mode` | `string` | Always `"LIVE_V1"` for this endpoint |
+
+### Notes
+- `hint` must be preserved as-is by clients even when empty; clients must not
+  substitute `null` for an empty string.
+- Tested end-to-end by `LiveMoveApiClientIntegrationTest` (Android) and
+  `test_live_move_pipeline.py` (backend).
+
+---
+
+## 5. `/coach` — NOT IMPLEMENTED
 
 The `/coach` endpoint does not exist. Coaching decisions are embedded in
 the `POST /game/finish` response (`coach_action` + `coach_content` fields).
