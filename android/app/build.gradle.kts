@@ -3,13 +3,19 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-// Release signing — populated from environment variables injected by CI.
-// When any variable is absent (local dev, unit-test CI) the signingConfig is
-// skipped and Gradle produces app-release-unsigned.apk as before.
-val releaseKeystoreFile: String? = System.getenv("KEYSTORE_FILE")
-val releaseKeyAlias: String? = System.getenv("KEY_ALIAS")
-val releaseKeyPassword: String? = System.getenv("KEY_PASSWORD")
-val releaseStorePassword: String? = System.getenv("STORE_PASSWORD")
+// Release signing — read from Gradle properties (MYAPP_UPLOAD_*).
+// Local dev: set real values in ~/.gradle/gradle.properties (never committed).
+// CI: the workflow appends real values to android/gradle.properties before build.
+// Empty placeholder values in android/gradle.properties resolve to null here,
+// so the signingConfig block is skipped and Gradle produces an unsigned APK.
+val releaseKeystoreFile: String? =
+    (findProperty("MYAPP_UPLOAD_STORE_FILE") as String?).takeIf { !it.isNullOrBlank() }
+val releaseKeyAlias: String? =
+    (findProperty("MYAPP_UPLOAD_KEY_ALIAS") as String?).takeIf { !it.isNullOrBlank() }
+val releaseKeyPassword: String? =
+    (findProperty("MYAPP_UPLOAD_KEY_PASSWORD") as String?).takeIf { !it.isNullOrBlank() }
+val releaseStorePassword: String? =
+    (findProperty("MYAPP_UPLOAD_STORE_PASSWORD") as String?).takeIf { !it.isNullOrBlank() }
 val hasReleaseSigningConfig: Boolean = listOf(
     releaseKeystoreFile, releaseKeyAlias, releaseKeyPassword, releaseStorePassword,
 ).all { it != null }

@@ -261,6 +261,25 @@ jobs:
             echo "available=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # Append signing properties to gradle.properties so Gradle picks them up
+      # via findProperty(). Secrets are passed as env vars (GitHub masks them in
+      # logs); the keystore path is a derived value, not a secret.
+      # Skipped entirely when the keystore was not decoded (no KEYSTORE_BASE64).
+      - name: Write signing properties
+        if: steps.keystore.outputs.available == 'true'
+        shell: bash
+        env:
+          SIGNING_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+        run: |
+          {
+            echo "MYAPP_UPLOAD_STORE_FILE=${{ steps.keystore.outputs.path }}"
+            echo "MYAPP_UPLOAD_KEY_ALIAS=$SIGNING_KEY_ALIAS"
+            echo "MYAPP_UPLOAD_KEY_PASSWORD=$SIGNING_KEY_PASSWORD"
+            echo "MYAPP_UPLOAD_STORE_PASSWORD=$SIGNING_STORE_PASSWORD"
+          } >> android/gradle.properties
+
       # COACH_API_BASE is a plain URL (visible in the APK — not a secret).
       # Pass it via vars.COACH_API_BASE (GitHub Actions variable, not secret).
       # COACH_API_KEY is semi-public once in the APK; it is a rate-limit shield
@@ -271,10 +290,6 @@ jobs:
         env:
           COACH_API_BASE: ${{ vars.COACH_API_BASE }}
           COACH_API_KEY: ${{ secrets.COACH_API_KEY }}
-          KEYSTORE_FILE: ${{ steps.keystore.outputs.path }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
         run: ./gradlew assembleRelease --no-daemon
 
       - name: Upload release APK
