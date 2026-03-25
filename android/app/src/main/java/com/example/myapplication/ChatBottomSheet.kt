@@ -74,6 +74,13 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
      */
     private var moveCount: Int = 0
 
+    /**
+     * Optional seed prompt injected by [TrainingSessionBottomSheet].
+     * When non-null, it is auto-submitted as the first user turn instead of
+     * showing the generic greeting.
+     */
+    private var seedPrompt: String? = null
+
     private val sessionStore = ChatSessionStore(maxMessages = 50)
     private val chatAdapter = ChatAdapter()
 
@@ -103,6 +110,7 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
         private const val ARG_PLAYER_CONFIDENCE = "arg_player_confidence"
         private const val ARG_PAST_MISTAKES = "arg_past_mistakes"
         private const val ARG_MOVE_COUNT = "arg_move_count"
+        private const val ARG_SEED_PROMPT = "arg_seed_prompt"
         private const val KEY_MSG_ROLES = "chat_msg_roles"
         private const val KEY_MSG_TEXTS = "chat_msg_texts"
 
@@ -126,6 +134,7 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
             playerProfile: PlayerProfileDto? = null,
             pastMistakes: List<String>? = null,
             moveCount: Int = 0,
+            seedPrompt: String? = null,
         ): ChatBottomSheet {
             val fragment = ChatBottomSheet()
             val args = Bundle()
@@ -137,6 +146,7 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
             }
             pastMistakes?.let { args.putStringArrayList(ARG_PAST_MISTAKES, ArrayList(it)) }
             args.putInt(ARG_MOVE_COUNT, moveCount)
+            seedPrompt?.let { args.putString(ARG_SEED_PROMPT, it) }
             fragment.arguments = args
             return fragment
         }
@@ -168,6 +178,7 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
         }
         pastMistakes = arguments?.getStringArrayList(ARG_PAST_MISTAKES)?.toList()
         moveCount = arguments?.getInt(ARG_MOVE_COUNT, 0) ?: 0
+        seedPrompt = arguments?.getString(ARG_SEED_PROMPT)
         isCancelable = true
     }
 
@@ -226,7 +237,13 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
             }
             scrollToBottom()
         } else {
-            appendAssistant("Hi! Ask me about the current position, strategy, or your recent mistakes.")
+            val seed = seedPrompt
+            if (seed != null) {
+                appendUser(seed)
+                sendToBackend(seed)
+            } else {
+                appendAssistant("Hi! Ask me about the current position, strategy, or your recent mistakes.")
+            }
         }
 
         sendBtn.setOnClickListener {

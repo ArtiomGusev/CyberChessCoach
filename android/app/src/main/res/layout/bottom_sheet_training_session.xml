@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="#0B0F14"
+    android:paddingStart="24dp"
+    android:paddingEnd="24dp"
+    android:paddingTop="16dp"
+    android:paddingBottom="32dp">
+
+    <!-- Drag handle -->
+    <View
+        android:layout_width="40dp"
+        android:layout_height="4dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginBottom="16dp"
+        android:background="#33FFFFFF"/>
+
+    <!-- Header -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="TRAINING SESSION"
+        android:textColor="#00FFFF"
+        android:textSize="14sp"
+        android:letterSpacing="0.1"
+        android:textStyle="bold"
+        android:typeface="monospace"
+        android:layout_marginBottom="20dp"/>
+
+    <!-- Topic -->
+    <TextView
+        android:id="@+id/txtTrainingTopic"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="#CCCCCC"
+        android:textSize="14sp"
+        android:typeface="monospace"
+        android:layout_marginBottom="8dp"/>
+
+    <!-- Exercise type -->
+    <TextView
+        android:id="@+id/txtTrainingExerciseType"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="#CCCCCC"
+        android:textSize="14sp"
+        android:typeface="monospace"
+        android:layout_marginBottom="12dp"/>
+
+    <!-- Difficulty label -->
+    <TextView
+        android:id="@+id/txtTrainingDifficultyLabel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="#888888"
+        android:textSize="12sp"
+        android:typeface="monospace"
+        android:layout_marginBottom="4dp"/>
+
+    <!-- Difficulty bar -->
+    <ProgressBar
+        android:id="@+id/progressTrainingDifficulty"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="8dp"
+        android:max="100"
+        android:progress="50"
+        android:progressTint="#00FFFF"
+        android:layout_marginBottom="24dp"/>
+
+    <!-- Start Training button -->
+    <Button
+        android:id="@+id/btnStartTrainingSession"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:text="START TRAINING"
+        android:textColor="#000000"
+        android:backgroundTint="#00FFFF"
+        android:textAllCaps="true"
+        android:insetTop="0dp"
+        android:insetBottom="0dp"/>
+
+</LinearLayout>

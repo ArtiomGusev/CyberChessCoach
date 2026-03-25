@@ -101,6 +101,17 @@ class GameSummaryBottomSheet : BottomSheetDialogFragment() {
         /** Convert difficulty 0.0–1.0 to ProgressBar integer (0–100). */
         fun difficultyProgress(difficulty: Float): Int =
             (difficulty.coerceIn(0f, 1f) * 100f).toInt()
+
+        /**
+         * Map a raw [learningStatus] string to a user-visible indicator label.
+         *
+         *  - "safe_mode" → "⏸ Tracking paused"  (SECA SAFE_MODE active)
+         *  - any other non-empty value → "✓ Progress saved"
+         */
+        fun learningStatusLabel(status: String): String = when (status.lowercase()) {
+            "safe_mode" -> "⏸ Tracking paused"
+            else        -> "✓ Progress saved"
+        }
     }
 
     /** Injected in [newInstance] path; set by [MainActivity] before showing. */
@@ -138,7 +149,7 @@ class GameSummaryBottomSheet : BottomSheetDialogFragment() {
         // ── P3-B: learning status indicator ───────────────────────────────────
         val txtLearningStatus = view.findViewById<TextView>(R.id.txtLearningStatus)
         if (!learningStatus.isNullOrEmpty()) {
-            txtLearningStatus.text = "✓ Progress saved"
+            txtLearningStatus.text = learningStatusLabel(learningStatus)
             txtLearningStatus.visibility = View.VISIBLE
         }
 
@@ -162,11 +173,12 @@ class GameSummaryBottomSheet : BottomSheetDialogFragment() {
             } catch (_: Exception) { /* malformed JSON — skip silently */ }
         }
 
-        // ── Persist rating to SharedPreferences (Gap 6) ───────────────────────
+        // ── Persist rating + confidence to SharedPreferences (Gap 6 / P3-A) ──
         requireContext()
             .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putFloat(PREF_RATING, rating)
+            .putFloat(MainActivity.PREF_CONFIDENCE, confidence)
             .apply()
 
         // ── Fetch training recommendation: curriculum first, next-training fallback ──

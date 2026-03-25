@@ -101,6 +101,7 @@ class MainActivity : AppCompatActivity() {
         val btnUndo = findViewById<Button>(R.id.btnUndo)
         val btnChat = findViewById<Button>(R.id.btnChat)
         val btnGameHistory = findViewById<Button>(R.id.btnGameHistory)
+        val btnTraining = findViewById<Button>(R.id.btnTraining)
         val btnChangePassword = findViewById<Button>(R.id.btnChangePassword)
         val btnLogout = findViewById<Button>(R.id.btnLogout)
 
@@ -167,6 +168,26 @@ class MainActivity : AppCompatActivity() {
             sheet.show(supportFragmentManager, "GameHistoryBottomSheet")
         }
 
+        btnTraining.setOnClickListener {
+            drawerLayout.closeDrawer(GravityCompat.END)
+            lifecycleScope.launch {
+                when (val r = gameApiClient.getNextCurriculum(currentPlayerId)) {
+                    is ApiResult.Success -> {
+                        if (!supportFragmentManager.isStateSaved) {
+                            TrainingSessionBottomSheet
+                                .newInstance(r.data)
+                                .show(supportFragmentManager, "TrainingSessionBottomSheet")
+                        }
+                    }
+                    else -> Toast.makeText(
+                        this@MainActivity,
+                        "Training unavailable — try again later",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            }
+        }
+
         btnChangePassword.setOnClickListener {
             drawerLayout.closeDrawer(GravityCompat.END)
             showChangePasswordDialog()
@@ -198,6 +219,7 @@ class MainActivity : AppCompatActivity() {
                         txtRatingHeader.text = "Rating: %.0f".format(r.data.rating)
                         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
                             .putFloat(PREF_RATING, r.data.rating)
+                            .putFloat(PREF_CONFIDENCE, r.data.confidence)
                             .apply()
                         val tags = formatWeaknessTags(r.data.skillVector)
                         if (tags.isNotEmpty()) {
@@ -316,6 +338,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         const val PREFS_NAME = "chesscoach_prefs"
         const val PREF_RATING = "last_rating"
+        const val PREF_CONFIDENCE = "last_confidence"
         const val PREF_CURRICULUM_TOPIC = "curriculum_topic"
         const val PREF_CURRICULUM_DIFFICULTY = "curriculum_difficulty"
         const val PREF_CURRICULUM_EXERCISE_TYPE = "curriculum_exercise_type"
@@ -401,9 +424,18 @@ class MainActivity : AppCompatActivity() {
         val boardSnapshot = chessBoard.exportFEN()
         val currentMoveCount = viewModel.moveCount
 
-        // Build player context from the last completed game, if available.
-        val profile = lastGameFinishResponse?.let {
+        // Build player context: prefer live game result, fall back to cached prefs.
+        val profile: PlayerProfileDto? = lastGameFinishResponse?.let {
             PlayerProfileDto(rating = it.newRating, confidence = it.confidence)
+        } ?: run {
+            val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            val cachedRating = prefs.getFloat(PREF_RATING, -1f)
+            if (cachedRating >= 0f) {
+                PlayerProfileDto(
+                    rating = cachedRating,
+                    confidence = prefs.getFloat(PREF_CONFIDENCE, 0f).coerceAtLeast(0f),
+                )
+            } else null
         }
         val mistakes = lastGameFinishResponse?.coachAction?.weakness?.let { listOf(it) }
 

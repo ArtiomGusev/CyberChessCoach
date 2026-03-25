@@ -33,6 +33,10 @@ import org.junit.Test
  * 18.  BUNDLE_ARGS_NULL_COACH_ACTION:    GameFinishResponse with null weakness/reason doesn't crash.
  * 19.  BUNDLE_ARGS_BLANK_DESCRIPTION:    coachContent description can be empty.
  * 20.  BUNDLE_FULL_RESPONSE_PARSES:      Full GameFinishResponse produces expected formatted strings.
+ * 21.  STATUS_SAFE_MODE:                learningStatusLabel "safe_mode" → "⏸ Tracking paused".
+ * 22.  STATUS_STORED:                   learningStatusLabel "stored" → "✓ Progress saved".
+ * 23.  STATUS_OTHER:                    learningStatusLabel any other value → "✓ Progress saved".
+ * 24.  STATUS_CASE_INSENSITIVE:         learningStatusLabel "SAFE_MODE" treated same as "safe_mode".
  */
 class GameSummaryBottomSheetTest {
 
@@ -214,5 +218,31 @@ class GameSummaryBottomSheetTest {
         assertEquals(85,                GameSummaryBottomSheet.confidenceProgress(resp.confidence))
         assertEquals("DRILL",           GameSummaryBottomSheet.actionBadgeLabel(resp.coachAction.type))
         assertEquals("Work on tactics", resp.coachContent.title)
+    }
+
+    // ------------------------------------------------------------------
+    // 21–24  learningStatusLabel (P3-B)
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `STATUS_SAFE_MODE - safe_mode returns tracking paused label`() {
+        assertEquals("⏸ Tracking paused", GameSummaryBottomSheet.learningStatusLabel("safe_mode"))
+    }
+
+    @Test
+    fun `STATUS_STORED - stored returns progress saved label`() {
+        assertEquals("✓ Progress saved", GameSummaryBottomSheet.learningStatusLabel("stored"))
+    }
+
+    @Test
+    fun `STATUS_OTHER - arbitrary status returns progress saved label`() {
+        assertEquals("✓ Progress saved", GameSummaryBottomSheet.learningStatusLabel("active"))
+        assertEquals("✓ Progress saved", GameSummaryBottomSheet.learningStatusLabel("complete"))
+    }
+
+    @Test
+    fun `STATUS_CASE_INSENSITIVE - SAFE_MODE uppercase treated same as safe_mode`() {
+        assertEquals("⏸ Tracking paused", GameSummaryBottomSheet.learningStatusLabel("SAFE_MODE"))
+        assertEquals("⏸ Tracking paused", GameSummaryBottomSheet.learningStatusLabel("Safe_Mode"))
     }
 }

@@ -24,7 +24,8 @@ import org.junit.Test
  *  CACHE_KEY_TOPIC        PREF_CURRICULUM_TOPIC constant is non-empty.
  *  CACHE_KEY_DIFF         PREF_CURRICULUM_DIFFICULTY constant is non-empty.
  *  CACHE_KEY_TYPE         PREF_CURRICULUM_EXERCISE_TYPE constant is non-empty.
- *  CACHE_KEY_DISTINCT     all three pref key constants are distinct.
+ *  CACHE_KEY_CONFIDENCE   PREF_CONFIDENCE constant is non-empty.
+ *  CACHE_KEY_DISTINCT     all three curriculum pref key constants are distinct.
  */
 class CurriculumCacheTest {
 
@@ -120,6 +121,11 @@ class CurriculumCacheTest {
     @Test
     fun `CACHE_KEY_TYPE - PREF_CURRICULUM_EXERCISE_TYPE constant is non-empty`() {
         assertTrue(MainActivity.PREF_CURRICULUM_EXERCISE_TYPE.isNotEmpty())
+    }
+
+    @Test
+    fun `CACHE_KEY_CONFIDENCE - PREF_CONFIDENCE constant is non-empty`() {
+        assertTrue(MainActivity.PREF_CONFIDENCE.isNotEmpty())
     }
 
     @Test
