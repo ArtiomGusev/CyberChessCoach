@@ -51,6 +51,7 @@ from llm.seca.skill.pipeline import SkillPipeline
 from llm.seca.world_model.safe_stub import SafeWorldModel
 from llm.seca.explainer.safe_explainer import SafeExplainer
 from llm.seca.safety.freeze import enforce
+from llm.seca.runtime.safe_mode import SAFE_MODE
 from llm.seca.coach.chat_pipeline import (
     generate_chat_reply,
     ChatTurn as _ChatPipelineTurn,
@@ -65,6 +66,7 @@ from llm.seca.storage.repo import (
 
 logger = logging.getLogger(__name__)
 logger.info("Running server from: %s", __file__)
+logger.info("SECA safe_mode=%s", SAFE_MODE)
 
 load_dotenv()
 
@@ -618,6 +620,23 @@ def build_engine_signal(req: AnalyzeRequest):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/seca/status")
+def seca_status():
+    """Return SECA runtime safety flags.
+
+    Open endpoint (no auth): readable by Android at cold-start so the client
+    can confirm safe_mode is active before sending any coaching requests.
+    Always ``safe_mode: true`` in the current release; bandit training and
+    neural policy updates are hard-disabled via SAFE_MODE = True in
+    ``llm/seca/runtime/safe_mode.py``.
+    """
+    return {
+        "safe_mode": SAFE_MODE,
+        "bandit_enabled": not SAFE_MODE,
+        "version": "1.0",
+    }
 
 
 @app.get("/debug/engine")

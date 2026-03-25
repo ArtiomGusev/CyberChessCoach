@@ -80,6 +80,19 @@ class MainActivity : AppCompatActivity() {
             )
         authApiClient = HttpAuthApiClient(baseUrl = BuildConfig.COACH_API_BASE)
 
+        // Verify SECA safe_mode at cold-start — fire-and-forget, no UI update.
+        lifecycleScope.launch {
+            when (val r = gameApiClient.getSecaStatus()) {
+                is ApiResult.Success -> {
+                    Log.d("SECA", "seca/status: safe_mode=${r.data.safeModeEnabled} bandit_enabled=${r.data.banditEnabled} version=${r.data.version}")
+                    if (!r.data.safeModeEnabled) {
+                        Log.w("SECA", "WARNING: backend reports safe_mode=false — bandit training may be active")
+                    }
+                }
+                else -> Log.d("SECA", "seca/status unavailable (${r::class.simpleName})")
+            }
+        }
+
         setContentView(R.layout.activity_main)
 
         Log.d("AI_TEST", "MainActivity started")

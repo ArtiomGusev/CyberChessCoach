@@ -49,6 +49,18 @@ interface GameApiClient {
      * do not need to override this method.
      */
     suspend fun getGameHistory(): ApiResult<List<GameHistoryItem>> = ApiResult.HttpError(501)
+
+    /**
+     * GET /seca/status — open endpoint, no auth required.
+     *
+     * Returns SECA runtime safety flags. Called at cold-start to confirm that
+     * [SecaStatusDto.safeModeEnabled] is true before sending coaching requests.
+     * Logs a warning if the backend reports safe_mode=false.
+     *
+     * Default implementation returns [ApiResult.HttpError(501)] so test fakes
+     * do not need to override this method.
+     */
+    suspend fun getSecaStatus(): ApiResult<SecaStatusDto> = ApiResult.HttpError(501)
 }
 
 // ── HTTP implementation ───────────────────────────────────────────────────────
@@ -190,6 +202,24 @@ class HttpGameApiClient(
             }
         }
 
+    override suspend fun getSecaStatus(): ApiResult<SecaStatusDto> =
+        withContext(Dispatchers.IO) {
+            try {
+                val conn = openGetConnection("$baseUrl/seca/status")
+                val code = conn.responseCode
+                if (code == 200) {
+                    val text = conn.inputStream.bufferedReader().readText()
+                    ApiResult.Success(parseSecaStatusResponse(text))
+                } else {
+                    ApiResult.HttpError(code)
+                }
+            } catch (e: SocketTimeoutException) {
+                ApiResult.Timeout
+            } catch (e: Exception) {
+                ApiResult.NetworkError(e)
+            }
+        }
+
     private fun openConnection(urlStr: String): HttpURLConnection =
         (URL(urlStr).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
@@ -245,6 +275,15 @@ class HttpGameApiClient(
                 createdAt = g.optString("created_at", ""),
             )
         }
+    }
+
+    private fun parseSecaStatusResponse(text: String): SecaStatusDto {
+        val json = JSONObject(text)
+        return SecaStatusDto(
+            safeModeEnabled = json.optBoolean("safe_mode", true),
+            banditEnabled   = json.optBoolean("bandit_enabled", false),
+            version         = json.optString("version", ""),
+        )
     }
 
     private fun parseFinishResponse(text: String): GameFinishResponse {

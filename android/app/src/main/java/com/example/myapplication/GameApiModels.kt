@@ -1,5 +1,23 @@
 package com.example.myapplication
 
+// ── /seca/status ─────────────────────────────────────────────────────────────
+
+/**
+ * Response from GET /seca/status.
+ *
+ * Open endpoint (no auth). Android reads this at cold-start to confirm that
+ * the backend is running in SAFE_MODE before sending coaching requests.
+ *
+ * [safeModeEnabled]  True when SECA bandit/policy training is disabled.
+ * [banditEnabled]    True only when unsafe bandit training is active (must be false).
+ * [version]          SECA runtime version string (e.g. "1.0").
+ */
+data class SecaStatusDto(
+    val safeModeEnabled: Boolean,
+    val banditEnabled: Boolean,
+    val version: String,
+)
+
 // ── /curriculum/next ─────────────────────────────────────────────────────────
 
 /**
