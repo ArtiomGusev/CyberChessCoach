@@ -286,4 +286,54 @@ class CoachApiClientIntegrationTest {
         assertNull("Authorization header must be absent when tokenProvider is null",
             server.takeRequest(10, TimeUnit.SECONDS)!!.getHeader("Authorization"))
     }
+
+    // ---------------------------------------------------------------------------
+    // 20–24  submitFeedback — POST /game/coach-feedback
+    // ---------------------------------------------------------------------------
+
+    @Test
+    fun `INT_FEEDBACK_PATH - submitFeedback posts to slash game slash coach-feedback`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"status":"recorded"}"""))
+        client().submitFeedback(startingFen, isHelpful = true, token = null)
+        assertEquals("/game/coach-feedback", server.takeRequest(10, TimeUnit.SECONDS)!!.path)
+    }
+
+    @Test
+    fun `INT_FEEDBACK_METHOD - submitFeedback uses HTTP POST`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"status":"recorded"}"""))
+        client().submitFeedback(startingFen, isHelpful = false, token = null)
+        assertEquals("POST", server.takeRequest(10, TimeUnit.SECONDS)!!.method)
+    }
+
+    @Test
+    fun `INT_FEEDBACK_BODY - session_fen and is_helpful serialised in body`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"status":"recorded"}"""))
+        client().submitFeedback(startingFen, isHelpful = true, token = null)
+        val body = JSONObject(server.takeRequest(10, TimeUnit.SECONDS)!!.body.readUtf8())
+        assertEquals(startingFen, body.getString("session_fen"))
+        assertTrue("is_helpful must be true", body.getBoolean("is_helpful"))
+    }
+
+    @Test
+    fun `INT_FEEDBACK_BEARER - Authorization Bearer sent when token is non-null`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"status":"recorded"}"""))
+        client(token = "feedback-token").submitFeedback(startingFen, isHelpful = true, token = "feedback-token")
+        assertEquals("Bearer feedback-token",
+            server.takeRequest(10, TimeUnit.SECONDS)!!.getHeader("Authorization"))
+    }
+
+    @Test
+    fun `INT_FEEDBACK_HTTP_200 - 200 response returns ApiResult Success`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"status":"recorded"}"""))
+        val result = client().submitFeedback(startingFen, isHelpful = false, token = null)
+        assertTrue("Expected Success, got: $result", result is ApiResult.Success<*>)
+    }
+
+    @Test
+    fun `INT_FEEDBACK_HTTP_401 - 401 response returns ApiResult HttpError`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(401).setBody("""{"detail":"Unauthorized"}"""))
+        val result = client().submitFeedback(startingFen, isHelpful = true, token = null)
+        assertTrue("Expected HttpError, got: $result", result is ApiResult.HttpError)
+        assertEquals(401, (result as ApiResult.HttpError).code)
+    }
 }

@@ -2,7 +2,6 @@ package com.example.myapplication
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import com.example.myapplication.RetryUtil.withRetry
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
