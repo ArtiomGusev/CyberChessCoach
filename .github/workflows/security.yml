@@ -82,7 +82,7 @@ jobs:
       - name: Run Trivy misconfiguration scan
         id: trivy-misconfig
         continue-on-error: true
-        uses: aquasecurity/trivy-action@0.34.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           scan-type: fs
           scan-ref: .
@@ -123,7 +123,7 @@ jobs:
           cp llm/requirements.txt tmp_logs/trivy-runtime/requirements.txt
 
       - name: Run Trivy runtime vulnerability scan
-        uses: aquasecurity/trivy-action@0.34.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           scan-type: fs
           scan-ref: tmp_logs/trivy-runtime
