@@ -57,6 +57,24 @@
                     android:alpha="0.3"
                     android:layerType="software"/>
 
+                <!-- NEXT TRAINING CHIP (shown when a curriculum rec is cached) -->
+                <TextView
+                    android:id="@+id/txtNextTrainingChip"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text=""
+                    android:textColor="#00FF88"
+                    android:textSize="11sp"
+                    android:typeface="monospace"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="2dp"
+                    android:layout_marginStart="16dp"
+                    android:layout_marginTop="4dp"
+                    android:background="#1A00FF88"
+                    android:visibility="gone"/>
+
                 <!-- SCORE + CATEGORY BADGES (hidden until first AI move) -->
                 <LinearLayout
                     android:id="@+id/scoreRow"
@@ -154,7 +172,18 @@
             android:textColor="#00FFFF"
             android:textSize="14sp"
             android:typeface="monospace"
-            android:paddingBottom="16dp"/>
+            android:paddingBottom="4dp"/>
+
+        <TextView
+            android:id="@+id/txtWeaknessTags"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textColor="#888888"
+            android:textSize="11sp"
+            android:typeface="monospace"
+            android:paddingBottom="12dp"
+            android:visibility="gone"/>
 
         <TextView
             android:layout_width="match_parent"

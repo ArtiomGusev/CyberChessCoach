@@ -43,6 +43,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var authApiClient: AuthApiClient
     private lateinit var authRepo: AuthRepository
     private lateinit var txtRatingHeader: TextView
+    private lateinit var txtWeaknessTags: TextView
+    private lateinit var txtNextTrainingChip: TextView
     private var currentPlayerId: String = "demo"
     private val moveClassifications = mutableListOf<MistakeClassification>()
 
@@ -93,6 +95,8 @@ class MainActivity : AppCompatActivity() {
         txtMistakeCategory = findViewById(R.id.txtMistakeCategory)
 
         txtRatingHeader = findViewById(R.id.txtRatingHeader)
+        txtWeaknessTags = findViewById(R.id.txtWeaknessTags)
+        txtNextTrainingChip = findViewById(R.id.txtNextTrainingChip)
         val btnReset = findViewById<Button>(R.id.btnReset)
         val btnUndo = findViewById<Button>(R.id.btnUndo)
         val btnChat = findViewById<Button>(R.id.btnChat)
@@ -172,15 +176,20 @@ class MainActivity : AppCompatActivity() {
             performLogout()
         }
 
-        // Show persisted rating if available (updated below if /auth/me succeeds)
-        val storedRating = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-            .getFloat(PREF_RATING, -1f)
+        // Show persisted rating and cached curriculum chip if available.
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val storedRating = prefs.getFloat(PREF_RATING, -1f)
         if (storedRating >= 0f) {
             txtRatingHeader.text = "Rating: %.0f".format(storedRating)
         }
+        val cachedTopic = prefs.getString(PREF_CURRICULUM_TOPIC, null)
+        val cachedExType = prefs.getString(PREF_CURRICULUM_EXERCISE_TYPE, null)
+        if (cachedTopic != null) {
+            txtNextTrainingChip.text = formatCurriculumChip(cachedTopic, cachedExType)
+            txtNextTrainingChip.visibility = View.VISIBLE
+        }
 
-        // Sync profile rating from server at cold-start so the header is
-        // populated even before the first game ends.
+        // Sync full profile from server at cold-start (rating + skill_vector for weakness tags).
         val authToken = authRepo.getToken()
         if (authToken != null) {
             lifecycleScope.launch {
@@ -190,6 +199,11 @@ class MainActivity : AppCompatActivity() {
                         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
                             .putFloat(PREF_RATING, r.data.rating)
                             .apply()
+                        val tags = formatWeaknessTags(r.data.skillVector)
+                        if (tags.isNotEmpty()) {
+                            txtWeaknessTags.text = tags
+                            txtWeaknessTags.visibility = View.VISIBLE
+                        }
                     }
                     is ApiResult.HttpError -> Log.d("AUTH", "me() HTTP ${r.code}")
                     is ApiResult.NetworkError -> Log.d("AUTH", "me() network error", r.cause)
@@ -302,6 +316,35 @@ class MainActivity : AppCompatActivity() {
     companion object {
         const val PREFS_NAME = "chesscoach_prefs"
         const val PREF_RATING = "last_rating"
+        const val PREF_CURRICULUM_TOPIC = "curriculum_topic"
+        const val PREF_CURRICULUM_DIFFICULTY = "curriculum_difficulty"
+        const val PREF_CURRICULUM_EXERCISE_TYPE = "curriculum_exercise_type"
+
+        /**
+         * Format top [maxTags] skill-vector entries as weakness tag labels.
+         *
+         * Entries are sorted by descending weakness score. Tags with a score ≥ 0.5
+         * are marked "↑" (high weakness); those below 0.5 are marked "↓".
+         * Returns an empty string when [skillVector] is empty.
+         */
+        fun formatWeaknessTags(skillVector: Map<String, Float>, maxTags: Int = 3): String {
+            val sorted = skillVector.entries.sortedByDescending { it.value }.take(maxTags)
+            if (sorted.isEmpty()) return ""
+            return sorted.joinToString(" · ") { (k, v) ->
+                val arrow = if (v >= 0.5f) "↑" else "↓"
+                "$arrow ${k.replace('_', ' ')}"
+            }
+        }
+
+        /**
+         * Format the cached curriculum recommendation as a training chip label.
+         *
+         * Example: "↳ DRILL: endgame technique"
+         */
+        fun formatCurriculumChip(topic: String, exerciseType: String?): String {
+            val type = exerciseType?.uppercase() ?: "TRAIN"
+            return "↳ $type: ${topic.replace('_', ' ')}"
+        }
 
         /**
          * Compute weakness rates from the accumulated move classifications.

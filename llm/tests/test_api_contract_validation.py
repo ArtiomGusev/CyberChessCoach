@@ -528,7 +528,74 @@ class TestGameFinishContractSchema:
 
 
 # ---------------------------------------------------------------------------
-# 4. Documented mismatches
+# 4. GET /auth/me — skill_vector field (P2-A contract)
+# ---------------------------------------------------------------------------
+
+
+class TestAuthMeContractSchema:
+    """GET /auth/me response must include a 'skill_vector' dict field (P2-A)."""
+
+    def _call_me(self, skill_vector_json: str = "{}"):
+        from types import SimpleNamespace
+
+        from llm.seca.auth.router import me
+
+        player = SimpleNamespace(
+            id="player-123",
+            email="test@chess.com",
+            rating=1450.0,
+            confidence=0.65,
+            skill_vector_json=skill_vector_json,
+        )
+        return me(player=player)
+
+    def test_me_response_has_skill_vector_field(self):
+        """skill_vector must be present in the /auth/me response."""
+        result = self._call_me()
+        assert "skill_vector" in result, (
+            "GET /auth/me must include 'skill_vector' — "
+            "Android client reads it to display weakness tags."
+        )
+
+    def test_skill_vector_is_dict(self):
+        result = self._call_me()
+        _assert_dict(result["skill_vector"], "skill_vector")
+
+    def test_skill_vector_values_are_numeric(self):
+        """All values in skill_vector must be numeric (float-compatible)."""
+        result = self._call_me('{"tactics": 0.5, "endgame": 0.3}')
+        for key, val in result["skill_vector"].items():
+            _assert_float(val, f"skill_vector.{key}")
+
+    def test_skill_vector_empty_when_no_history(self):
+        """Empty JSON object yields an empty dict, not an error."""
+        result = self._call_me("{}")
+        assert result["skill_vector"] == {}
+
+    def test_skill_vector_malformed_json_returns_empty(self):
+        """Malformed skill_vector_json must not raise; returns empty dict."""
+        result = self._call_me("not-valid-json")
+        assert result["skill_vector"] == {}, (
+            "Malformed skill_vector_json must degrade gracefully to empty dict."
+        )
+
+    def test_me_still_returns_core_fields(self):
+        """P2-A addition must not drop existing fields: id, email, rating, confidence."""
+        result = self._call_me()
+        for field in ("id", "email", "rating", "confidence"):
+            assert field in result, f"skill_vector addition must preserve field '{field}'"
+
+    def test_non_numeric_skill_vector_values_are_filtered(self):
+        """String values in skill_vector_json must be silently filtered out."""
+        result = self._call_me('{"tactics": 0.6, "stale": "not-a-number"}')
+        assert "stale" not in result["skill_vector"], (
+            "Non-numeric entries must be excluded from skill_vector response."
+        )
+        assert "tactics" in result["skill_vector"]
+
+
+# ---------------------------------------------------------------------------
+# 6. Documented mismatches
 # ---------------------------------------------------------------------------
 
 

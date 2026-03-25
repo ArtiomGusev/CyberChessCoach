@@ -272,11 +272,16 @@ class HttpAuthApiClient(
 
     private fun parseMeResponse(body: String): MeResponse {
         val root = JSONObject(body)
+        val svJson = root.optJSONObject("skill_vector") ?: JSONObject()
+        val skillVector = buildMap<String, Float> {
+            svJson.keys().forEach { key -> put(key, svJson.optDouble(key, 0.0).toFloat()) }
+        }
         return MeResponse(
             id = root.optString("id", ""),
             email = root.optString("email", ""),
             rating = root.optDouble("rating", 0.0).toFloat(),
             confidence = root.optDouble("confidence", 0.0).toFloat(),
+            skillVector = skillVector,
         )
     }
 }

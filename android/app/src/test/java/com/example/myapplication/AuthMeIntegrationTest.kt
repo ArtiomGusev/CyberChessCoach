@@ -58,6 +58,18 @@ class AuthMeIntegrationTest {
   "rating": 1482.5,
   "confidence": 0.68
 }"""
+
+        private const val ME_WITH_SKILL_VECTOR_BODY = """
+{
+  "id": "player-abc-123",
+  "email": "alice@chess.com",
+  "rating": 1482.5,
+  "confidence": 0.68,
+  "skill_vector": {
+    "tactics": 0.72,
+    "endgame": 0.45
+  }
+}"""
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -175,5 +187,42 @@ class AuthMeIntegrationTest {
             "GET /auth/me must not send Content-Type, was: $ct",
             ct == null || ct.isEmpty(),
         )
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 11–13  skill_vector (P2-A)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `INT_ME_SKILL_VECTOR_PARSED - skill_vector entries deserialised to map`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody(ME_WITH_SKILL_VECTOR_BODY))
+        val result = client().me("tok")
+        assertTrue(result is ApiResult.Success<*>)
+        val data = (result as ApiResult.Success<*>).data as MeResponse
+        assertEquals(0.72f, data.skillVector["tactics"] ?: -1f, 0.001f)
+        assertEquals(0.45f, data.skillVector["endgame"] ?: -1f, 0.001f)
+    }
+
+    @Test
+    fun `INT_ME_SKILL_VECTOR_EMPTY - absent skill_vector object yields empty map`() = runBlocking {
+        // ME_OK_BODY has no skill_vector field — client must default to emptyMap().
+        server.enqueue(MockResponse().setResponseCode(200).setBody(ME_OK_BODY))
+        val result = client().me("tok")
+        assertTrue(result is ApiResult.Success<*>)
+        val data = (result as ApiResult.Success<*>).data as MeResponse
+        assertTrue(
+            "Missing skill_vector field must yield empty map, got: ${data.skillVector}",
+            data.skillVector.isEmpty(),
+        )
+    }
+
+    @Test
+    fun `INT_ME_SKILL_VECTOR_MISSING - core fields intact when skill_vector absent`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody(ME_OK_BODY))
+        val result = client().me("tok")
+        assertTrue(result is ApiResult.Success<*>)
+        val data = (result as ApiResult.Success<*>).data as MeResponse
+        assertEquals("player-abc-123", data.id)
+        assertEquals(1482.5f, data.rating, 0.01f)
     }
 }

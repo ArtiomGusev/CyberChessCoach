@@ -46,6 +46,13 @@ data class MeResponse(
     val email: String,
     val rating: Float,
     val confidence: Float,
+    /**
+     * Per-skill weakness scores from the SECA skill tracker.
+     * Keys are skill names (e.g. "tactics", "endgame"); values are 0.0–1.0
+     * where higher means more weakness in that area.
+     * Empty when the player has no game history yet.
+     */
+    val skillVector: Map<String, Float> = emptyMap(),
 )
 
 /**

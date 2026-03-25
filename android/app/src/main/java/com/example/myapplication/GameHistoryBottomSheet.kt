@@ -16,11 +16,26 @@ import java.time.format.DateTimeFormatter
 /**
  * Bottom sheet showing the 20 most recent games for the authenticated player.
  *
- * Data is fetched from GET /game/history (Bearer auth). Shows result, accuracy,
- * rating-after, and date for each game. Falls back to an empty-state message on
- * network error or when no games have been recorded.
+ * Data is fetched from GET /game/history (Bearer auth). Shows a rating sparkline
+ * (when ≥2 rated games exist), result, accuracy, rating-after, and date for each
+ * game. Falls back to an empty-state message on network error or no games.
  */
 class GameHistoryBottomSheet : BottomSheetDialogFragment() {
+
+    companion object {
+        /**
+         * Extract non-null [GameHistoryItem.ratingAfter] values for the sparkline,
+         * returned in chronological order (oldest game first).
+         *
+         * Takes at most the 10 most recent games from [games] (which arrive
+         * newest-first from the server), reverses them to chronological order,
+         * then filters out null ratings.
+         *
+         * Pure function — safe to call from unit tests without Android context.
+         */
+        fun extractSparklineRatings(games: List<GameHistoryItem>): List<Float> =
+            games.take(10).reversed().mapNotNull { it.ratingAfter }
+    }
 
     /** Injected by [MainActivity] before [show] is called. */
     var gameApiClient: GameApiClient? = null
@@ -36,6 +51,7 @@ class GameHistoryBottomSheet : BottomSheetDialogFragment() {
 
         val historyList = view.findViewById<LinearLayout>(R.id.historyList)
         val txtHistoryEmpty = view.findViewById<TextView>(R.id.txtHistoryEmpty)
+        val sparkline = view.findViewById<RatingSparklineView>(R.id.ratingSparkline)
 
         val client = gameApiClient
         if (client == null) {
@@ -50,6 +66,11 @@ class GameHistoryBottomSheet : BottomSheetDialogFragment() {
                     if (games.isEmpty()) {
                         txtHistoryEmpty.visibility = View.VISIBLE
                     } else {
+                        val sparkRatings = extractSparklineRatings(games)
+                        if (sparkRatings.size >= 2) {
+                            sparkline.setRatings(sparkRatings)
+                            sparkline.visibility = View.VISIBLE
+                        }
                         games.forEach { game ->
                             historyList.addView(buildGameRow(game))
                             historyList.addView(buildDivider())

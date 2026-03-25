@@ -179,6 +179,16 @@ class GameSummaryBottomSheet : BottomSheetDialogFragment() {
                 val curriculumResult = client.getNextCurriculum(playerId)
                 if (curriculumResult is ApiResult.Success) {
                     val rec = curriculumResult.data
+
+                    // Persist for the MainActivity chip so the recommendation survives sheet dismissal.
+                    requireContext()
+                        .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                        .edit()
+                        .putString(MainActivity.PREF_CURRICULUM_TOPIC, rec.topic)
+                        .putFloat(MainActivity.PREF_CURRICULUM_DIFFICULTY, rec.difficulty)
+                        .putString(MainActivity.PREF_CURRICULUM_EXERCISE_TYPE, rec.exerciseType)
+                        .apply()
+
                     view.findViewById<TextView>(R.id.txtTrainingTopic).text  = formatTopic(rec.topic)
                     view.findViewById<TextView>(R.id.txtTrainingFormat).text =
                         "Format: ${rec.exerciseType.replaceFirstChar { it.uppercase() }}"

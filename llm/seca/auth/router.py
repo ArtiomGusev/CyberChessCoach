@@ -1,3 +1,4 @@
+import json
 import os
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from sqlalchemy import create_engine, text
@@ -141,11 +142,17 @@ def logout(
 
 @router.get("/me")
 def me(player=Depends(get_current_player)):
+    try:
+        skill_vector = json.loads(player.skill_vector_json or "{}")
+        skill_vector = {k: float(v) for k, v in skill_vector.items() if isinstance(v, (int, float))}
+    except (ValueError, TypeError):
+        skill_vector = {}
     return {
         "id": player.id,
         "email": player.email,
         "rating": player.rating,
         "confidence": player.confidence,
+        "skill_vector": skill_vector,
     }
 
 
