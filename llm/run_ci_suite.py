@@ -52,6 +52,7 @@ TEST_TARGETS = [
     "llm/tests/test_seca_status.py",
     "llm/tests/test_full_loop_integration.py",
     "llm/tests/test_curriculum_next_contract.py",
+    "llm/tests/test_security_hardening.py",
 ]
 
 COVERAGE_TARGETS = [

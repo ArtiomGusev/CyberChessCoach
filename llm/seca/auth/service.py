@@ -1,4 +1,5 @@
 import hashlib
+from datetime import datetime
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session as DBSession
 
@@ -76,6 +77,14 @@ class AuthService:
     def get_player_by_session(self, session_id: str, token: str) -> Player | None:
         session = self.db.query(Session).filter_by(id=session_id).first()
         if not session:
+            return None
+
+        # Defence-in-depth: reject DB sessions whose server-side expiry has passed.
+        # The primary expiry gate is the JWT exp claim (15 min), checked by
+        # decode_token() before this method is called.  This guard catches edge
+        # cases such as clock-skew drift, manually expired sessions, or a valid
+        # JWT referencing a stale DB record after SECRET_KEY rotation.
+        if session.expires_at is not None and session.expires_at < datetime.utcnow():
             return None
 
         token_hash = hashlib.sha256(token.encode()).hexdigest()
