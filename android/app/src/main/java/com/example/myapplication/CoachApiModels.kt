@@ -81,3 +81,16 @@ sealed class ApiResult<out T> {
     data class NetworkError(val cause: Throwable) : ApiResult<Nothing>()
     object Timeout : ApiResult<Nothing>()
 }
+
+/**
+ * Discriminated union for a single Server-Sent Event from POST /chat/stream.
+ *
+ *  - [Chunk]       A partial text fragment to be appended to the assistant message.
+ *  - [Done]        Final event carrying the engine signal and pipeline mode.
+ *  - [StreamError] Server or transport error; [message] describes the failure.
+ */
+sealed class StreamChunk {
+    data class Chunk(val text: String) : StreamChunk()
+    data class Done(val engineSignal: EngineSignalDto?, val mode: String) : StreamChunk()
+    data class StreamError(val message: String) : StreamChunk()
+}

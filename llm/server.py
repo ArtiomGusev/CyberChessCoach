@@ -1,3 +1,5 @@
+import asyncio
+import json
 import logging
 import os
 import shutil
@@ -8,7 +10,7 @@ from functools import lru_cache
 from typing import Literal
 from fastapi import FastAPI, Header, HTTPException, Depends, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
 from llm.seca.shared_limiter import limiter
@@ -906,3 +908,47 @@ def chat(
         "engine_signal": result.engine_signal,
         "mode": result.mode,
     }
+
+
+# ------------------------------------------------------------------
+# Streaming chat endpoint (SSE)
+# ------------------------------------------------------------------
+
+
+@app.post("/chat/stream")
+@limiter.limit("10/minute")
+async def chat_stream(
+    req: ChatRequest,
+    request: Request,
+    _: str = Depends(verify_api_key),
+):
+    """Streaming variant of POST /chat — same pipeline, chunked via Server-Sent Events.
+
+    Emits one SSE event per word of the coaching reply, then a final ``done``
+    event carrying ``engine_signal`` and ``mode``.  Wire format::
+
+        data: {"type": "chunk", "text": "<word> "}\n\n
+        ...
+        data: {"type": "done", "engine_signal": {...}, "mode": "CHAT_V1"}\n\n
+
+    Uses the same deterministic chat_pipeline.generate_chat_reply(); no RL.
+    The pipeline runs in a thread-pool executor so the event loop is not blocked.
+    """
+    turns = [_ChatPipelineTurn(role=t.role, content=t.content) for t in req.messages]
+    result = await asyncio.to_thread(
+        generate_chat_reply,
+        req.fen,
+        turns,
+        req.player_profile,
+        req.past_mistakes,
+        req.move_count,
+    )
+
+    def _generate():
+        words = result.reply.split(" ")
+        for i, word in enumerate(words):
+            text = word if i == len(words) - 1 else word + " "
+            yield f"data: {json.dumps({'type': 'chunk', 'text': text})}\n\n"
+        yield f"data: {json.dumps({'type': 'done', 'engine_signal': result.engine_signal, 'mode': result.mode})}\n\n"
+
+    return StreamingResponse(_generate(), media_type="text/event-stream")

@@ -1,6 +1,9 @@
 package com.example.myapplication
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -40,6 +43,36 @@ interface CoachApiClient {
         pastMistakes: List<String>? = null,
         moveCount: Int? = null,
     ): ApiResult<ChatResponseBody>
+
+    /**
+     * Stream the coaching reply for the current position as Server-Sent Events
+     * from POST /chat/stream.
+     *
+     * Emits [StreamChunk.Chunk] for each text fragment, a single
+     * [StreamChunk.Done] when the server closes the stream, or
+     * [StreamChunk.StreamError] on transport or HTTP failure.
+     *
+     * The default implementation delegates to [chat] and wraps the complete
+     * reply in a single Chunk + Done, so existing test fakes need not override
+     * this method.
+     */
+    fun chatStream(
+        fen: String,
+        messages: List<ChatMessageDto>,
+        playerProfile: PlayerProfileDto? = null,
+        pastMistakes: List<String>? = null,
+        moveCount: Int? = null,
+    ): Flow<StreamChunk> = flow {
+        when (val result = chat(fen, messages, playerProfile, pastMistakes, moveCount)) {
+            is ApiResult.Success -> {
+                emit(StreamChunk.Chunk(result.data.reply))
+                emit(StreamChunk.Done(result.data.engineSignal, "CHAT_V1"))
+            }
+            is ApiResult.HttpError -> emit(StreamChunk.StreamError("HTTP ${result.code}"))
+            is ApiResult.NetworkError -> emit(StreamChunk.StreamError("Network error"))
+            ApiResult.Timeout -> emit(StreamChunk.StreamError("Timeout"))
+        }
+    }
 
     /**
      * POST /game/coach-feedback.
@@ -87,6 +120,7 @@ class HttpCoachApiClient(
         const val DEFAULT_CONNECT_TIMEOUT_MS = 8_000
         const val DEFAULT_READ_TIMEOUT_MS = 15_000
         private const val CHAT_PATH = "/chat"
+        private const val CHAT_STREAM_PATH = "/chat/stream"
         private const val FEEDBACK_PATH = "/game/coach-feedback"
     }
 
@@ -130,6 +164,83 @@ class HttpCoachApiClient(
             }
         }
     }
+
+    override fun chatStream(
+        fen: String,
+        messages: List<ChatMessageDto>,
+        playerProfile: PlayerProfileDto?,
+        pastMistakes: List<String>?,
+        moveCount: Int?,
+    ): Flow<StreamChunk> = channelFlow {
+        withContext(Dispatchers.IO) {
+            try {
+                val url = URL("$baseUrl$CHAT_STREAM_PATH")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.setRequestProperty("Accept", "text/event-stream")
+                conn.setRequestProperty("X-Api-Key", apiKey)
+                tokenProvider?.invoke()?.let { token ->
+                    conn.setRequestProperty("Authorization", "Bearer $token")
+                }
+                conn.doOutput = true
+                conn.connectTimeout = connectTimeoutMs
+                conn.readTimeout = readTimeoutMs
+
+                conn.outputStream.bufferedWriter(Charsets.UTF_8).use {
+                    it.write(buildJson(fen, messages, playerProfile, pastMistakes, moveCount))
+                }
+
+                val code = conn.responseCode
+                if (code != HttpURLConnection.HTTP_OK) {
+                    send(StreamChunk.StreamError("HTTP $code"))
+                    return@withContext
+                }
+
+                conn.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
+                    var line: String?
+                    while (reader.readLine().also { line = it } != null) {
+                        val l = line!!.trim()
+                        if (!l.startsWith("data: ")) continue
+                        parseStreamChunk(l.removePrefix("data: "))?.let { chunk -> send(chunk) }
+                    }
+                }
+            } catch (_: SocketTimeoutException) {
+                send(StreamChunk.StreamError("Timeout"))
+            } catch (e: Exception) {
+                send(StreamChunk.StreamError(e.message ?: "Network error"))
+            }
+        }
+    }
+
+    private fun parseStreamChunk(json: String): StreamChunk? =
+        try {
+            val root = JSONObject(json)
+            when (root.optString("type")) {
+                "chunk" -> StreamChunk.Chunk(root.optString("text", ""))
+                "done" -> {
+                    val signalObj = root.optJSONObject("engine_signal")
+                    val engineSignal = signalObj?.let { sig ->
+                        val evalObj = sig.optJSONObject("evaluation")
+                        val evaluation = evalObj?.let { ev ->
+                            EvaluationDto(
+                                band = ev.optString("band", "").takeIf { it.isNotEmpty() },
+                                side = ev.optString("side", "").takeIf { it.isNotEmpty() },
+                            )
+                        }
+                        EngineSignalDto(
+                            evaluation = evaluation,
+                            phase = sig.optString("phase", "").takeIf { it.isNotEmpty() },
+                        )
+                    }
+                    StreamChunk.Done(engineSignal, root.optString("mode", "CHAT_V1"))
+                }
+                "error" -> StreamChunk.StreamError(root.optString("message", "Server error"))
+                else -> null
+            }
+        } catch (_: Exception) {
+            null
+        }
 
     override suspend fun submitFeedback(
         fen: String,

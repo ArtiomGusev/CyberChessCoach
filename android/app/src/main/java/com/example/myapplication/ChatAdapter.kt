@@ -26,6 +26,13 @@ class ChatAdapter : RecyclerView.Adapter<ChatAdapter.VH>() {
         notifyItemInserted(messages.size - 1)
     }
 
+    fun updateLastMessage(text: String) {
+        if (messages.isEmpty()) return
+        val lastIndex = messages.size - 1
+        messages[lastIndex] = messages[lastIndex].copy(text = text)
+        notifyItemChanged(lastIndex)
+    }
+
     fun clear() {
         val count = messages.size
         messages.clear()

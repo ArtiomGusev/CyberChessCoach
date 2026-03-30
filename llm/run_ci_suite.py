@@ -39,6 +39,7 @@ TEST_TARGETS = [
     "llm/tests/test_explain_schema_validation.py",
     "llm/tests/test_mistake_analytics.py",
     "llm/tests/test_chat_pipeline.py",
+    "llm/tests/test_chat_stream.py",
     "llm/tests/test_live_move_pipeline.py",
     "llm/tests/test_historical_pipeline.py",
     "llm/tests/test_engine_eval_benchmark.py",

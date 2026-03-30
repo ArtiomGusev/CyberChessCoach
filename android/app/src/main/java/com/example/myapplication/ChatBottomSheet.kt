@@ -16,6 +16,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 /**
@@ -334,12 +335,12 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
     // ---------------------------------------------------------------------------
 
     /**
-     * Send the current position and conversation history to [coachApiClient],
-     * display the structured reply, and update the engine context header.
+     * Send the current position and conversation history to [coachApiClient]
+     * via the streaming SSE endpoint, displaying the reply word-by-word as
+     * chunks arrive, then finalising the engine context header on completion.
      *
-     * Falls back to [FALLBACK_REPLY] on any error ([ApiResult.HttpError],
-     * [ApiResult.NetworkError], [ApiResult.Timeout]) or when the backend
-     * returns an empty reply — no crash on missing explanation.
+     * Falls back to [FALLBACK_REPLY] when no text was received before the
+     * stream closed or errored — no crash on missing explanation.
      */
     private fun sendToBackend(@Suppress("UNUSED_PARAMETER") query: String) {
         isStreaming = true
@@ -351,32 +352,40 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
                     ChatMessageDto(role = msg.role, content = msg.text)
                 }
 
-            val (reply, engineSignal) =
-                when (
-                    val result =
-                        coachApiClient.chat(
-                            fen = currentFen ?: STARTING_FEN,
-                            messages = messages,
-                            playerProfile = playerProfile,
-                            pastMistakes = pastMistakes,
-                            moveCount = moveCount.takeIf { it > 0 },
-                        )
-                ) {
-                    is ApiResult.Success -> Pair(result.data.reply, result.data.engineSignal)
-                    is ApiResult.HttpError -> {
-                        // 401 means the JWT has expired server-side; clear the
-                        // stored token and redirect to login so the user can
-                        // re-authenticate without losing their game state.
-                        if (result.code == 401) handleTokenExpiry()
-                        Pair("", null)
-                    }
-                    is ApiResult.NetworkError,
-                    ApiResult.Timeout -> Pair("", null)
-                }
+            // Insert an empty assistant placeholder so the user sees a response
+            // bubble immediately. The adapter is updated in-place as chunks arrive;
+            // the session store is only written once the full reply is assembled.
+            chatAdapter.addMessage(ChatMessage(role = "assistant", text = ""))
+            scrollToBottom()
 
-            val displayReply = reply.takeIf { it.isNotBlank() } ?: FALLBACK_REPLY
-            appendAssistant(displayReply)
-            engineSignal?.let { updateEngineContextHeader(it) }
+            var accumulated = ""
+
+            coachApiClient.chatStream(
+                fen = currentFen ?: STARTING_FEN,
+                messages = messages,
+                playerProfile = playerProfile,
+                pastMistakes = pastMistakes,
+                moveCount = moveCount.takeIf { it > 0 },
+            ).collect { chunk ->
+                when (chunk) {
+                    is StreamChunk.Chunk -> {
+                        accumulated += chunk.text
+                        chatAdapter.updateLastMessage(accumulated)
+                        scrollToBottom()
+                    }
+                    is StreamChunk.Done -> {
+                        chunk.engineSignal?.let { updateEngineContextHeader(it) }
+                    }
+                    is StreamChunk.StreamError -> {
+                        if (chunk.message.startsWith("HTTP 401")) handleTokenExpiry()
+                    }
+                }
+            }
+
+            // Commit the final (or fallback) text to the session store.
+            val displayReply = accumulated.takeIf { it.isNotBlank() } ?: FALLBACK_REPLY
+            if (accumulated.isBlank()) chatAdapter.updateLastMessage(displayReply)
+            sessionStore.addMessage("assistant", displayReply)
 
             isStreaming = false
             sendBtn.isEnabled = true
