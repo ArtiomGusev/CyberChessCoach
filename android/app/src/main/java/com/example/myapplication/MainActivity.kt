@@ -181,6 +181,14 @@ class MainActivity : AppCompatActivity() {
             sheet.show(supportFragmentManager, "GameHistoryBottomSheet")
         }
 
+        val btnProgressDashboard = findViewById<android.widget.Button>(R.id.btnProgressDashboard)
+        btnProgressDashboard.setOnClickListener {
+            drawerLayout.closeDrawer(GravityCompat.END)
+            val sheet = ProgressDashboardBottomSheet()
+            sheet.gameApiClient = gameApiClient
+            sheet.show(supportFragmentManager, "ProgressDashboardBottomSheet")
+        }
+
         btnTraining.setOnClickListener {
             drawerLayout.closeDrawer(GravityCompat.END)
             lifecycleScope.launch {

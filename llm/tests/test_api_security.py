@@ -29,6 +29,7 @@ Invariants pinned
  2. SEC_OUTCOME_AUTH_APPLIED        /explanation_outcome has verify_api_key dependency.
  3. SEC_LIVEMOVE_AUTH_APPLIED       /live/move has get_current_player dependency (player session required).
  3b. SEC_MOVE_AUTH_APPLIED          /move has get_current_player dependency (player session required).
+ 3c. SEC_PROGRESS_AUTH_APPLIED      /player/progress has get_current_player dependency.
  4. SEC_DEBUG_ENGINE_AUTH_APPLIED   /debug/engine has verify_api_key dependency.
  5. SEC_LOGOUT_WRAPS_DECODE_TOKEN   logout wraps decode_token in try/except.
  6. SEC_OUTCOME_NEG_MOVES           moves_analyzed < 0 → ValidationError.
@@ -177,6 +178,27 @@ class TestAstEndpointProtection:
         assert _depends_on(
             func, "verify_api_key"
         ), "GET /debug/engine must have Depends(verify_api_key) — leaks engine pool info"
+
+    def test_progress_endpoint_requires_player_session(self):
+        """SEC_PROGRESS_AUTH_APPLIED: /player/progress requires get_current_player."""
+        import ast
+        from pathlib import Path
+
+        analytics_router_path = (
+            Path(__file__).resolve().parent.parent
+            / "seca" / "analytics" / "router.py"
+        )
+        tree = ast.parse(analytics_router_path.read_text(encoding="utf-8"))
+        progress_func = None
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "get_player_progress":
+                progress_func = node
+                break
+        assert progress_func is not None, "get_player_progress() not found in analytics/router.py"
+        assert _depends_on(progress_func, "get_current_player"), (
+            "GET /player/progress must have Depends(get_current_player) — "
+            "returns sensitive player data; player session required"
+        )
 
 
 class TestAstLogoutProtection:

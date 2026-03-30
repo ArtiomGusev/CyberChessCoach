@@ -60,6 +60,8 @@ TEST_TARGETS = [
     # router converts to HTTP; JWT creation/expiry/tamper coverage).
     "llm/tests/test_auth_service.py",
     "llm/tests/test_auth_tokens.py",
+    # Progress dashboard: /player/progress endpoint contract + world-model transparency tests.
+    "llm/tests/test_progress_dashboard.py",
 ]
 
 COVERAGE_TARGETS = [
@@ -96,6 +98,7 @@ COVERAGE_TARGETS = [
     "llm.seca.auth.service",
     "llm.seca.auth.hashing",
     "llm.seca.auth.tokens",
+    "llm.seca.analytics.router",
     # llm.seca.coach.live_controller and llm.seca.coach.executor are excluded from
     # --cov targets: llm.seca.coach.__init__ imports engine.py which loads numpy via
     # a C extension; coverage pre-loading the package for instrumentation triggers

@@ -80,6 +80,74 @@ data class GameHistoryItem(
     val createdAt: String,
 )
 
+// ── /player/progress ─────────────────────────────────────────────────────────
+
+/**
+ * Current player world-model snapshot from GET /player/progress.
+ *
+ * [rating]           Current Elo-style rating.
+ * [confidence]       Confidence estimate [0.0–1.0].
+ * [skillVector]      Aggregated weakness scores per skill category.
+ * [tier]             Human-readable skill tier: "beginner" | "intermediate" | "advanced".
+ * [teachingStyle]    Coach verbosity: "simple" | "intermediate" | "advanced".
+ * [opponentElo]      Effective opponent strength the engine currently plays at.
+ * [explanationDepth] Normalised pedagogy depth [0.0–1.0].
+ * [conceptComplexity] Normalised concept complexity [0.0–1.0].
+ */
+data class ProgressCurrentDto(
+    val rating: Float,
+    val confidence: Float,
+    val skillVector: Map<String, Float>,
+    val tier: String,
+    val teachingStyle: String,
+    val opponentElo: Int,
+    val explanationDepth: Float,
+    val conceptComplexity: Float,
+)
+
+/**
+ * Single game entry in the progress history from GET /player/progress.
+ *
+ * [weaknesses] per-phase mistake rates: keys "opening", "middlegame", "endgame".
+ */
+data class ProgressHistoryItem(
+    val gameId: String,
+    val result: String,
+    val accuracy: Float,
+    val ratingAfter: Float?,
+    val confidenceAfter: Float?,
+    val weaknesses: Map<String, Float>,
+    val createdAt: String,
+)
+
+/** One training recommendation in the analysis block. */
+data class ProgressRecommendation(
+    val category: String,
+    val priority: String,   // "high" | "medium" | "low"
+    val rationale: String,
+)
+
+/**
+ * Analysis block in GET /player/progress — output of HistoricalAnalysisPipeline.
+ *
+ * [categoryScores]  Category → score [0.0–1.0].
+ * [phaseRates]      Phase → mistake rate [0.0–1.0].
+ */
+data class ProgressAnalysisDto(
+    val dominantCategory: String?,
+    val gamesAnalyzed: Int,
+    val categoryScores: Map<String, Float>,
+    val phaseRates: Map<String, Float>,
+    val recommendations: List<ProgressRecommendation>,
+)
+
+/** Full response from GET /player/progress. */
+data class PlayerProgressResponse(
+    val current: ProgressCurrentDto,
+    val history: List<ProgressHistoryItem>,
+    val analysis: ProgressAnalysisDto,
+)
+
 // ── /game/start ──────────────────────────────────────────────────────────────
 
 data class GameStartRequest(val playerId: String)

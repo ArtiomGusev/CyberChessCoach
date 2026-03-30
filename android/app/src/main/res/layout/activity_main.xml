@@ -260,6 +260,18 @@
             android:layout_marginBottom="8dp"/>
 
         <Button
+            android:id="@+id/btnProgressDashboard"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="MY PROGRESS"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#1F242A"
+            android:textAllCaps="true"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:layout_marginBottom="8dp"/>
+
+        <Button
             android:id="@+id/btnTraining"
             android:layout_width="match_parent"
             android:layout_height="56dp"

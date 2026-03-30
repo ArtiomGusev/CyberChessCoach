@@ -24,6 +24,7 @@ from llm.seca.auth.router import router as auth_router, get_current_player
 from llm.seca.events.router import router as game_router
 from llm.seca.curriculum.router import router as curriculum_router
 from llm.seca.inference.router import router as inference_router
+from llm.seca.analytics.router import router as analytics_router
 
 # register SECA models
 import llm.seca.events.models
@@ -157,6 +158,7 @@ app.include_router(player_router)
 app.include_router(auth_router)
 app.include_router(game_router)
 app.include_router(curriculum_router)
+app.include_router(analytics_router)
 app.include_router(
     inference_router,
     prefix="/seca",

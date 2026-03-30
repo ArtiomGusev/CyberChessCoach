@@ -61,6 +61,17 @@ interface GameApiClient {
      * do not need to override this method.
      */
     suspend fun getSecaStatus(): ApiResult<SecaStatusDto> = ApiResult.HttpError(501)
+
+    /**
+     * GET /player/progress — requires Bearer token authentication.
+     *
+     * Returns the full progress dashboard snapshot: current world-model state,
+     * last 20 games with per-game weaknesses, and HistoricalAnalysisPipeline output.
+     *
+     * Default implementation returns [ApiResult.HttpError(501)] so test fakes
+     * do not need to override this method.
+     */
+    suspend fun getPlayerProgress(): ApiResult<PlayerProgressResponse> = ApiResult.HttpError(501)
 }
 
 // ── HTTP implementation ───────────────────────────────────────────────────────
@@ -202,6 +213,27 @@ class HttpGameApiClient(
             }
         }
 
+    override suspend fun getPlayerProgress(): ApiResult<PlayerProgressResponse> =
+        withContext(Dispatchers.IO) {
+            try {
+                val conn = openGetConnection("$baseUrl/player/progress")
+                tokenProvider?.invoke()?.let { token ->
+                    conn.setRequestProperty("Authorization", "Bearer $token")
+                }
+                val code = conn.responseCode
+                if (code == 200) {
+                    val text = conn.inputStream.bufferedReader().readText()
+                    ApiResult.Success(parseProgressResponse(text))
+                } else {
+                    ApiResult.HttpError(code)
+                }
+            } catch (e: SocketTimeoutException) {
+                ApiResult.Timeout
+            } catch (e: Exception) {
+                ApiResult.NetworkError(e)
+            }
+        }
+
     override suspend fun getSecaStatus(): ApiResult<SecaStatusDto> =
         withContext(Dispatchers.IO) {
             try {
@@ -321,5 +353,76 @@ class HttpGameApiClient(
             coachContent = coachContent,
             learningStatus = learningStatus,
         )
+    }
+
+    private fun parseProgressResponse(text: String): PlayerProgressResponse {
+        val json = JSONObject(text)
+
+        // current
+        val cur = json.optJSONObject("current") ?: JSONObject()
+        val svJson = cur.optJSONObject("skill_vector") ?: JSONObject()
+        val skillVector = buildMap<String, Float> {
+            svJson.keys().forEach { k -> put(k, svJson.optDouble(k, 0.0).toFloat()) }
+        }
+        val current = ProgressCurrentDto(
+            rating           = cur.optDouble("rating", 0.0).toFloat(),
+            confidence       = cur.optDouble("confidence", 0.0).toFloat(),
+            skillVector      = skillVector,
+            tier             = cur.optString("tier", "intermediate"),
+            teachingStyle    = cur.optString("teaching_style", "intermediate"),
+            opponentElo      = cur.optInt("opponent_elo", 1200),
+            explanationDepth = cur.optDouble("explanation_depth", 0.5).toFloat(),
+            conceptComplexity = cur.optDouble("concept_complexity", 0.5).toFloat(),
+        )
+
+        // history
+        val histArr = json.optJSONArray("history") ?: org.json.JSONArray()
+        val history = (0 until histArr.length()).map { i ->
+            val h = histArr.getJSONObject(i)
+            val wJson = h.optJSONObject("weaknesses") ?: JSONObject()
+            val weaknesses = buildMap<String, Float> {
+                wJson.keys().forEach { k -> put(k, wJson.optDouble(k, 0.0).toFloat()) }
+            }
+            ProgressHistoryItem(
+                gameId          = h.optString("game_id", ""),
+                result          = h.optString("result", ""),
+                accuracy        = h.optDouble("accuracy", 0.0).toFloat(),
+                ratingAfter     = if (h.isNull("rating_after")) null
+                                  else h.optDouble("rating_after").toFloat(),
+                confidenceAfter = if (h.isNull("confidence_after")) null
+                                  else h.optDouble("confidence_after").toFloat(),
+                weaknesses      = weaknesses,
+                createdAt       = h.optString("created_at", ""),
+            )
+        }
+
+        // analysis
+        val ana = json.optJSONObject("analysis") ?: JSONObject()
+        val csJson = ana.optJSONObject("category_scores") ?: JSONObject()
+        val categoryScores = buildMap<String, Float> {
+            csJson.keys().forEach { k -> put(k, csJson.optDouble(k, 0.0).toFloat()) }
+        }
+        val prJson = ana.optJSONObject("phase_rates") ?: JSONObject()
+        val phaseRates = buildMap<String, Float> {
+            prJson.keys().forEach { k -> put(k, prJson.optDouble(k, 0.0).toFloat()) }
+        }
+        val recsArr = ana.optJSONArray("recommendations") ?: org.json.JSONArray()
+        val recommendations = (0 until recsArr.length()).map { i ->
+            val r = recsArr.getJSONObject(i)
+            ProgressRecommendation(
+                category  = r.optString("category", ""),
+                priority  = r.optString("priority", "low"),
+                rationale = r.optString("rationale", ""),
+            )
+        }
+        val analysis = ProgressAnalysisDto(
+            dominantCategory = ana.optString("dominant_category").ifEmpty { null },
+            gamesAnalyzed    = ana.optInt("games_analyzed", 0),
+            categoryScores   = categoryScores,
+            phaseRates       = phaseRates,
+            recommendations  = recommendations,
+        )
+
+        return PlayerProgressResponse(current = current, history = history, analysis = analysis)
     }
 }
