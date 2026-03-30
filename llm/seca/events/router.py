@@ -8,6 +8,8 @@ import chess.pgn
 _PGN_HEADER_RE = re.compile(r'^\s*\[\s*\w+\s+"[^"]*"\s*\]', re.MULTILINE)
 from fastapi import APIRouter, Depends, Request, HTTPException
 from pydantic import BaseModel, field_validator
+from llm.seca.analysis.historical_pipeline import HistoricalAnalysisPipeline
+from llm.seca.analytics.training_recommendations import generate_training_recommendations
 
 logger = logging.getLogger(__name__)
 from sqlalchemy.orm import Session as DBSession
@@ -252,6 +254,23 @@ def finish_game(
             logger.exception("Learner train_step failed")
             learning_result = {"status": "learner_error"}
 
+    # ---- historical analysis + training recommendations (deterministic, no RL) ----
+    analysis_recommendations = []
+    analysis_dominant_category = None
+    analysis_games_analyzed = 0
+    try:
+        recent_games = storage.get_recent_games(player_id=str(player.id), limit=20)
+        if recent_games:
+            stats = HistoricalAnalysisPipeline(db).run(str(player.id), recent_games)
+            analysis_dominant_category = stats.dominant_category
+            analysis_games_analyzed = stats.games_analyzed
+            analysis_recommendations = [
+                {"category": r.category, "priority": r.priority, "rationale": r.rationale}
+                for r in generate_training_recommendations(stats)
+            ]
+    except Exception:
+        logger.exception("HistoricalAnalysisPipeline failed; recommendations omitted")
+
     return {
         "status": "stored",
         "new_rating": rating_after,
@@ -266,6 +285,11 @@ def finish_game(
             "title": coach_content.title,
             "description": coach_content.description,
             "payload": coach_content.payload,
+        },
+        "analysis": {
+            "dominant_category": analysis_dominant_category,
+            "games_analyzed": analysis_games_analyzed,
+            "recommendations": analysis_recommendations,
         },
     }
 

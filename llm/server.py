@@ -20,7 +20,7 @@ try:
 except ImportError:
     # Supports top-level module execution (e.g. `uvicorn server:app`)
     from player_api import router as player_router
-from llm.seca.auth.router import router as auth_router
+from llm.seca.auth.router import router as auth_router, get_current_player
 from llm.seca.events.router import router as game_router
 from llm.seca.curriculum.router import router as curriculum_router
 from llm.seca.inference.router import router as inference_router
@@ -657,7 +657,7 @@ def move(
     req: MoveRequest,
     request: Request,
     background_tasks: BackgroundTasks,
-    _: str = Depends(verify_api_key),
+    player=Depends(get_current_player),
 ):
     request_started = time.perf_counter()
     if engine_pool is None:
@@ -665,8 +665,7 @@ def move(
 
     normalized_fen = _normalize_fen(req.fen)
     board = _board_from_payload(normalized_fen, req.moves_uci)
-    skill = player_skill_memory.get("demo", SkillState())
-    adaptation = compute_adaptation(skill.rating, skill.confidence)
+    adaptation = compute_adaptation(player.rating, player.confidence)
     target_elo = adaptation["opponent"]["target_elo"]
 
     mode = (req.mode or "default").lower()
@@ -787,8 +786,18 @@ def move(
 
 @app.post("/live/move")
 @limiter.limit("30/minute")
-def live_move(req: LiveMoveRequest, request: Request, _: None = Depends(verify_api_key)):
-    result = generate_live_reply(fen=req.fen, uci=req.uci, player_id=req.player_id)
+def live_move(
+    req: LiveMoveRequest,
+    request: Request,
+    player=Depends(get_current_player),
+):
+    adaptation = compute_adaptation(player.rating, player.confidence)
+    result = generate_live_reply(
+        fen=req.fen,
+        uci=req.uci,
+        player_id=str(player.id),
+        explanation_style=adaptation["teaching"]["style"],
+    )
     return {
         "status": "ok",
         "hint": result.hint,

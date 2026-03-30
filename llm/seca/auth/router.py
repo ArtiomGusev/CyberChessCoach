@@ -102,7 +102,10 @@ class ChangePasswordRequest(BaseModel):
 @limiter.limit("5/minute")
 def register(request: Request, req: RegisterRequest, db: DBSession = Depends(get_db)):
     service = AuthService(db)
-    player = service.register(req.email, req.password)
+    try:
+        player = service.register(req.email, req.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     token, _ = service.login(req.email, req.password, device_info="register")
     return {
         "access_token": token,

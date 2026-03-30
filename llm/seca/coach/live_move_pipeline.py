@@ -94,11 +94,26 @@ class LiveMoveReply:
 # ---------------------------------------------------------------------------
 
 
-def _build_hint(uci: str, engine_signal: dict, base_explanation: str) -> str:
+def _build_hint(
+    uci: str,
+    engine_signal: dict,
+    base_explanation: str,
+    explanation_style: str | None = None,
+) -> str:
     """Build a deterministic per-move coaching hint.
 
     Always leads with the engine evaluation reference.  Appends move-quality
     feedback and a phase-specific tip when available.
+
+    Parameters
+    ----------
+    explanation_style:
+        Optional style from the player's skill profile.
+        - None / "intermediate": all parts except base explanation
+          (current default behaviour — backwards-compatible).
+        - "simple":  eval sentence + quality comment only (beginners:
+          concise feedback, no technical detail).
+        - "advanced": all parts including the technical base explanation.
     """
     eval_info = engine_signal.get("evaluation", {})
     band = eval_info.get("band", "equal")
@@ -121,14 +136,16 @@ def _build_hint(uci: str, engine_signal: dict, base_explanation: str) -> str:
     if quality_comment:
         parts.append(quality_comment)
 
-    # 3. Base evaluation sentence from SafeExplainer (may be empty)
-    if base_explanation:
+    # 3. Base evaluation sentence from SafeExplainer — only for advanced players.
+    # Omitted for simple/intermediate styles to keep feedback concise.
+    if base_explanation and explanation_style == "advanced":
         parts.append(base_explanation)
 
-    # 4. Phase-specific coaching tip
-    phase_tip = _PHASE_HINT.get(phase, "")
-    if phase_tip:
-        parts.append(phase_tip)
+    # 4. Phase-specific coaching tip — omitted for simple style (keep hint short).
+    if explanation_style != "simple":
+        phase_tip = _PHASE_HINT.get(phase, "")
+        if phase_tip:
+            parts.append(phase_tip)
 
     return " ".join(parts)
 
@@ -142,6 +159,7 @@ def generate_live_reply(
     fen: str,
     uci: str,
     player_id: str = "demo",
+    explanation_style: str | None = None,
 ) -> LiveMoveReply:
     """Generate a deterministic coaching hint for a single move.
 
@@ -153,8 +171,12 @@ def generate_live_reply(
     uci :
         The move just played in UCI notation (e.g. "e2e4", "e7e8q").
     player_id :
-        Player identifier — reserved for future profile enrichment.
-        Not reflected in the engine signal.
+        Player identifier — stored for reference but not reflected in the
+        engine signal (engine truth is always from extract_engine_signal).
+    explanation_style :
+        Player skill style from compute_adaptation()["teaching"]["style"].
+        One of "simple", "intermediate", "advanced", or None (defaults to
+        "intermediate" behaviour: eval + quality + phase tip).
 
     Returns
     -------
@@ -173,7 +195,7 @@ def generate_live_reply(
     # Move quality from the engine signal (not from user input)
     move_quality = engine_signal.get("last_move_quality", "unknown")
 
-    hint = _build_hint(uci, engine_signal, base_explanation)
+    hint = _build_hint(uci, engine_signal, base_explanation, explanation_style=explanation_style)
 
     return LiveMoveReply(
         hint=hint,

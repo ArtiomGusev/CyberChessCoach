@@ -450,7 +450,10 @@ class TestApiContractStress:
 
     def test_engine_eval_contract_with_extreme_scores(self, monkeypatch):
         """Scores at extremes must be returned unchanged through the contract."""
+        from unittest.mock import MagicMock
         from llm import host_app
+
+        monkeypatch.setattr(host_app._limiter, "enabled", False)
 
         for extreme_score in (-32768, -9999, -1, 0, 1, 9999, 32767):
 
@@ -475,7 +478,12 @@ class TestApiContractStress:
             monkeypatch.setattr(host_app, "engine_eval", _FakeEv())
             monkeypatch.setattr(host_app.engine_service, "evaluate_with_metrics", _fake_eval)
 
-            result = asyncio.run(host_app.eval_position(host_app.EngineEvalRequest(fen="startpos")))
+            async def _run(_s=extreme_score):
+                return await host_app.eval_position_query(
+                    MagicMock(), fen="startpos", movetime_ms=30, movetime=None
+                )
+
+            result = asyncio.run(_run())
             assert result["score"] == extreme_score
             assert "score" in result and "best_move" in result and "source" in result
 
@@ -483,11 +491,25 @@ class TestApiContractStress:
         """POST /game/finish must succeed with PGNs of 1, 5, 20, and 50 moves."""
         from llm.seca.events.router import finish_game, GameFinishRequest
 
+        _HDR = '[Event "Test"]\n[Site "?"]\n[Date "????.??.??"]\n[Round "?"]\n[White "?"]\n[Black "?"]\n[Result "*"]\n\n'
+
+        def _shuttle_pgn(num_halfmoves: int) -> str:
+            """Legal PGN: knights shuttle Nf3/Ng1 vs Nc6/Nb8 for any length."""
+            w = ["Nf3", "Ng1"]
+            b = ["Nc6", "Nb8"]
+            parts = []
+            for i in range(num_halfmoves):
+                if i % 2 == 0:
+                    parts.append(f"{i // 2 + 1}. {w[(i // 2) % 2]}")
+                else:
+                    parts.append(b[((i - 1) // 2) % 2])
+            return _HDR + " ".join(parts) + " *"
+
         pgns = [
-            "1. e4 *",
-            "1. e4 e5 2. Nf3 Nc6 3. Bb5 *",
-            " ".join(f"{i+1}. e4 e5" for i in range(20)) + " *",
-            " ".join(f"{i+1}. d4 d5" for i in range(50)) + " *",
+            _HDR + "1. e4 *",
+            _HDR + "1. e4 e5 2. Nf3 Nc6 3. Bb5 *",
+            _shuttle_pgn(20),
+            _shuttle_pgn(50),
         ]
         for pgn in pgns:
             player = SimpleNamespace(id=1, rating=1500.0, confidence=0.70)
@@ -538,9 +560,10 @@ class TestApiContractStress:
                 patch("llm.seca.events.router.SkillUpdater"),
             ):
                 MockStorage.return_value.store_game.return_value = SimpleNamespace(id=1)
+                _HDR = '[Event "Test"]\n[Site "?"]\n[Date "????.??.??"]\n[Round "?"]\n[White "?"]\n[Black "?"]\n[Result "*"]\n\n'
                 r = finish_game(
                     req=GameFinishRequest(
-                        pgn="1. e4 *", result=result_type, accuracy=0.75, weaknesses={}
+                        pgn=_HDR + "1. e4 *", result=result_type, accuracy=0.75, weaknesses={}
                     ),
                     player=player,
                     request=None,

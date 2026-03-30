@@ -53,6 +53,13 @@ TEST_TARGETS = [
     "llm/tests/test_full_loop_integration.py",
     "llm/tests/test_curriculum_next_contract.py",
     "llm/tests/test_security_hardening.py",
+    # Player adaptation regression suite (full-scale adaptation: /move session auth,
+    # curriculum history-driven topic, game finish recommendations, SAFE_MODE gate).
+    "llm/tests/test_adaptive_player.py",
+    # Auth service and token contract tests (layer-correct: service raises ValueError,
+    # router converts to HTTP; JWT creation/expiry/tamper coverage).
+    "llm/tests/test_auth_service.py",
+    "llm/tests/test_auth_tokens.py",
 ]
 
 COVERAGE_TARGETS = [
@@ -81,6 +88,14 @@ COVERAGE_TARGETS = [
     # per process" when test_chat_pipeline.py later re-imports it.
     # chat_pipeline.py logic is fully exercised by test_chat_pipeline.py (26 tests).
     "llm.seca.events.storage",
+    "llm.seca.analysis.historical_pipeline",
+    "llm.seca.adaptation.coupling",
+    "llm.seca.adaptation.skill_profile",
+    "llm.seca.adaptation.teaching_policy",
+    "llm.seca.adaptation.opponent_policy",
+    "llm.seca.auth.service",
+    "llm.seca.auth.hashing",
+    "llm.seca.auth.tokens",
     # llm.seca.coach.live_controller and llm.seca.coach.executor are excluded from
     # --cov targets: llm.seca.coach.__init__ imports engine.py which loads numpy via
     # a C extension; coverage pre-loading the package for instrumentation triggers

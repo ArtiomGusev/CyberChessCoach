@@ -6,6 +6,16 @@ from llm.seca.events.storage import EventStorage
 from .models import TrainingPlan
 from .policy import CurriculumPolicy
 
+# Maps MistakeCategory → curriculum topic.
+# Used to override skill-vector topic selection when game history reveals a
+# dominant pattern.  Positional play has no direct curriculum exercise type,
+# so it intentionally falls back to the skill-vector route.
+_CATEGORY_TO_TOPIC: dict[str, str] = {
+    "tactical_vision": "tactics",
+    "endgame_technique": "endgame",
+    "opening_preparation": "opening",
+}
+
 
 class CurriculumGenerator:
     """Generates and persists a TrainingPlan for a given player.
@@ -25,15 +35,25 @@ class CurriculumGenerator:
 
     # ------------------------------------------------
 
-    def generate(self, player_id: str) -> TrainingPlan:
+    def generate(self, player_id: str, dominant_topic: str | None = None) -> TrainingPlan:
+        """Generate a training plan for the player.
 
+        Parameters
+        ----------
+        player_id:
+            The player's UUID string.
+        dominant_topic:
+            Optional history-derived topic override from HistoricalAnalysisPipeline.
+            When provided, replaces the skill-vector-based topic selection.
+        """
         player = self.db.query(Player).filter_by(id=player_id).first()
         if not player:
             raise ValueError("Player not found")
 
         skill_vector = json.loads(player.skill_vector_json or "{}")
 
-        topic = self.policy.choose_topic(skill_vector)
+        # Use game-history dominant topic when available; fall back to skill vector.
+        topic = dominant_topic if dominant_topic else self.policy.choose_topic(skill_vector)
         difficulty = self.policy.choose_difficulty(player.rating, player.confidence)
         exercise_type = self.policy.choose_exercise_type(topic)
         session_length = self.policy.choose_session_length(player.confidence)

@@ -27,7 +27,8 @@ Invariants pinned
 -----------------
  1. SEC_ANALYZE_AUTH_APPLIED        /analyze endpoint has verify_api_key dependency.
  2. SEC_OUTCOME_AUTH_APPLIED        /explanation_outcome has verify_api_key dependency.
- 3. SEC_LIVEMOVE_AUTH_APPLIED       /live/move has verify_api_key dependency.
+ 3. SEC_LIVEMOVE_AUTH_APPLIED       /live/move has get_current_player dependency (player session required).
+ 3b. SEC_MOVE_AUTH_APPLIED          /move has get_current_player dependency (player session required).
  4. SEC_DEBUG_ENGINE_AUTH_APPLIED   /debug/engine has verify_api_key dependency.
  5. SEC_LOGOUT_WRAPS_DECODE_TOKEN   logout wraps decode_token in try/except.
  6. SEC_OUTCOME_NEG_MOVES           moves_analyzed < 0 → ValidationError.
@@ -142,13 +143,32 @@ class TestAstEndpointProtection:
             "unauthenticated write to learning state"
         )
 
-    def test_live_move_has_verify_api_key(self):
-        """SEC_LIVEMOVE_AUTH_APPLIED: /live/move has verify_api_key dependency."""
+    def test_live_move_requires_player_session(self):
+        """SEC_LIVEMOVE_AUTH_APPLIED: /live/move requires get_current_player (player session).
+
+        /live/move was upgraded from API-key auth to player session auth so that
+        coaching hints adapt to the authenticated player's skill profile.
+        A valid player session (Bearer JWT + DB record) is required.
+        """
         func = self._funcs.get("live_move")
         assert func is not None, "live_move() not found in server.py"
-        assert _depends_on(
-            func, "verify_api_key"
-        ), "POST /live/move must have Depends(verify_api_key)"
+        assert _depends_on(func, "get_current_player"), (
+            "POST /live/move must have Depends(get_current_player) — "
+            "player session required for adaptive coaching hints"
+        )
+
+    def test_move_requires_player_session(self):
+        """SEC_MOVE_AUTH_APPLIED: /move requires get_current_player (player session).
+
+        /move was upgraded from API-key auth to player session auth so that
+        the opponent ELO adapts to the authenticated player's rating and confidence.
+        """
+        func = self._funcs.get("move")
+        assert func is not None, "move() not found in server.py"
+        assert _depends_on(func, "get_current_player"), (
+            "POST /move must have Depends(get_current_player) — "
+            "player session required for adaptive opponent ELO"
+        )
 
     def test_debug_engine_has_verify_api_key(self):
         """SEC_DEBUG_ENGINE_AUTH_APPLIED: /debug/engine has verify_api_key dependency."""

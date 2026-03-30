@@ -1,6 +1,5 @@
 import hashlib
 from datetime import datetime
-from fastapi import HTTPException, status
 from sqlalchemy.orm import Session as DBSession
 
 from .models import Player, Session
@@ -17,10 +16,7 @@ class AuthService:
     # ---------------------------
     def register(self, email: str, password: str) -> Player:
         if self.db.query(Player).filter_by(email=email).first():
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered",
-            )
+            raise ValueError("Email already registered")
 
         player = Player(
             email=email,
