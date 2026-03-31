@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import time
+from contextlib import asynccontextmanager
 from typing import List, Tuple
 
 from dotenv import load_dotenv
@@ -87,7 +88,19 @@ if os.name == "nt" and hasattr(asyncio, "WindowsProactorEventLoopPolicy"):
 
 _limiter = Limiter(key_func=get_remote_address)
 
-app = FastAPI(default_response_class=DefaultResponseClass)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await verify_redis_connection()
+    await engine_pool.start()
+
+    yield
+
+    await engine_pool.stop()
+    opening_book.close()
+    await close_redis()
+
+
+app = FastAPI(default_response_class=DefaultResponseClass, lifespan=lifespan)
 app.state.limiter = _limiter
 
 
@@ -142,17 +155,6 @@ def root():
     return {"status": "ok"}
 
 
-@app.on_event("startup")
-async def startup():
-    await verify_redis_connection()
-    await engine_pool.start()
-
-
-@app.on_event("shutdown")
-async def shutdown():
-    await engine_pool.stop()
-    opening_book.close()
-    await close_redis()
 
 
 @app.get("/health")

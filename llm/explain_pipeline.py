@@ -1,4 +1,5 @@
 import os
+import time
 
 import httpx
 
@@ -17,6 +18,7 @@ OLLAMA_URL = f"{_ollama_base}/api/generate"
 MODEL_NAME = os.getenv("COACH_OLLAMA_MODEL", "qwen2.5:7b-instruct-q2_K")
 
 MAX_RETRIES = 2
+_RETRY_DELAY_SECONDS = 0.5
 
 
 # ---------------------------------------------------------
@@ -98,7 +100,9 @@ def generate_validated_explanation(
 
     last_error = None
 
-    for _ in range(MAX_RETRIES + 1):
+    for attempt in range(MAX_RETRIES + 1):
+        if attempt > 0:
+            time.sleep(_RETRY_DELAY_SECONDS)
         explanation, esv = generate_once(fen, stockfish_json, clean_query)
 
         try:

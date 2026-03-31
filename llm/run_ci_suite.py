@@ -67,6 +67,8 @@ TEST_TARGETS = [
     # spacing zero-interval, trainer empty-events, bandit empty-actions + singular matrix,
     # engine_eval cache-key sentinel, engine_pool stop race).
     "llm/tests/test_bug_regressions.py",
+    # API05 — LLM retry cap, inter-retry backoff delay, and safe fallback contract.
+    "llm/tests/test_explain_pipeline_retry.py",
 ]
 
 COVERAGE_TARGETS = [
@@ -116,6 +118,7 @@ COVERAGE_TARGETS = [
     # TestCoachExecutorStability (22 tests).
     "llm.rag.meta.case_classifier",
     "llm.confidence_language_controller",
+    "llm.explain_pipeline",
     # llm.seca.engines.stockfish.pool is intentionally excluded from coverage targets:
     # the majority of its lines require a live Stockfish process and Redis, which are
     # unavailable in the unit-test environment. The pure logic (FenMoveCache, movetime

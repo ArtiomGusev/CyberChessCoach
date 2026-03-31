@@ -6,6 +6,7 @@ import shutil
 import chess
 import time
 import threading
+from contextlib import asynccontextmanager
 from functools import lru_cache
 from typing import Literal
 from fastapi import FastAPI, Header, HTTPException, Depends, Request, BackgroundTasks
@@ -84,7 +85,84 @@ if IS_PROD and API_KEY is None:
         "Set a non-empty value before starting the server."
     )
 
-app = FastAPI(title="SECA Chess Coach API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global engine_pool, move_cache, scheduler, event_storage, skill_pipeline
+    global world_model, async_predict_enabled, async_predict_plies, async_predict_movetime_ms
+    try:
+        init_db()
+        world_model = SafeWorldModel()
+        enforce(world_model)
+        if os.name == "nt":
+            default_stockfish_path = "engines/stockfish.exe"
+        else:
+            default_stockfish_path = shutil.which("stockfish") or "/usr/games/stockfish"
+        stockfish_path = os.getenv("STOCKFISH_PATH", default_stockfish_path)
+        settings = EnginePoolSettings(
+            stockfish_path=stockfish_path,
+            pool_size=max(1, _env_int("ENGINE_POOL_SIZE", 8)),
+            threads=max(1, _env_int("ENGINE_THREADS", 1)),
+            hash_mb=max(16, _env_int("ENGINE_HASH_MB", 128)),
+            skill_level=_env_int("ENGINE_SKILL_LEVEL", 10),
+            default_movetime_ms=max(20, _env_int("ENGINE_DEFAULT_MOVETIME_MS", 40)),
+            training_movetime_ms=max(20, _env_int("ENGINE_TRAINING_MOVETIME_MS", 40)),
+            analysis_movetime_ms=max(
+                20,
+                _env_int_first(
+                    ["ENGINE_ANALYSIS_MOVETIME_MS", "ENGINE_DEEP_MOVETIME_MS"],
+                    80,
+                ),
+            ),
+            blitz_movetime_ms=max(20, _env_int("ENGINE_BLITZ_MOVETIME_MS", 25)),
+            queue_timeout_ms=max(1, _env_int("ENGINE_QUEUE_TIMEOUT_MS", 50)),
+        )
+        engine_pool = StockfishEnginePool(settings)
+        engine_pool.startup()
+        move_cache = FenMoveCache(
+            redis_url=os.getenv("REDIS_URL"),
+            ttl_seconds=_env_int("MOVE_CACHE_TTL_SECONDS", 3600),
+            max_memory_items=max(1, _env_int("MOVE_CACHE_L1_MAX_ITEMS", 500)),
+        )
+        async_predict_enabled = _env_bool("ENGINE_ASYNC_PREDICT_ENABLED", True)
+        async_predict_plies = max(0, _env_int("ENGINE_ASYNC_PREDICT_PLIES", 2))
+        async_predict_movetime_ms = max(
+            20,
+            _env_int("ENGINE_ASYNC_PREDICT_MOVETIME_MS", 20),
+        )
+        prewarm_fens = _env_fens("ENGINE_PREWARM_FENS")
+        prewarm_modes = _env_csv("ENGINE_PREWARM_MODES", "blitz")
+        if prewarm_fens and prewarm_modes:
+            warmed = 0
+            for mode in prewarm_modes:
+                warmed += engine_pool.prewarm_cache(
+                    move_cache=move_cache,
+                    fens=prewarm_fens,
+                    mode=mode,
+                )
+            logger.info(
+                "Move cache prewarmed (entries=%d, positions=%d, modes=%s)",
+                warmed,
+                len(prewarm_fens),
+                ",".join(prewarm_modes),
+            )
+        scheduler = CurriculumScheduler()
+        logger.info("DB initialized")
+        logger.info("Stockfish engine pool initialized (size=%d)", settings.pool_size)
+    except Exception as e:
+        if engine_pool:
+            engine_pool.close()
+        engine_pool = None
+        move_cache = None
+        logger.error("Stockfish engine pool DISABLED: %s", e)
+
+    yield
+
+    if engine_pool:
+        engine_pool.close()
+        logger.info("Stockfish engine pool closed")
+
+
+app = FastAPI(title="SECA Chess Coach API", lifespan=lifespan)
 app.state.limiter = limiter
 
 # ---- CORS ----------------------------------------------------------------
@@ -330,82 +408,6 @@ def _predictive_cache_followups(
             return
 
 
-@app.on_event("startup")
-async def startup():
-    global engine_pool, move_cache, scheduler, event_storage, skill_pipeline
-    global world_model, async_predict_enabled, async_predict_plies, async_predict_movetime_ms
-    try:
-        init_db()
-        world_model = SafeWorldModel()
-        enforce(world_model)
-        if os.name == "nt":
-            default_stockfish_path = "engines/stockfish.exe"
-        else:
-            default_stockfish_path = shutil.which("stockfish") or "/usr/games/stockfish"
-        stockfish_path = os.getenv("STOCKFISH_PATH", default_stockfish_path)
-        settings = EnginePoolSettings(
-            stockfish_path=stockfish_path,
-            pool_size=max(1, _env_int("ENGINE_POOL_SIZE", 8)),
-            threads=max(1, _env_int("ENGINE_THREADS", 1)),
-            hash_mb=max(16, _env_int("ENGINE_HASH_MB", 128)),
-            skill_level=_env_int("ENGINE_SKILL_LEVEL", 10),
-            default_movetime_ms=max(20, _env_int("ENGINE_DEFAULT_MOVETIME_MS", 40)),
-            training_movetime_ms=max(20, _env_int("ENGINE_TRAINING_MOVETIME_MS", 40)),
-            analysis_movetime_ms=max(
-                20,
-                _env_int_first(
-                    ["ENGINE_ANALYSIS_MOVETIME_MS", "ENGINE_DEEP_MOVETIME_MS"],
-                    80,
-                ),
-            ),
-            blitz_movetime_ms=max(20, _env_int("ENGINE_BLITZ_MOVETIME_MS", 25)),
-            queue_timeout_ms=max(1, _env_int("ENGINE_QUEUE_TIMEOUT_MS", 50)),
-        )
-        engine_pool = StockfishEnginePool(settings)
-        engine_pool.startup()
-        move_cache = FenMoveCache(
-            redis_url=os.getenv("REDIS_URL"),
-            ttl_seconds=_env_int("MOVE_CACHE_TTL_SECONDS", 3600),
-            max_memory_items=max(1, _env_int("MOVE_CACHE_L1_MAX_ITEMS", 500)),
-        )
-        async_predict_enabled = _env_bool("ENGINE_ASYNC_PREDICT_ENABLED", True)
-        async_predict_plies = max(0, _env_int("ENGINE_ASYNC_PREDICT_PLIES", 2))
-        async_predict_movetime_ms = max(
-            20,
-            _env_int("ENGINE_ASYNC_PREDICT_MOVETIME_MS", 20),
-        )
-        prewarm_fens = _env_fens("ENGINE_PREWARM_FENS")
-        prewarm_modes = _env_csv("ENGINE_PREWARM_MODES", "blitz")
-        if prewarm_fens and prewarm_modes:
-            warmed = 0
-            for mode in prewarm_modes:
-                warmed += engine_pool.prewarm_cache(
-                    move_cache=move_cache,
-                    fens=prewarm_fens,
-                    mode=mode,
-                )
-            logger.info(
-                "Move cache prewarmed (entries=%d, positions=%d, modes=%s)",
-                warmed,
-                len(prewarm_fens),
-                ",".join(prewarm_modes),
-            )
-        scheduler = CurriculumScheduler()
-        logger.info("DB initialized")
-        logger.info("Stockfish engine pool initialized (size=%d)", settings.pool_size)
-    except Exception as e:
-        if engine_pool:
-            engine_pool.close()
-        engine_pool = None
-        move_cache = None
-        logger.error("Stockfish engine pool DISABLED: %s", e)
-
-
-@app.on_event("shutdown")
-async def shutdown():
-    if engine_pool:
-        engine_pool.close()
-        logger.info("Stockfish engine pool closed")
 
 
 # ------------------------------------------------------------------
