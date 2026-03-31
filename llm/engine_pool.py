@@ -86,6 +86,7 @@ class EnginePool:
     async def stop(self):
         if not self._started:
             return
+        self._started = False  # prevent new acquires before engines are torn down
 
         for transport, engine in self._engines:
             try:
@@ -103,7 +104,6 @@ class EnginePool:
                 self._queue.get_nowait()
             except asyncio.QueueEmpty:
                 break
-        self._started = False
 
     async def acquire(self) -> chess.engine.UciProtocol:
         if not self._started:

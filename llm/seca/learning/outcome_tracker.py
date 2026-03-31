@@ -127,7 +127,9 @@ class ExplanationOutcomeTracker:
         # psychological confidence
         score += m.confidence_delta
 
-        return score / 3.0  # normalize
+        # Max possible score: CPL(1.0) + blunder(1.0) + tactic(0.5) + confidence(≤1.0) = 3.5
+        # Divide by 3.5 so that all-perfect performance maps to ~1.0, then clip to [-1, 1].
+        return max(-1.0, min(1.0, score / 3.5))
 
     # -----------------------------------------------------
     # AGGREGATE PLAYER IMPACT

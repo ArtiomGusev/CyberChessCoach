@@ -170,9 +170,11 @@ class TestCacheKeyFormat:
         key = self.ev._cache_key(_STARTPOS, 100, None)
         assert key == f"{_STARTPOS}:movetime:100"
 
-    def test_both_none_defaults_to_movetime_zero(self):
+    def test_both_none_uses_none_sentinel(self):
+        # movetime=None must produce a distinct key from movetime=0 to prevent
+        # false cache hits when the sentinel and explicit-zero collide.
         key = self.ev._cache_key(_STARTPOS, None, None)
-        assert key == f"{_STARTPOS}:movetime:0"
+        assert key == f"{_STARTPOS}:movetime:none"
 
     def test_nodes_takes_priority_over_movetime(self):
         # When both are supplied, nodes wins (same as resolve_limits semantics).

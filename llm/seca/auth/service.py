@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 from datetime import datetime
 from sqlalchemy.orm import Session as DBSession
 
@@ -84,7 +85,7 @@ class AuthService:
             return None
 
         token_hash = hashlib.sha256(token.encode()).hexdigest()
-        if token_hash != session.token_hash:
+        if not hmac.compare_digest(token_hash, session.token_hash or ""):
             return None
 
         return session.player

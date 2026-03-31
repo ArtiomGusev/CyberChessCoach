@@ -25,6 +25,8 @@ class LinUCB:
     # Choose best action
     # -----------------------------
     def select(self, context: np.ndarray, actions: list[str]) -> str:
+        if not actions:
+            raise ValueError("actions list must not be empty")
         context = context.reshape(-1, 1)
 
         best_action = None
@@ -32,11 +34,11 @@ class LinUCB:
 
         for a in actions:
             self._ensure_dim(a)
-            A_inv = np.linalg.inv(self.A[a])
+            A_inv = np.linalg.pinv(self.A[a])
             theta = A_inv @ self.b[a]
 
-            exploit = float(theta.T @ context)
-            explore = self.alpha * np.sqrt(float(context.T @ A_inv @ context))
+            exploit = float((theta.T @ context).item())
+            explore = self.alpha * np.sqrt(float((context.T @ A_inv @ context).item()))
 
             score = exploit + explore
 

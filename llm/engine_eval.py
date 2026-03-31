@@ -44,7 +44,7 @@ class EngineEvaluator:
     def _cache_key(self, fen: str, movetime: int | None, nodes: int | None) -> str:
         if nodes is not None:
             return f"{fen}:nodes:{nodes}"
-        time_key = 0 if movetime is None else movetime
+        time_key = "none" if movetime is None else movetime
         return f"{fen}:movetime:{time_key}"
 
     def _get_cached_result(self, key: str) -> dict | None:

@@ -236,7 +236,7 @@ def select_move_with_noise(moves: Dict[str, float], sigma: float, blunder_prob: 
         noisy_moves[move] = score + noise
 
     # With probability of blunder → choose suboptimal move
-    if random.random() < blunder_prob:
+    if random.random() < blunder_prob and len(noisy_moves) > 1:
         sorted_moves = sorted(noisy_moves.items(), key=lambda x: x[1])
         return random.choice(sorted_moves[:-1])[0]
 

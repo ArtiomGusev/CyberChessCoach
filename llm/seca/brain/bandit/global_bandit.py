@@ -14,17 +14,19 @@ class GlobalLinUCB:
     # Choose best action for context
     # --------------------------------
     def select(self, context: np.ndarray, actions: list[str]) -> str:
+        if not actions:
+            raise ValueError("actions list must not be empty")
         context = context.reshape(-1, 1)
 
         best_action = None
         best_score = -1e9
 
         for a in actions:
-            A_inv = np.linalg.inv(self.A[a])
+            A_inv = np.linalg.pinv(self.A[a])
             theta = A_inv @ self.b[a]
 
-            exploit = float(theta.T @ context)
-            explore = self.alpha * np.sqrt(float(context.T @ A_inv @ context))
+            exploit = float((theta.T @ context).item())
+            explore = self.alpha * np.sqrt(float((context.T @ A_inv @ context).item()))
 
             score = exploit + explore
 

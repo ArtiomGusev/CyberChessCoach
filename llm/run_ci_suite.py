@@ -63,6 +63,10 @@ TEST_TARGETS = [
     "llm/tests/test_auth_tokens.py",
     # Progress dashboard: /player/progress endpoint contract + world-model transparency tests.
     "llm/tests/test_progress_dashboard.py",
+    # Bug regression suite: guards the six confirmed fixes (reward ZeroDivision,
+    # spacing zero-interval, trainer empty-events, bandit empty-actions + singular matrix,
+    # engine_eval cache-key sentinel, engine_pool stop race).
+    "llm/tests/test_bug_regressions.py",
 ]
 
 COVERAGE_TARGETS = [
@@ -100,6 +104,10 @@ COVERAGE_TARGETS = [
     "llm.seca.auth.hashing",
     "llm.seca.auth.tokens",
     "llm.seca.analytics.router",
+    "llm.seca.curriculum.reward",
+    "llm.seca.curriculum.spacing",
+    "llm.seca.skills.trainer",
+    "llm.seca.brain.bandit.contextual_bandit",
     # llm.seca.coach.live_controller and llm.seca.coach.executor are excluded from
     # --cov targets: llm.seca.coach.__init__ imports engine.py which loads numpy via
     # a C extension; coverage pre-loading the package for instrumentation triggers

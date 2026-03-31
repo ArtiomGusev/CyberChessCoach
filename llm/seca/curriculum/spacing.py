@@ -10,7 +10,7 @@ def next_interval(success_rate: float, previous_interval: float) -> float:
         return 1.0
 
     growth = 1.8 + success_rate
-    return previous_interval * growth
+    return max(1.0, previous_interval * growth)
 
 
 def urgency(days_since_last: float, interval: float) -> float:

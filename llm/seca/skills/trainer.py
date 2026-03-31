@@ -11,6 +11,9 @@ class SkillTrainer:
         - weakness correlation
         - explanation policy update
         """
+        if not events:
+            return {"status": "no_data"}
+
         from llm.seca.runtime.safe_mode import SAFE_MODE
 
         if SAFE_MODE:

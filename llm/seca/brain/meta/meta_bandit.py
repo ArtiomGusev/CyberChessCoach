@@ -18,7 +18,7 @@ class LinUCB:
     # -----------------------------------------------------
 
     def _theta(self, action: str):
-        return np.linalg.inv(self.A[action]) @ self.b[action]
+        return np.linalg.pinv(self.A[action]) @ self.b[action]
 
     # -----------------------------------------------------
 
@@ -26,20 +26,22 @@ class LinUCB:
         """
         Choose best strategy given context x.
         """
+        if not self.actions:
+            raise ValueError("actions list must not be empty")
         x = x.reshape(-1, 1)
 
         best_action = None
         best_score = -np.inf
 
         for a in self.actions:
-            A_inv = np.linalg.inv(self.A[a])
+            A_inv = np.linalg.pinv(self.A[a])
             theta = self._theta(a)
 
             # predicted reward
-            mean = float(theta.T @ x)
+            mean = float((theta.T @ x).item())
 
             # uncertainty bonus
-            bonus = self.alpha * np.sqrt(float(x.T @ A_inv @ x))
+            bonus = self.alpha * np.sqrt(float((x.T @ A_inv @ x).item()))
 
             score = mean + bonus
 
