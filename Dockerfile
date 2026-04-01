@@ -2,8 +2,8 @@ FROM node:22-alpine AS deps
 
 RUN apk upgrade --no-cache
 
+RUN mkdir /app && chown node:node /app
 WORKDIR /app
-RUN chown node:node /app
 
 USER node
 
