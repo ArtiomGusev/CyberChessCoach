@@ -6,7 +6,7 @@ from typing import Any
 
 try:
     import redis.asyncio as redis
-except Exception:  # pragma: no cover - optional dependency
+except ImportError:  # pragma: no cover - optional dependency
     redis: Any | None = None
 
 
