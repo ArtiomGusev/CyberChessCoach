@@ -142,7 +142,7 @@ dependencies {
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     // Real org.json implementation — overrides the Android stub (android.jar) so that
     // production clients that use JSONObject can be exercised in host JVM unit tests.
-    testImplementation("org.json:json:20231013")
+    testImplementation("org.json:json:20240303")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
 }
