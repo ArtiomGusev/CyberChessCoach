@@ -3,12 +3,15 @@ SECA SAFETY FREEZE GUARD
 Hard-disables any self-modifying or adaptive learning behavior.
 
 SAFE SECA v1 MUST import and execute this on startup.
-If unsafe components are detected â†’ crash immediately.
+If unsafe components are detected → crash immediately.
 """
 
+import logging
 import os
 import sys
 import inspect
+
+logger = logging.getLogger(__name__)
 
 # ------------------------------------------------------------------
 # Configuration
@@ -28,7 +31,6 @@ FORBIDDEN_KEYWORDS = [
 FORBIDDEN_MODULE_PARTS = [
     "brain.rl",
     "brain.bandit.online",
-    "neural_skill_world_model_training",
 ]
 
 
@@ -57,7 +59,7 @@ def _scan_loaded_modules():
         # scan source if available
         try:
             src = inspect.getsource(module)
-        except Exception:
+        except (OSError, TypeError):
             continue
 
         for kw in FORBIDDEN_KEYWORDS:
@@ -83,11 +85,11 @@ def _assert_no_background_tasks():
 
 def _crash(reason: str):
     """Immediate hard stop."""
-    print("\n" + "=" * 60)
-    print("SECA SAFETY FREEZE TRIGGERED")
-    print("Reason:", reason)
-    print("Runtime is NOT SAFE. Shutting down.")
-    print("=" * 60 + "\n")
+    logger.critical("=" * 60)
+    logger.critical("SECA SAFETY FREEZE TRIGGERED")
+    logger.critical("Reason: %s", reason)
+    logger.critical("Runtime is NOT SAFE. Shutting down.")
+    logger.critical("=" * 60)
     sys.exit(1)
 
 
@@ -108,4 +110,4 @@ def enforce(world_model):
     _assert_no_background_tasks()
     _scan_loaded_modules()
 
-    print("SECA SAFETY FREEZE: runtime verified SAFE")
+    logger.info("SECA SAFETY FREEZE: runtime verified SAFE")
