@@ -623,6 +623,16 @@ def build_engine_signal(req: AnalyzeRequest):
 # ------------------------------------------------------------------
 
 
+@app.get("/")
+def root():
+    """Root liveness probe for load-balancers and uptime monitors.
+
+    No authentication required.  Returns the same body as GET /health so
+    monitoring tools that check the root path work without extra config.
+    """
+    return {"status": "ok"}
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}

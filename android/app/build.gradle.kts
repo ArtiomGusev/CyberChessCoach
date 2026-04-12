@@ -37,9 +37,10 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Coach backend — debug default routes to Android emulator host.
-        // Override COACH_API_BASE / COACH_API_KEY env vars for release builds.
-        buildConfigField("String", "COACH_API_BASE", "\"http://10.0.2.2:8000\"")
+        // Coach backend — points at the production server by default.
+        // Override COACH_API_BASE / COACH_API_KEY env vars to redirect to a
+        // local dev server (e.g. http://10.0.2.2:8000 for the Android emulator).
+        buildConfigField("String", "COACH_API_BASE", "\"https://cereveon.com\"")
         buildConfigField("String", "COACH_API_KEY", "\"dev-key\"")
 
         ndk {
@@ -94,7 +95,7 @@ android {
             // GitHub Actions secret (secrets.COACH_API_KEY).
             //
             // Falls back to dev defaults when env vars are absent (e.g. unit-test CI).
-            val prodApiBase: String = System.getenv("COACH_API_BASE") ?: "http://10.0.2.2:8000"
+            val prodApiBase: String = System.getenv("COACH_API_BASE") ?: "https://cereveon.com"
             val prodApiKey: String = System.getenv("COACH_API_KEY") ?: "dev-key"
             // Hard-fail if COACH_API_BASE is explicitly provided but uses plain HTTP.
             if (System.getenv("COACH_API_BASE") != null && !prodApiBase.startsWith("https://")) {
@@ -110,7 +111,7 @@ android {
             // Allow developers to point at a remote server (e.g. Hetzner) without
             // modifying source code — export COACH_API_BASE / COACH_API_KEY in the
             // shell, then re-sync Gradle (Step 3.4).
-            val debugApiBase: String = System.getenv("COACH_API_BASE") ?: "http://10.0.2.2:8000"
+            val debugApiBase: String = System.getenv("COACH_API_BASE") ?: "https://cereveon.com"
             val debugApiKey: String = System.getenv("COACH_API_KEY") ?: "dev-key"
             buildConfigField("String", "COACH_API_BASE", "\"$debugApiBase\"")
             buildConfigField("String", "COACH_API_KEY", "\"$debugApiKey\"")
