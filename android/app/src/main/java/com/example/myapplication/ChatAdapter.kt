@@ -114,12 +114,12 @@ class ChatAdapter : RecyclerView.Adapter<ChatAdapter.VH>() {
                 holder.thumbUp?.setTextColor(Color.LTGRAY)
                 holder.thumbDown?.setTextColor(Color.LTGRAY)
                 holder.thumbUp?.setOnClickListener {
-                    onFeedback?.invoke(holder.adapterPosition, true)
+                    onFeedback?.invoke(holder.bindingAdapterPosition, true)
                     holder.thumbUp.setTextColor(Color.GREEN)
                     holder.thumbDown?.setTextColor(Color.DKGRAY)
                 }
                 holder.thumbDown?.setOnClickListener {
-                    onFeedback?.invoke(holder.adapterPosition, false)
+                    onFeedback?.invoke(holder.bindingAdapterPosition, false)
                     holder.thumbDown.setTextColor(Color.RED)
                     holder.thumbUp?.setTextColor(Color.DKGRAY)
                 }
