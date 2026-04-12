@@ -19,7 +19,11 @@ def extract_engine_signal(
 
     evaluation = stockfish_json.get("evaluation", {})
     eval_type = evaluation.get("type", "cp")
-    value = evaluation.get("value", 0)
+    _raw_value = evaluation.get("value", 0)
+    try:
+        value = int(_raw_value)
+    except (TypeError, ValueError):
+        value = 0
 
     def side_from_fen(fen: str | None) -> str | None:
         if not fen:
