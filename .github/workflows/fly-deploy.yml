@@ -529,7 +529,7 @@ jobs:
           scanners: vuln
           vuln-type: library
           severity: HIGH,CRITICAL
-          ignore-unfixed: true
+          ignore-unfixed: false
           exit-code: "0"
           trivy-config: trivy.yaml
         env:
@@ -577,7 +577,7 @@ jobs:
           scanners: vuln
           vuln-type: os,library
           severity: HIGH,CRITICAL
-          ignore-unfixed: true
+          ignore-unfixed: false
           exit-code: "0"
           trivy-config: trivy.yaml
         env:
