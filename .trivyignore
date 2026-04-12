@@ -7,8 +7,14 @@
 # Add entries here for accepted risks or vulnerabilities with no available fix
 # when ignore-unfixed: true in the workflow does not cover them.
 
-# ncurses: heap-based buffer overflow in _nc_captoinfo (captoinfo.c) that may
-# lead to arbitrary code execution via crafted input. Unfixed in Debian Bookworm
-# (python:3.13-slim base). apt-get upgrade -y will apply the fix automatically
-# once Debian releases a patched package. Revisit at expiry.
-CVE-2021-39537 until:2026-10-01
+# ncurses 6.5+20250216-2 (Debian 13 Trixie): stack-based buffer overflow in
+# infocmp's analyze_string function. No fix available in Debian 13 yet.
+# Applies to libncursesw6, libtinfo6, ncurses-base, ncurses-bin.
+# Revisit at expiry; remove once Debian ships a patched ncurses package.
+CVE-2025-69720 until:2027-01-01
+
+# systemd 257.9-1~deb13u1 (Debian 13 Trixie): arbitrary code execution or
+# Denial of Service via spurious IPC messages. No fix available in Debian 13
+# yet. Applies to libsystemd0 and libudev1.
+# Revisit at expiry; remove once Debian ships a patched systemd package.
+CVE-2026-29111 until:2027-01-01
