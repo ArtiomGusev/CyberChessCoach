@@ -94,11 +94,14 @@ android {
             // per-user auth uses JWT tokens issued by /auth/login. Pass it as a
             // GitHub Actions secret (secrets.COACH_API_KEY).
             //
-            // Falls back to dev defaults when env vars are absent (e.g. unit-test CI).
-            val prodApiBase: String = System.getenv("COACH_API_BASE") ?: "https://cereveon.com"
-            val prodApiKey: String = System.getenv("COACH_API_KEY") ?: "dev-key"
+            // Falls back to dev defaults when env vars are absent or blank.
+            // vars.COACH_API_BASE expands to "" (not null) when unset in GitHub Actions,
+            // so treat blank the same as absent to avoid a spurious HTTPS guard failure.
+            val rawProdApiBase: String? = System.getenv("COACH_API_BASE")?.takeIf { it.isNotBlank() }
+            val prodApiBase: String = rawProdApiBase ?: "https://cereveon.com"
+            val prodApiKey: String = System.getenv("COACH_API_KEY")?.takeIf { it.isNotBlank() } ?: "dev-key"
             // Hard-fail if COACH_API_BASE is explicitly provided but uses plain HTTP.
-            if (System.getenv("COACH_API_BASE") != null && !prodApiBase.startsWith("https://")) {
+            if (rawProdApiBase != null && !prodApiBase.startsWith("https://")) {
                 error(
                     "Release build requires COACH_API_BASE to start with https://. " +
                     "Got: $prodApiBase — set a valid TLS endpoint."
