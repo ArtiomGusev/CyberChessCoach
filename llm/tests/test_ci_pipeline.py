@@ -165,7 +165,7 @@ def test_ci_workflow_hardens_checkout_and_supply_chain_controls():  # pylint: di
     assert image_security_login["with"]["username"] == "${{ github.repository_owner }}"
 
     scan_app = _step_named(image_security, "Scan published app image")
-    assert scan_app["uses"] == "aquasecurity/trivy-action@0.34.0"
+    assert scan_app["uses"] == "aquasecurity/trivy-action@0.35.0"
     assert scan_app["with"]["scan-type"] == "image"
     assert scan_app["with"]["format"] == "table"
     assert scan_app["with"]["vuln-type"] == "library"
@@ -177,7 +177,7 @@ def test_ci_workflow_hardens_checkout_and_supply_chain_controls():  # pylint: di
     assert scan_app["env"]["TRIVY_USERNAME"] == "${{ github.repository_owner }}"
 
     sarif_app = _step_named(image_security, "Generate app image SARIF")
-    assert sarif_app["uses"] == "aquasecurity/trivy-action@0.34.0"
+    assert sarif_app["uses"] == "aquasecurity/trivy-action@0.35.0"
     assert sarif_app["with"]["format"] == "sarif"
     assert sarif_app["with"]["exit-code"] == "0"
     assert sarif_app["with"]["ignore-unfixed"] is False
@@ -186,7 +186,7 @@ def test_ci_workflow_hardens_checkout_and_supply_chain_controls():  # pylint: di
     assert sarif_app["env"]["TRIVY_USERNAME"] == "${{ github.repository_owner }}"
 
     scan_api = _step_named(image_security, "Scan published llm API image")
-    assert scan_api["uses"] == "aquasecurity/trivy-action@0.34.0"
+    assert scan_api["uses"] == "aquasecurity/trivy-action@0.35.0"
     assert scan_api["with"]["scan-type"] == "image"
     assert scan_api["with"]["format"] == "table"
     assert scan_api["with"]["vuln-type"] == "os,library"
@@ -197,7 +197,7 @@ def test_ci_workflow_hardens_checkout_and_supply_chain_controls():  # pylint: di
     assert scan_api["env"]["TRIVY_USERNAME"] == "${{ github.repository_owner }}"
 
     sarif_api = _step_named(image_security, "Generate llm API image SARIF")
-    assert sarif_api["uses"] == "aquasecurity/trivy-action@0.34.0"
+    assert sarif_api["uses"] == "aquasecurity/trivy-action@0.35.0"
     assert sarif_api["with"]["format"] == "sarif"
     assert sarif_api["with"]["exit-code"] == "0"
     assert sarif_api["with"]["ignore-unfixed"] is False
@@ -249,7 +249,7 @@ def test_security_workflow_uses_safe_checkout_and_codeql_v4():
     )
     assert (
         _step_named(trivy_misconfig_job, "Run Trivy misconfiguration scan")["uses"]
-        == "aquasecurity/trivy-action@0.34.0"
+        == "aquasecurity/trivy-action@0.35.0"
     )
 
     trivy_runtime_job = jobs["trivy-runtime-vulns"]
@@ -265,7 +265,7 @@ def test_security_workflow_uses_safe_checkout_and_codeql_v4():
         in prepare_trivy_input["run"]
     )
     trivy_runtime_step = _step_named(trivy_runtime_job, "Run Trivy runtime vulnerability scan")
-    assert trivy_runtime_step["uses"] == "aquasecurity/trivy-action@0.34.0"
+    assert trivy_runtime_step["uses"] == "aquasecurity/trivy-action@0.35.0"
     assert trivy_runtime_step["with"]["scanners"] == "vuln"
     assert trivy_runtime_step["with"]["scan-ref"] == "tmp_logs/trivy-runtime"
     assert trivy_runtime_step["with"]["format"] == "table"
