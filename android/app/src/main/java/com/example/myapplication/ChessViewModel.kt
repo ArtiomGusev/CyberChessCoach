@@ -141,9 +141,10 @@ $moves"""
 
                 withContext(Dispatchers.Main) {
                     if (stateId == requestId) {
-                        val uci = move?.let { uciFromCoords(it.fr, it.fc, it.tr, it.tc) } ?: ""
                         val captured = processAIMoveResult(move, applyAIMove)
                         if (captured != null) {
+                            // uci is only valid after isValid() passes — compute here
+                            val uci = move?.let { uciFromCoords(it.fr, it.fc, it.tr, it.tc) } ?: ""
                             dispatchEngineEval(captured, uci, exportFEN, requestId)
                         }
                     } else {
