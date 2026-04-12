@@ -69,6 +69,15 @@ TEST_TARGETS = [
     "llm/tests/test_bug_regressions.py",
     # API05 — LLM retry cap, inter-retry backoff delay, and safe fallback contract.
     "llm/tests/test_explain_pipeline_retry.py",
+    # QA plan — server-related categories (all 111 pass, zero external deps).
+    # INV-01–05: architectural invariants (LLM output, engine format, isolation, call order, game independence).
+    "llm/tests/test_architectural_invariants.py",
+    # SF-01–04: ESV output schema, centipawn coarsening, malformed-input handling, determinism.
+    "llm/tests/test_esv_pipeline_qa.py",
+    # RAG-01–04: retrieval determinism, relevance, empty-store safety, document immutability.
+    "llm/tests/test_rag_pipeline_qa.py",
+    # API-01, API-03, API-06, CI-06: health endpoint, invalid-FEN rejection, seca_doctor, deploy chain.
+    "llm/tests/test_api_smoke_qa.py",
 ]
 
 COVERAGE_TARGETS = [
