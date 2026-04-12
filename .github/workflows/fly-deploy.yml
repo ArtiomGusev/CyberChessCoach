@@ -501,7 +501,7 @@ jobs:
       - name: Scan published app image
         id: trivy-app-image
         continue-on-error: true
-        uses: aquasecurity/trivy-action@0.34.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           scan-type: image
           image-ref: ghcr.io/${{ needs.docker-images.outputs.image_owner }}/${{ env.APP_IMAGE_NAME }}@${{ needs.docker-images.outputs.app_digest }}
@@ -520,7 +520,7 @@ jobs:
 
       - name: Generate app image SARIF
         continue-on-error: true
-        uses: aquasecurity/trivy-action@0.34.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           scan-type: image
           image-ref: ghcr.io/${{ needs.docker-images.outputs.image_owner }}/${{ env.APP_IMAGE_NAME }}@${{ needs.docker-images.outputs.app_digest }}
@@ -548,7 +548,7 @@ jobs:
       - name: Scan published llm API image
         id: trivy-api-image
         continue-on-error: true
-        uses: aquasecurity/trivy-action@0.34.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           scan-type: image
           image-ref: ghcr.io/${{ needs.docker-images.outputs.image_owner }}/${{ env.API_IMAGE_NAME }}@${{ needs.docker-images.outputs.api_digest }}
