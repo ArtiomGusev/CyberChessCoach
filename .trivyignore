@@ -18,3 +18,9 @@ CVE-2025-69720 until:2027-01-01
 # yet. Applies to libsystemd0 and libudev1.
 # Revisit at expiry; remove once Debian ships a patched systemd package.
 CVE-2026-29111 until:2027-01-01
+
+# zlib1g 1:1.3.dfsg+really1.3.1-1+b1 (Debian 13 Trixie): infinite loop in
+# CRC32 combine functions leads to Denial of Service. NVD CVSS 5.5 (MEDIUM),
+# no fix available in Debian 13 yet. Applies to zlib1g.
+# Revisit at expiry; remove once Debian ships a patched zlib package.
+CVE-2026-27171 until:2027-01-01
