@@ -512,6 +512,7 @@ jobs:
           ignore-unfixed: true
           exit-code: "0"
           trivy-config: trivy.yaml
+          trivyignores: .trivyignore
         env:
           TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy
           TRIVY_TIMEOUT: "15m"
@@ -532,6 +533,7 @@ jobs:
           ignore-unfixed: false
           exit-code: "0"
           trivy-config: trivy.yaml
+          trivyignores: .trivyignore
         env:
           TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy
           TRIVY_SKIP_DB_UPDATE: "true"
@@ -560,6 +562,7 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
           trivy-config: trivy.yaml
+          trivyignores: .trivyignore
         env:
           TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy
           TRIVY_TIMEOUT: "15m"
@@ -580,6 +583,7 @@ jobs:
           ignore-unfixed: false
           exit-code: "0"
           trivy-config: trivy.yaml
+          trivyignores: .trivyignore
         env:
           TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy
           TRIVY_SKIP_DB_UPDATE: "true"
