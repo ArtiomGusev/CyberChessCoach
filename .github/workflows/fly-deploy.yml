@@ -513,6 +513,7 @@ jobs:
           exit-code: "0"
           trivy-config: trivy.yaml
           trivyignores: .trivyignore
+          ignore-policy: trivy-ignore-policy.rego
         env:
           TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy
           TRIVY_TIMEOUT: "15m"
@@ -534,6 +535,7 @@ jobs:
           exit-code: "0"
           trivy-config: trivy.yaml
           trivyignores: .trivyignore
+          ignore-policy: trivy-ignore-policy.rego
         env:
           TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy
           TRIVY_SKIP_DB_UPDATE: "true"
@@ -563,6 +565,7 @@ jobs:
           exit-code: "1"
           trivy-config: trivy.yaml
           trivyignores: .trivyignore
+          ignore-policy: trivy-ignore-policy.rego
         env:
           TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy
           TRIVY_TIMEOUT: "15m"
@@ -584,6 +587,7 @@ jobs:
           exit-code: "0"
           trivy-config: trivy.yaml
           trivyignores: .trivyignore
+          ignore-policy: trivy-ignore-policy.rego
         env:
           TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy
           TRIVY_SKIP_DB_UPDATE: "true"
