@@ -32,7 +32,7 @@ jobs:
       # 3. Deploy (atomic-style)
       - name: Deploy to server
         run: |
-          ssh root@${{ secrets.HETZNER_HOST }} << 'EOF'
+          ssh deploy@${{ secrets.HETZNER_HOST }} << 'EOF'
             set -e
 
             APP_DIR="/root/chesscoach"
@@ -77,6 +77,6 @@ jobs:
       # 4. Cleanup old Docker images
       - name: Cleanup
         run: |
-          ssh root@${{ secrets.HETZNER_HOST }} << 'EOF'
+          ssh deploy@${{ secrets.HETZNER_HOST }} << 'EOF'
             docker system prune -af || true
           EOF
