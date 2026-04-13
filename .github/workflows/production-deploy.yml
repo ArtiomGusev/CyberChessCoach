@@ -1,0 +1,82 @@
+name: Production Deploy
+
+on:
+  push:
+    branches: [ "main" ]
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      APP_DIR: /root/chesscoach
+      HEALTHCHECK_URL: http://localhost:8000/health
+
+    steps:
+      # 1. Checkout repo
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. Setup SSH
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.HETZNER_HOST }} >> ~/.ssh/known_hosts
+
+      # 3. Deploy (atomic-style)
+      - name: Deploy to server
+        run: |
+          ssh root@${{ secrets.HETZNER_HOST }} << 'EOF'
+            set -e
+
+            APP_DIR="/root/chesscoach"
+            BACKUP_DIR="/root/chesscoach_backup_$(date +%s)"
+
+            echo "📦 Creating backup..."
+            cp -r $APP_DIR $BACKUP_DIR || true
+
+            echo "⬇️ Pulling latest code..."
+            cd $APP_DIR
+            git fetch --all
+            git reset --hard origin/main
+
+            echo "🐳 Rebuilding containers..."
+            docker compose pull
+            docker compose up -d --build
+
+            echo "⏳ Waiting for app to boot..."
+            sleep 10
+
+            echo "❤️ Running health check..."
+            for i in {1..10}; do
+              if curl -fs http://localhost:8000/health; then
+                echo "✅ Health check passed"
+                exit 0
+              fi
+              echo "Retry $i..."
+              sleep 5
+            done
+
+            echo "❌ Health check failed, rolling back..."
+
+            rm -rf $APP_DIR
+            mv $BACKUP_DIR $APP_DIR
+
+            cd $APP_DIR
+            docker compose up -d --build
+
+            exit 1
+          EOF
+
+      # 4. Cleanup old Docker images
+      - name: Cleanup
+        run: |
+          ssh root@${{ secrets.HETZNER_HOST }} << 'EOF'
+            docker system prune -af || true
+          EOF
