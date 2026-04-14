@@ -170,8 +170,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install pip-audit==2.8.0
 
-      - name: Audit Python dependencies
+      - name: Audit runtime dependencies
         run: python -m pip_audit -r llm/requirements.txt --strict --progress-spinner off
+
+      - name: Audit CI/toolchain dependencies
+        run: python -m pip_audit -r llm/requirements-ci.txt --strict --progress-spinner off
 
   node-security:
     name: Node dependency audit

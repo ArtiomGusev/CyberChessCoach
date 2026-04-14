@@ -42,6 +42,7 @@ Stable test IDs (do NOT rename):
   SH_20  Session model has expires_at column
   SH_20b Session model expires_at has a non-null default
   SH_20c service.py get_player_by_session references expires_at
+  SH_21  pytest in requirements-ci.txt is pinned at >= 8.1.0 (GHSA-w234-x5rp-h73c)
 """
 
 from __future__ import annotations
@@ -733,4 +734,44 @@ class TestSessionModel:
         assert "expires_at" in source, (
             "service.py does not reference expires_at in get_player_by_session. "
             "Expired sessions must be rejected as defence-in-depth."
+        )
+
+
+# ===========================================================================
+# SH_21 — CI Dependency Security
+# ===========================================================================
+
+
+class TestCIDependencySecurity:
+    """Verify that CI-only dependencies satisfy known-CVE version floors."""
+
+    def test_sh21_pytest_not_vulnerable_to_tmpdir_cve(self):
+        """SH_21: pytest in requirements-ci.txt must be >= 8.1.0.
+
+        pytest < 8.1.0 is vulnerable to GHSA-w234-x5rp-h73c (CVE-2024-3772):
+        tmp_path directories were created world-readable (mode 0o777), allowing
+        other local users to read or tamper with test fixture data during a run.
+        Fixed in pytest 8.1.0 (tmp_path now applies mode 0o700).
+        """
+        reqs = (_REPO_ROOT / "llm" / "requirements-ci.txt").read_text(encoding="utf-8")
+        pytest_version: str | None = None
+        for line in reqs.splitlines():
+            stripped = line.strip()
+            # Match "pytest==X.Y.Z" but not "pytest-cov==..." or similar
+            if stripped.startswith("pytest=="):
+                pytest_version = stripped.split("==", 1)[1]
+                break
+
+        assert pytest_version is not None, (
+            "pytest is not pinned with == in llm/requirements-ci.txt. "
+            "Pin pytest to a specific version to ensure CVE audit coverage."
+        )
+
+        def _ver(v: str) -> tuple[int, ...]:
+            return tuple(int(p) for p in v.split("."))
+
+        assert _ver(pytest_version) >= (8, 1, 0), (
+            f"pytest=={pytest_version} in requirements-ci.txt is vulnerable to "
+            "GHSA-w234-x5rp-h73c (tmpdir world-readable permissions, CVE-2024-3772). "
+            "Upgrade pytest to >= 8.1.0 to fix this CVE."
         )

@@ -271,6 +271,28 @@ def test_security_workflow_uses_safe_checkout_and_codeql_v4():
     assert trivy_runtime_step["with"]["format"] == "table"
 
 
+def test_dependency_security_audits_ci_requirements():
+    """dependency-security CI job must audit requirements-ci.txt (closes issue #6).
+
+    GHSA-w234-x5rp-h73c was reported against pytest (pip) in requirements-ci.txt.
+    The job previously only audited requirements.txt, leaving CI-only tools (including
+    pytest) outside the vulnerability scan perimeter.  Both files must be explicitly
+    audited so a future downgrade to a vulnerable version causes CI to fail.
+    """
+    workflow = _load_workflow("fly-deploy.yml")
+    dep_sec = workflow["jobs"]["dependency-security"]
+    step_runs = "\n".join(step.get("run", "") for step in dep_sec["steps"])
+
+    assert "requirements.txt" in step_runs, (
+        "dependency-security job does not audit llm/requirements.txt."
+    )
+    assert "requirements-ci.txt" in step_runs, (
+        "dependency-security job does not audit llm/requirements-ci.txt. "
+        "CI-only dependencies (e.g. pytest) are outside the vulnerability scan — "
+        "root cause of issue #6 (GHSA-w234-x5rp-h73c)."
+    )
+
+
 def test_container_images_keep_health_checks_and_non_root_runtime():
     root_dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     assert "ENV NODE_ENV=production" in root_dockerfile
