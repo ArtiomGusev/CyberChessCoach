@@ -590,6 +590,38 @@ def test_proguard_rules_preserve_api_model_classes():
 # ---------------------------------------------------------------------------
 
 
+def _assert_zero_downtime_ssh_step(ssh_step: dict, *, label: str) -> None:
+    """Shared assertions for the Deploy to Hetzner via SSH step.
+
+    Used by both the automated deploy (fly-deploy.yml) and the manual
+    re-deploy (production-deploy.yml) to ensure they remain in sync.
+    """
+    assert ssh_step["uses"] == "appleboy/ssh-action@v1.2.0", f"{label}: wrong SSH action"
+    assert ssh_step["with"]["key"] == "${{ secrets.HETZNER_SSH_KEY }}", (
+        f"{label}: SSH key must come from secrets.HETZNER_SSH_KEY"
+    )
+    assert ssh_step["with"]["host"] == "${{ secrets.HETZNER_HOST }}", (
+        f"{label}: host must come from secrets.HETZNER_HOST"
+    )
+    assert ssh_step["with"]["username"] == "deploy", f"{label}: username must be 'deploy'"
+
+    script: str = ssh_step["with"]["script"]
+    step_env: dict = ssh_step.get("env", {})
+    step_envs: str = ssh_step["with"].get("envs", "")
+
+    assert "set -euo pipefail" in script, f"{label}: must use strict error handling"
+    assert "docker pull" in script, f"{label}: must pull pinned image before rollout"
+    assert "DEPLOY_IMAGE" in script, f"{label}: must deploy by pinned digest via DEPLOY_IMAGE"
+    assert "DEPLOY_IMAGE" in step_env, f"{label}: DEPLOY_IMAGE must be set on the step env"
+    assert "DEPLOY_IMAGE" in step_envs, f"{label}: DEPLOY_IMAGE must be forwarded via envs:"
+    assert "--scale api=2" in script, f"{label}: must scale to 2 for zero-downtime rollout"
+    assert "--no-recreate" in script, f"{label}: must keep existing container alive during scale-up"
+    assert "Health.Status" in script, f"{label}: must inspect Docker healthcheck on new container"
+    assert "PREV_CONTAINER" in script, f"{label}: must record old container ID for removal"
+    assert "PREV_IMAGE" in script, f"{label}: must record old image reference for rollback logging"
+    assert "roll" in script.lower(), f"{label}: must roll back if new container is unhealthy"
+
+
 def test_hetzner_deploy_health_gates_rollout():
     """Deploy script must implement zero-downtime rolling swap:
     scale to 2 (new alongside old), health-check new container via Docker
@@ -603,22 +635,66 @@ def test_hetzner_deploy_health_gates_rollout():
     assert deploy["concurrency"]["cancel-in-progress"] is False
 
     ssh_step = _step_named(deploy, "Deploy to Hetzner via SSH")
-    assert ssh_step["uses"] == "appleboy/ssh-action@v1.2.0"
-    script: str = ssh_step["with"]["script"]
-    step_env: dict = ssh_step.get("env", {})
-    step_envs: str = ssh_step["with"].get("envs", "")
+    _assert_zero_downtime_ssh_step(ssh_step, label="fly-deploy.yml")
 
-    assert "set -euo pipefail" in script, "SSH script must use strict error handling"
-    assert "docker pull" in script, "Must pull pinned image before rollout"
-    assert "DEPLOY_IMAGE" in script, "Must deploy by pinned digest via DEPLOY_IMAGE"
-    assert "DEPLOY_IMAGE" in step_env, "DEPLOY_IMAGE must be set on the step env (digest pinning)"
-    assert "DEPLOY_IMAGE" in step_envs, "DEPLOY_IMAGE must be forwarded to the remote via envs:"
-    assert "--scale api=2" in script, "Must scale to 2 to run new container alongside old"
-    assert "--no-recreate" in script, "Must keep existing container alive during scale-up"
-    assert "Health.Status" in script, "Must poll Docker healthcheck on new container specifically"
-    assert "PREV_CONTAINER" in script, "Must record old container ID for explicit removal"
-    assert "PREV_IMAGE" in script, "Must record old image reference for rollback logging"
-    assert "roll" in script.lower(), "Must attempt rollback if new container is unhealthy"
+
+def test_production_deploy_workflow_structure():
+    """production-deploy.yml must be a proper manual re-deploy workflow with:
+    - workflow_dispatch trigger requiring api_digest input
+    - concurrency group matching fly-deploy.yml (prevents races)
+    - environment: production and persist-credentials: false checkout
+    - key: secrets.HETZNER_SSH_KEY (not written to disk)
+    - full zero-downtime script identical to the automated deploy
+    """
+    workflow = _load_workflow("production-deploy.yml")
+
+    # Trigger — PyYAML parses the `on:` key as boolean True (YAML 1.1)
+    triggers = workflow[True]
+    assert "workflow_dispatch" in triggers, (
+        "production-deploy.yml must be manually triggerable via workflow_dispatch"
+    )
+    dispatch_inputs = triggers["workflow_dispatch"]["inputs"]
+    assert "api_digest" in dispatch_inputs, "Must require api_digest input"
+    assert dispatch_inputs["api_digest"]["required"] is True, "api_digest must be required"
+
+    # Concurrency — same group as fly-deploy.yml deploy job (prevents simultaneous runs)
+    concurrency = workflow["concurrency"]
+    assert concurrency["group"] == "hetzner-production", (
+        "concurrency group must match fly-deploy.yml's deploy job to prevent races"
+    )
+    assert concurrency["cancel-in-progress"] is False, (
+        "cancel-in-progress must be False — a deploy in progress must not be interrupted"
+    )
+
+    # Job structure
+    deploy = workflow["jobs"]["deploy"]
+    assert deploy["environment"] == {"name": "production"}
+    assert deploy["permissions"] == {"contents": "read"}
+
+    checkout = _step_named(deploy, "Checkout repository")
+    assert checkout["uses"] == "actions/checkout@v4"
+    assert checkout["with"]["persist-credentials"] is False
+
+    # SSH key usage
+    ssh_step = _step_named(deploy, "Deploy to Hetzner via SSH")
+    _assert_zero_downtime_ssh_step(ssh_step, label="production-deploy.yml")
+
+
+def test_automated_and_manual_deploy_share_concurrency_group():
+    """fly-deploy.yml's deploy job and production-deploy.yml must use the same
+    concurrency group so a manual re-deploy and an automated push-triggered
+    deploy can never run simultaneously on the production server.
+    """
+    ci = _load_workflow("fly-deploy.yml")
+    prod = _load_workflow("production-deploy.yml")
+
+    ci_group = ci["jobs"]["deploy"]["concurrency"]["group"]
+    prod_group = prod["concurrency"]["group"]
+    assert ci_group == prod_group, (
+        f"Concurrency group mismatch: fly-deploy.yml uses '{ci_group}' "
+        f"but production-deploy.yml uses '{prod_group}'. "
+        "Both must use the same group to prevent concurrent deploys."
+    )
 
 
 def test_docker_compose_prod_health_and_immutable_image():
