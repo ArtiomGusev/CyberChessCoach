@@ -647,24 +647,37 @@ jobs:
             echo "available=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # Pulls the latest GHCR image and does a zero-downtime restart of the api
-      # container only — db and ollama are left running.
+      # Deploys the exact image digest produced by the docker-images job.
+      # Pinning by digest prevents tag-mutation and ensures the image that
+      # passed Trivy + Cosign is the one running in production.
+      # Rollback: if /health does not pass within 60 s the previous container
+      # image is restored automatically.
       - name: Deploy to Hetzner via SSH
         if: steps.hetzner-check.outputs.available == 'true'
         uses: appleboy/ssh-action@v1.2.0
+        env:
+          DEPLOY_IMAGE: ghcr.io/${{ needs.docker-images.outputs.image_owner }}/${{ env.API_IMAGE_NAME }}@${{ needs.docker-images.outputs.api_digest }}
         with:
           host: ${{ secrets.HETZNER_HOST }}
           username: deploy
           key: ${{ secrets.HETZNER_SSH_KEY }}
+          envs: DEPLOY_IMAGE
           script: |
             set -euo pipefail
             cd /opt/chesscoach
 
-            # Pull the freshly signed image from GHCR
-            docker compose -f docker-compose.prod.yml pull api
+            # Record the image the current container is running so we can restore it
+            PREV_IMAGE=$(docker compose -f docker-compose.prod.yml ps -q api 2>/dev/null | \
+              xargs -r docker inspect --format='{{.Config.Image}}' 2>/dev/null || true)
+            echo "Previous image: ${PREV_IMAGE:-none}"
+            echo "Deploying:      $DEPLOY_IMAGE"
 
-            # Replace only the api container; leave db and ollama untouched
-            docker compose -f docker-compose.prod.yml up -d --no-deps api
+            # Pull the pinned, CI-signed image by digest — prevents tag mutation attacks
+            docker pull "$DEPLOY_IMAGE"
+
+            # Replace only the api container; leave db, ollama, and redis untouched
+            GHCR_IMAGE="$DEPLOY_IMAGE" \
+              docker compose -f docker-compose.prod.yml up -d --no-deps api
 
             # Wait for the health check to pass (max 60 s)
             for i in $(seq 1 12); do
@@ -675,7 +688,15 @@ jobs:
               fi
               echo "Waiting for api to be healthy ($i/12)..."
             done
-            echo "::error::API did not become healthy after deploy."
+
+            echo "::error::Health check failed. Rolling back..."
+            if [ -n "${PREV_IMAGE:-}" ]; then
+              GHCR_IMAGE="$PREV_IMAGE" \
+                docker compose -f docker-compose.prod.yml up -d --no-deps api
+              echo "Rolled back to $PREV_IMAGE."
+            else
+              echo "No previous image recorded; cannot roll back automatically."
+            fi
             exit 1
 
   llm-regression:

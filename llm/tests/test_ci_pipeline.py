@@ -604,12 +604,19 @@ def test_hetzner_deploy_health_gates_rollout():
     ssh_step = _step_named(deploy, "Deploy to Hetzner via SSH")
     assert ssh_step["uses"] == "appleboy/ssh-action@v1.2.0"
     script: str = ssh_step["with"]["script"]
+    step_env: dict = ssh_step.get("env", {})
+    step_envs: str = ssh_step["with"].get("envs", "")
 
     assert "set -euo pipefail" in script, "SSH script must use strict error handling"
-    assert "pull api" in script, "Must pull the new image before restarting"
+    assert "docker pull" in script, "Must pull the new image before restarting"
+    assert "DEPLOY_IMAGE" in script, "Must deploy by pinned digest via DEPLOY_IMAGE"
+    assert "DEPLOY_IMAGE" in step_env, "DEPLOY_IMAGE must be set on the step env (digest pinning)"
+    assert "DEPLOY_IMAGE" in step_envs, "DEPLOY_IMAGE must be forwarded to the remote via envs:"
     assert "up -d --no-deps api" in script, "Must do a zero-downtime --no-deps restart"
     assert "/health" in script, "Must poll /health to gate a successful rollout"
     assert "curl" in script
+    assert "PREV_IMAGE" in script, "Must record previous image for rollback"
+    assert "roll" in script.lower(), "Must attempt rollback if health check fails"
 
 
 def test_docker_compose_prod_health_and_immutable_image():
