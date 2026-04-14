@@ -647,11 +647,18 @@ jobs:
             echo "available=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # Deploys the exact image digest produced by the docker-images job.
-      # Pinning by digest prevents tag-mutation and ensures the image that
-      # passed Trivy + Cosign is the one running in production.
-      # Rollback: if /health does not pass within 60 s the previous container
-      # image is restored automatically.
+      # Zero-downtime rolling deploy (blue/green-style via Docker Compose scale):
+      #
+      #  1. Record old container ID and image (rollback reference).
+      #  2. Pull the exact digest produced by the docker-images job.
+      #  3. --scale api=2 --no-recreate: start NEW container alongside old one.
+      #     Caddy proxies to the "api" service name; Docker's internal DNS
+      #     round-robins across all containers — both serve traffic immediately.
+      #  4. Poll Docker's own healthcheck on the NEW container (not round-robin).
+      #  5a. Healthy → gracefully drain old container (SIGTERM + 30 s), remove it.
+      #      Traffic shifts entirely to the new container. Zero downtime.
+      #  5b. Unhealthy → stop and remove new container. Old stays alive.
+      #      Automatic rollback, no manual intervention required.
       - name: Deploy to Hetzner via SSH
         if: steps.hetzner-check.outputs.available == 'true'
         uses: appleboy/ssh-action@v1.2.0
@@ -666,37 +673,55 @@ jobs:
             set -euo pipefail
             cd /opt/chesscoach
 
-            # Record the image the current container is running so we can restore it
-            PREV_IMAGE=$(docker compose -f docker-compose.prod.yml ps -q api 2>/dev/null | \
-              xargs -r docker inspect --format='{{.Config.Image}}' 2>/dev/null || true)
-            echo "Previous image: ${PREV_IMAGE:-none}"
-            echo "Deploying:      $DEPLOY_IMAGE"
+            # ── 1. Record running container for rollback reference ────────────
+            PREV_CONTAINER=$(docker compose -f docker-compose.prod.yml ps -q api 2>/dev/null | head -1 || true)
+            PREV_IMAGE=$([ -n "$PREV_CONTAINER" ] && \
+              docker inspect --format='{{.Config.Image}}' "$PREV_CONTAINER" 2>/dev/null || true)
+            echo "Previous: ${PREV_IMAGE:-none}"
+            echo "Deploying: $DEPLOY_IMAGE"
 
-            # Pull the pinned, CI-signed image by digest — prevents tag mutation attacks
+            # ── 2. Pull pinned, CI-signed image by digest ─────────────────────
             docker pull "$DEPLOY_IMAGE"
 
-            # Replace only the api container; leave db, ollama, and redis untouched
+            # ── 3. Scale to 2: start new container alongside old ──────────────
+            #    --no-recreate keeps the running container untouched.
+            #    --scale api=2 adds a second instance with the new image.
             GHCR_IMAGE="$DEPLOY_IMAGE" \
-              docker compose -f docker-compose.prod.yml up -d --no-deps api
+              docker compose -f docker-compose.prod.yml up -d --scale api=2 --no-recreate api
 
-            # Wait for the health check to pass (max 60 s)
-            for i in $(seq 1 12); do
-              sleep 5
-              if curl -sf http://127.0.0.1:8000/health > /dev/null; then
-                echo "Health check passed."
-                exit 0
-              fi
-              echo "Waiting for api to be healthy ($i/12)..."
-            done
-
-            echo "::error::Health check failed. Rolling back..."
-            if [ -n "${PREV_IMAGE:-}" ]; then
-              GHCR_IMAGE="$PREV_IMAGE" \
-                docker compose -f docker-compose.prod.yml up -d --no-deps api
-              echo "Rolled back to $PREV_IMAGE."
-            else
-              echo "No previous image recorded; cannot roll back automatically."
+            # ── 4. Identify the new container ─────────────────────────────────
+            NEW_CONTAINER=$(docker compose -f docker-compose.prod.yml ps -q api \
+              | grep -vxF "${PREV_CONTAINER:-}" | head -1 || true)
+            if [ -z "$NEW_CONTAINER" ]; then
+              echo "::error::Could not identify new container after scale-up."
+              exit 1
             fi
+            echo "New container: $NEW_CONTAINER"
+
+            # ── 5. Wait up to 90 s for Docker healthcheck on new container ────
+            for i in $(seq 1 18); do
+              STATUS=$(docker inspect --format='{{.State.Health.Status}}' "$NEW_CONTAINER" 2>/dev/null || echo "unknown")
+              [ "$STATUS" = "healthy" ] && break
+              echo "  Health.Status: $STATUS ($i/18)"
+              sleep 5
+            done
+            STATUS=$(docker inspect --format='{{.State.Health.Status}}' "$NEW_CONTAINER" 2>/dev/null || echo "failed")
+
+            # ── 6a. Healthy: gracefully drain old, traffic shifts to new ──────
+            if [ "$STATUS" = "healthy" ]; then
+              if [ -n "${PREV_CONTAINER:-}" ]; then
+                docker stop --time 30 "$PREV_CONTAINER"
+                docker rm "$PREV_CONTAINER"
+              fi
+              echo "Deployment complete."
+              exit 0
+            fi
+
+            # ── 6b. Unhealthy: remove new, old container keeps serving ────────
+            echo "::error::New container unhealthy ($STATUS). Rolling back..."
+            docker stop "$NEW_CONTAINER" 2>/dev/null || true
+            docker rm  "$NEW_CONTAINER" 2>/dev/null || true
+            echo "Rolled back — ${PREV_IMAGE:-original container} still running."
             exit 1
 
   llm-regression:

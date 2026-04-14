@@ -591,8 +591,9 @@ def test_proguard_rules_preserve_api_model_classes():
 
 
 def test_hetzner_deploy_health_gates_rollout():
-    """The deploy script must: use set -euo pipefail, pull before restart, perform
-    a zero-downtime --no-deps restart, and poll /health before declaring success.
+    """Deploy script must implement zero-downtime rolling swap:
+    scale to 2 (new alongside old), health-check new container via Docker
+    healthcheck, gracefully drain old on success, rollback new on failure.
     """
     workflow = _load_workflow("fly-deploy.yml")
     deploy = workflow["jobs"]["deploy"]
@@ -608,15 +609,16 @@ def test_hetzner_deploy_health_gates_rollout():
     step_envs: str = ssh_step["with"].get("envs", "")
 
     assert "set -euo pipefail" in script, "SSH script must use strict error handling"
-    assert "docker pull" in script, "Must pull the new image before restarting"
+    assert "docker pull" in script, "Must pull pinned image before rollout"
     assert "DEPLOY_IMAGE" in script, "Must deploy by pinned digest via DEPLOY_IMAGE"
     assert "DEPLOY_IMAGE" in step_env, "DEPLOY_IMAGE must be set on the step env (digest pinning)"
     assert "DEPLOY_IMAGE" in step_envs, "DEPLOY_IMAGE must be forwarded to the remote via envs:"
-    assert "up -d --no-deps api" in script, "Must do a zero-downtime --no-deps restart"
-    assert "/health" in script, "Must poll /health to gate a successful rollout"
-    assert "curl" in script
-    assert "PREV_IMAGE" in script, "Must record previous image for rollback"
-    assert "roll" in script.lower(), "Must attempt rollback if health check fails"
+    assert "--scale api=2" in script, "Must scale to 2 to run new container alongside old"
+    assert "--no-recreate" in script, "Must keep existing container alive during scale-up"
+    assert "Health.Status" in script, "Must poll Docker healthcheck on new container specifically"
+    assert "PREV_CONTAINER" in script, "Must record old container ID for explicit removal"
+    assert "PREV_IMAGE" in script, "Must record old image reference for rollback logging"
+    assert "roll" in script.lower(), "Must attempt rollback if new container is unhealthy"
 
 
 def test_docker_compose_prod_health_and_immutable_image():
