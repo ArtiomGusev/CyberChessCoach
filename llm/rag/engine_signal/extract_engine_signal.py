@@ -1,4 +1,12 @@
-print(">>> USING extract_engine_signal FROM:", __file__)
+import chess
+
+_PIECE_CP = {
+    chess.PAWN: 100,
+    chess.KNIGHT: 320,
+    chess.BISHOP: 330,
+    chess.ROOK: 500,
+    chess.QUEEN: 900,
+}
 
 
 def side_from_fen(fen: str | None) -> str | None:
@@ -10,12 +18,53 @@ def side_from_fen(fen: str | None) -> str | None:
         return None
 
 
+def _fen_material_cp(board: chess.Board) -> int:
+    return sum(
+        _PIECE_CP.get(pt, 0) * (
+            len(board.pieces(pt, chess.WHITE)) - len(board.pieces(pt, chess.BLACK))
+        )
+        for pt in _PIECE_CP
+    )
+
+
+def _fen_phase(board: chess.Board) -> str:
+    total = len(board.piece_map())
+    has_queens = bool(
+        board.pieces(chess.QUEEN, chess.WHITE) | board.pieces(chess.QUEEN, chess.BLACK)
+    )
+    if board.fullmove_number <= 8 and total >= 28:
+        return "opening"
+    if total <= 14 or (not has_queens and total <= 20):
+        return "endgame"
+    return "middlegame"
+
+
+def _enrich_from_fen(stockfish_json: dict, fen: str | None) -> dict:
+    """Fill hollow engine signal fields from FEN when Stockfish data is absent."""
+    if fen is None:
+        return stockfish_json
+    has_eval = bool(stockfish_json.get("evaluation"))
+    has_phase = bool(stockfish_json.get("phase"))
+    if has_eval and has_phase:
+        return stockfish_json
+    try:
+        board = chess.Board(fen)
+    except Exception:
+        return stockfish_json
+    enriched = dict(stockfish_json)
+    if not has_eval:
+        enriched["evaluation"] = {"type": "cp", "value": _fen_material_cp(board)}
+    if not has_phase:
+        enriched["phase"] = _fen_phase(board)
+    return enriched
+
+
 def extract_engine_signal(
     stockfish_json: dict | None,
     *,
     fen: str | None = None,
 ) -> dict:
-    stockfish_json = stockfish_json or {}
+    stockfish_json = _enrich_from_fen(stockfish_json or {}, fen)
 
     evaluation = stockfish_json.get("evaluation", {})
     eval_type = evaluation.get("type", "cp")
@@ -24,14 +73,6 @@ def extract_engine_signal(
         value = int(_raw_value)
     except (TypeError, ValueError):
         value = 0
-
-    def side_from_fen(fen: str | None) -> str | None:
-        if not fen:
-            return None
-        try:
-            return "white" if fen.split()[1] == "w" else "black"
-        except Exception:
-            return None
 
     # -------------------------
     # MATE (TERMINAL STATE)

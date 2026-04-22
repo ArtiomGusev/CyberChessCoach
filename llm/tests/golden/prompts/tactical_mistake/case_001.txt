@@ -95,7 +95,7 @@ eval_delta: decrease
 last_move_quality: mistake
 tactical_flags: ['hanging_piece']
 position_flags: []
-phase: middlegame
+phase: opening
 
 RAG CONTEXT:
 - Decisive material or positional advantage.

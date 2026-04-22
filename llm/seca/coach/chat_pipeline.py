@@ -64,6 +64,117 @@ _DELTA_HINT: dict[str, str] = {
     "stable": "The evaluation is stable.",
 }
 
+# ---------------------------------------------------------------------------
+# Question-type detection and level-differentiated coaching advice
+# ---------------------------------------------------------------------------
+
+_QUESTION_KEYWORDS: dict[str, list[str]] = {
+    "tactical": [
+        "tactic", "win", "attack", "fork", "pin", "hanging", "capture",
+        "threat", "combination", "sacrifice", "material",
+    ],
+    "opening": [
+        "opening", "develop", "castle", "center", "centre", "piece out", "start",
+    ],
+    "endgame": [
+        "endgame", "end game", "convert", "king activity", "rook end",
+        "pawn end", "finish", "winning",
+    ],
+    "strategic": [
+        "plan", "strategy", "strategic", "structure", "long-term", "weak square",
+        "outpost", "pawn chain", "imbalance",
+    ],
+}
+
+_COACHING_ADVICE: dict[str, dict[str, str]] = {
+    "tactical": {
+        "beginner": (
+            "Check if any pieces on the board are unprotected — "
+            "these are often the first targets in tactics."
+        ),
+        "intermediate": (
+            "Look for forcing moves: checks, captures, and threats. "
+            "Undefended pieces are potential tactical targets."
+        ),
+        "advanced": (
+            "Calculate all forcing lines. Assess candidate moves systematically: "
+            "checks, captures, then threats."
+        ),
+    },
+    "opening": {
+        "beginner": (
+            "Try to move each piece only once, control the centre with pawns, "
+            "and get your king to safety."
+        ),
+        "intermediate": (
+            "Develop purposefully: control the centre, avoid early queen moves, "
+            "and coordinate your pieces before castling."
+        ),
+        "advanced": (
+            "The pawn structure defines the resulting middlegame. "
+            "Assess structural imbalances and plan accordingly."
+        ),
+    },
+    "endgame": {
+        "beginner": (
+            "Activate your king — it becomes a powerful piece in the endgame. "
+            "Push your passed pawns."
+        ),
+        "intermediate": (
+            "Use your king actively, centralise your rook, and look for pawn breaks "
+            "to create a passed pawn."
+        ),
+        "advanced": (
+            "Precise technique is essential. Determine key factors: "
+            "king activity, pawn structure, and piece coordination."
+        ),
+    },
+    "strategic": {
+        "beginner": (
+            "Find your least-active piece and look for a better square for it."
+        ),
+        "intermediate": (
+            "Identify pawn weaknesses on both sides. Place your pieces on strong squares "
+            "where they cannot easily be chased away."
+        ),
+        "advanced": (
+            "Assess all imbalances: pawn structure, piece activity, weak squares, "
+            "and pawn majorities. Create a concrete plan."
+        ),
+    },
+    "general": {
+        "beginner": (
+            "Focus on piece safety first, then look for ways to improve your position."
+        ),
+        "intermediate": (
+            "Consider the engine evaluation and think about your next two or three moves as a plan."
+        ),
+        "advanced": (
+            "Evaluate the position's key features: material, pawn structure, "
+            "piece activity, and king safety."
+        ),
+    },
+}
+
+
+def _detect_question_type(query: str) -> str:
+    q = query.lower()
+    for qtype, keywords in _QUESTION_KEYWORDS.items():
+        if any(kw in q for kw in keywords):
+            return qtype
+    return "general"
+
+
+def _map_skill_level(player_profile: dict | None) -> str:
+    if not player_profile:
+        return "intermediate"
+    skill = str(player_profile.get("skill_estimate", "")).lower()
+    if "beginner" in skill or "novice" in skill:
+        return "beginner"
+    if "advanced" in skill or "expert" in skill or "master" in skill or "club" in skill:
+        return "advanced"
+    return "intermediate"
+
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -166,6 +277,7 @@ def _build_reply(
     engine_signal: dict,
     base_explanation: str,
     history: list[ChatTurn],
+    skill_level: str = "intermediate",
 ) -> str:
     """Build the final coaching reply.
 
@@ -196,14 +308,12 @@ def _build_reply(
     if base_explanation:
         parts.append(base_explanation)
 
-    # Address the user's specific query
+    # Address the user's specific query with level-differentiated coaching advice
     query = user_query.strip()
     if query:
-        phase = engine_signal.get("phase", "middlegame")
-        phase_hint = _PHASE_HINT.get(phase, "")
-        parts.append(
-            f'On your question "{query}": ' f"Consider the engine evaluation above. {phase_hint}"
-        )
+        question_type = _detect_question_type(query)
+        advice = _COACHING_ADVICE[question_type][skill_level]
+        parts.append(f'On your question "{query}": {advice}')
 
     return " ".join(parts)
 
@@ -262,12 +372,15 @@ def generate_chat_reply(
     user_turns = [t for t in messages if t.role == "user"]
     user_query = user_turns[-1].content if user_turns else ""
 
+    skill_level = _map_skill_level(player_profile)
+
     reply = _build_reply(
         user_query=user_query,
         context_block=context_block,
         engine_signal=engine_signal,
         base_explanation=base_explanation,
         history=messages,
+        skill_level=skill_level,
     )
 
     return ChatReply(reply=reply, engine_signal=engine_signal, mode="CHAT_V1")

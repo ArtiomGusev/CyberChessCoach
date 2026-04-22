@@ -95,7 +95,7 @@ eval_delta: stable
 last_move_quality: unknown
 tactical_flags: []
 position_flags: []
-phase: middlegame
+phase: opening
 
 RAG CONTEXT:
 

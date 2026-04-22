@@ -95,7 +95,7 @@ eval_delta: stable
 last_move_quality: blunder
 tactical_flags: ['forced_mate']
 position_flags: []
-phase: middlegame
+phase: opening
 
 RAG CONTEXT:
 - The position contains a forced, unavoidable conclusion.
