@@ -71,4 +71,32 @@ Java_com_example_myapplication_ChessNative_getBestMove(
     );
 }
 
+JNIEXPORT jobject JNICALL
+Java_com_example_myapplication_ChessNative_getBestMoveWithStrength(
+        JNIEnv* env,
+        jobject /* this */,
+        jstring fen,
+        jint strengthLevel
+) {
+    if (!fen) return nullptr;
+
+    const char* fenStr = env->GetStringUTFChars(fen, nullptr);
+    if (!fenStr) return nullptr;
+
+    SachmatuLenta engine;
+    loadFenIntoEngine(engine, fenStr);
+    env->ReleaseStringUTFChars(fen, fenStr);
+
+    SachmatuLenta::Move m = engine.getBestMove(JUODA, static_cast<int>(strengthLevel));
+    if (!m.isValid()) return nullptr;
+
+    jclass moveCls = env->FindClass("com/example/myapplication/AIMove");
+    if (!moveCls) { LOGE("Could not find AIMove class"); return nullptr; }
+
+    jmethodID ctor = env->GetMethodID(moveCls, "<init>", "(IIII)V");
+    if (!ctor) { LOGE("Could not find AIMove constructor"); return nullptr; }
+
+    return env->NewObject(moveCls, ctor, m.fromX, m.fromY, m.toX, m.toY);
+}
+
 } // extern "C"

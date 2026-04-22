@@ -78,6 +78,9 @@ TEST_TARGETS = [
     "llm/tests/test_rag_pipeline_qa.py",
     # API-01, API-03, API-06, CI-06: health endpoint, invalid-FEN rejection, seca_doctor, deploy chain.
     "llm/tests/test_api_smoke_qa.py",
+    # Adaptive engine wiring: pins ELO range [600, 2400] and the backend→Android
+    # strength mapping contract so backend changes break CI immediately.
+    "llm/tests/test_adaptive_engine_wiring.py",
 ]
 
 COVERAGE_TARGETS = [

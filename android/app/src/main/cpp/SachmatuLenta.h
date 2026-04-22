@@ -59,7 +59,7 @@ public:
 
     // ── Move interface ─────────────────────────────────────────
     bool syncMove(int fr, int fc, int tr, int tc);
-    Move getBestMove(Spalva s);
+    Move getBestMove(Spalva s, int strengthLevel = 100);
     bool promotePawn(int r, int c, char type);
 
     // ── State queries ──────────────────────────────────────────

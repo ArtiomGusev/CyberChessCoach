@@ -880,14 +880,18 @@ int SachmatuLenta::search(int depth, int alpha, int beta, int ply, bool nullOk) 
 }
 
 // ── getBestMove: iterative deepening ──────────────────────────────────────
-SachmatuLenta::Move SachmatuLenta::getBestMove(Spalva s) {
+// strengthLevel [0,100]: 0 = shallowest/fastest, 100 = full depth/time.
+SachmatuLenta::Move SachmatuLenta::getBestMove(Spalva s, int strengthLevel) {
+    const int level   = strengthLevel < 0 ? 0 : (strengthLevel > 100 ? 100 : strengthLevel);
+    const int maxDepth = 1 + level * 5 / 100;       // [1, 6]
+    timeLimitMs        = 300 + level * 22;            // [300ms, 2500ms]
+
     currentTurn = s;
     memset(killers, 0, sizeof(killers));
     memset(history, 0, sizeof(history));
     hashHistory.clear();
     currentHash = computeHash();
 
-    timeLimitMs = 2500;
     searchStart = std::chrono::steady_clock::now();
 
     // Pre-filter legal root moves once
@@ -903,7 +907,7 @@ SachmatuLenta::Move SachmatuLenta::getBestMove(Spalva s) {
 
     Move best = rootMoves[0];
 
-    for (int depth = 1; depth <= 6 && !timeUp(); depth++) {
+    for (int depth = 1; depth <= maxDepth && !timeUp(); depth++) {
         // Order root moves using previous-iteration TT best
         Move ttBest;
         {

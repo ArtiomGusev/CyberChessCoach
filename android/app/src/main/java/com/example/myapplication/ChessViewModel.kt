@@ -18,6 +18,7 @@ class ChessViewModel(
     var engineEvalClient: EngineEvalClient? = null,
     /** Injected after construction; null disables live per-move coaching hints. */
     var liveCoachClient: LiveMoveClient? = null,
+    private val playerProfileCache: PlayerProfileCache? = null,
 ) : ViewModel() {
 
     private var turn: Turn = Turn.HUMAN
@@ -136,8 +137,11 @@ $moves"""
             try {
                 val fen = withContext(Dispatchers.Main) { exportFEN() }
 
-                // 🛡️ Use engine provider instead of direct JNI
-                val move = engineProvider.getBestMove(fen)
+                val strengthLevel: Int = playerProfileCache?.let {
+                    try { EloToStrength.map(it.getOpponentElo()) } catch (_: Exception) { 100 }
+                } ?: 100
+
+                val move = engineProvider.getBestMove(fen, strengthLevel)
 
                 withContext(Dispatchers.Main) {
                     if (stateId == requestId) {

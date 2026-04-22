@@ -25,6 +25,7 @@ object ChessNative {
      * No side effects in C++.
      */
     external fun getBestMove(fen: String): AIMove?
+    external fun getBestMoveWithStrength(fen: String, strengthLevel: Int): AIMove?
 
     /** No-op in pure architecture, kept for build compatibility */
     fun reset() {}
