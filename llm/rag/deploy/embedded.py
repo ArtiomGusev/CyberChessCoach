@@ -7,6 +7,8 @@ from llm.rag.retriever import retrieve
 from llm.rag.documents import ALL_RAG_DOCUMENTS
 from llm.rag.prompts.render_mode_2 import render_mode_2_prompt
 from llm.rag.prompts.system_v2_mode_2 import SYSTEM_PROMPT
+from llm.rag.prompts.input_sanitizer import sanitize_user_query
+from llm.rag.safety.output_firewall import check_output, OutputFirewallError
 from llm.rag.llm.ollama import OllamaLLM
 from llm.rag.llm.run_mode_2 import run_mode_2
 from llm.rag.meta.case_classifier import infer_case_type
@@ -56,6 +58,18 @@ def explain_position(payload: dict) -> dict:
     case_type = "unknown"
 
     try:
+        # Sanitize user_query at the embedded entry point — this is the
+        # authoritative guard for the edge/host-app deployment path.
+        try:
+            user_query = sanitize_user_query(payload.get("user_query", "") or "")
+        except ValueError:
+            esv = extract_engine_signal(payload["engine_json"])
+            return {
+                "explanation": "I cannot process this request.",
+                "confidence": "low",
+                "tags": [],
+            }
+
         esv = extract_engine_signal(payload["engine_json"])
 
         rag_docs = retrieve(esv, ALL_RAG_DOCUMENTS)
@@ -64,7 +78,7 @@ def explain_position(payload: dict) -> dict:
         prompt_kwargs = {
             "engine_signal": esv,
             "fen": payload["fen"],
-            "user_query": payload.get("user_query", ""),
+            "user_query": user_query,
         }
         if "system_prompt" in sig:
             prompt_kwargs["system_prompt"] = SYSTEM_PROMPT
@@ -82,6 +96,12 @@ def explain_position(payload: dict) -> dict:
             prompt=prompt,
             case_type=case_type,
         )
+
+        # Post-LLM output safety check — block before returning to caller.
+        try:
+            check_output(explanation_text)
+        except OutputFirewallError:
+            explanation_text = "I cannot process this request."
 
         from llm.rag.quality.explanation_score import score_explanation
         from llm.rag.llm.config import MIN_QUALITY_SCORE

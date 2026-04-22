@@ -12,6 +12,7 @@ from llm.rag.validators.mode_2_negative import validate_mode_2_negative
 from llm.rag.validators.explain_response_schema import EngineSignalSchema, ExplainSchemaError
 from llm.confidence_language_controller import build_language_controller_block
 from llm.rag.prompts.input_sanitizer import sanitize_user_query
+from llm.rag.safety.output_firewall import check_output, OutputFirewallError
 
 _ollama_base = os.getenv("COACH_OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
 OLLAMA_URL = f"{_ollama_base}/api/generate"
@@ -64,6 +65,9 @@ def generate_once(fen: str, stockfish_json: dict, user_query: str) -> tuple[str,
 
     explanation = call_llm(prompt)
 
+    # Post-LLM safety check — block before returning to caller
+    check_output(explanation)
+
     return explanation, esv
 
 
@@ -99,11 +103,22 @@ def generate_validated_explanation(
         )
 
     last_error = None
+    esv: dict = {}
 
     for attempt in range(MAX_RETRIES + 1):
         if attempt > 0:
             time.sleep(_RETRY_DELAY_SECONDS)
-        explanation, esv = generate_once(fen, stockfish_json, clean_query)
+        try:
+            explanation, esv = generate_once(fen, stockfish_json, clean_query)
+        except OutputFirewallError:
+            # Output firewall blocked the response — treat as a hard failure,
+            # no retry (the model produced unsafe content; another attempt is
+            # unlikely to be safe).
+            esv = extract_engine_signal(stockfish_json, fen=fen)
+            return (
+                "I cannot process this request.",
+                esv,
+            )
 
         try:
             validate_mode_2_negative(explanation)
