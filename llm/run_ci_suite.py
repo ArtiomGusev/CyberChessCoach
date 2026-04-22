@@ -81,6 +81,9 @@ TEST_TARGETS = [
     # Adaptive engine wiring: pins ELO range [600, 2400] and the backend→Android
     # strength mapping contract so backend changes break CI immediately.
     "llm/tests/test_adaptive_engine_wiring.py",
+    # Server wiring invariants: events/router.py no-print, /explain→SafeExplainer,
+    # _record_move_stat safety, log_move call site, unused-model guard.
+    "llm/tests/test_server_wiring.py",
 ]
 
 COVERAGE_TARGETS = [

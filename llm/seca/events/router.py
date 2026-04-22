@@ -190,9 +190,9 @@ def finish_game(
 
             idx, future, score = planner.choose_action(state, actions)
 
-            print("Chosen training:", idx)
-            print("Predicted rating/conf delta:", future)
-            print("Score:", score)
+            logger.info("Chosen training: %s", idx)
+            logger.info("Predicted rating/conf delta: %s", future)
+            logger.info("Score: %s", score)
         except Exception:
             logger.exception("Counterfactual planner failed")
 

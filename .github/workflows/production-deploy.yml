@@ -35,10 +35,29 @@ env:
   API_IMAGE_NAME: cyberchesscoach-llm-api
 
 jobs:
+  validate:
+    name: Validate inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Validate digest format
+        shell: bash
+        env:
+          INPUT_DIGEST: ${{ inputs.api_digest }}
+        run: |
+          if [[ ! "$INPUT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::api_digest must be a sha256 digest (sha256:<64 hex chars>). Got: $INPUT_DIGEST"
+            exit 1
+          fi
+          echo "Digest format valid: $INPUT_DIGEST"
+
   deploy:
     name: Deploy to Hetzner
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    needs: [validate]
     permissions:
       contents: read
     environment:
