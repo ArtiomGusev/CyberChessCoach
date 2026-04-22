@@ -119,7 +119,7 @@ jobs:
       #                  PREV_CONTAINER never touched. Automatic rollback.
       - name: Deploy to Hetzner via SSH
         if: steps.hetzner-check.outputs.available == 'true'
-        uses: appleboy/ssh-action@v1.2.0
+        uses: appleboy/ssh-action@v1.2.5
         env:
           DEPLOY_IMAGE: ${{ steps.image.outputs.ref }}
         with:
