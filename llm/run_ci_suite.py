@@ -84,6 +84,9 @@ TEST_TARGETS = [
     # Server wiring invariants: events/router.py no-print, /explain→SafeExplainer,
     # _record_move_stat safety, log_move call site, unused-model guard.
     "llm/tests/test_server_wiring.py",
+    # Dynamic adaptation mode: registry unit tests, Pydantic validation,
+    # AST wiring, HTTP stub layer (DA-01 – DA-30 + ELO constant contract).
+    "llm/tests/test_dynamic_adaptation.py",
 ]
 
 COVERAGE_TARGETS = [
@@ -114,6 +117,7 @@ COVERAGE_TARGETS = [
     "llm.seca.events.storage",
     "llm.seca.analysis.historical_pipeline",
     "llm.seca.adaptation.coupling",
+    "llm.seca.adaptation.dynamic_mode",
     "llm.seca.adaptation.skill_profile",
     "llm.seca.adaptation.teaching_policy",
     "llm.seca.adaptation.opponent_policy",

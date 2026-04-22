@@ -47,6 +47,7 @@ from llm.rag.prompts.input_sanitizer import sanitize_user_query
 from llm.seca.learning.outcome_tracker import ExplanationOutcomeTracker
 from llm.seca.learning.skill_update import SkillState
 from llm.seca.adaptation.coupling import compute_adaptation
+from llm.seca.adaptation.dynamic_mode import DynamicModeRegistry
 from llm.seca.curriculum.scheduler import CurriculumScheduler
 from llm.seca.curriculum.types import Weakness
 from llm.seca.storage.db import init_db
@@ -252,6 +253,7 @@ event_storage: EventStore | None = None
 skill_pipeline: SkillPipeline | None = None
 world_model: SafeWorldModel | None = None
 safe_explainer = SafeExplainer()
+_dynamic_registry = DynamicModeRegistry()
 
 # ------------------------------------------------------------------
 # Engine lifecycle
@@ -564,6 +566,21 @@ class GameFinishClosedLoopRequest(BaseModel):
     game_id: int
 
 
+class AdaptationModeRequest(BaseModel):
+    """Request body for POST /adaptation/mode."""
+
+    enabled: bool
+    base_elo: int | None = None
+
+    @field_validator("base_elo")
+    @classmethod
+    def validate_base_elo(cls, v: int | None) -> int | None:
+        from llm.seca.adaptation.dynamic_mode import ELO_MIN, ELO_MAX
+        if v is not None and not (ELO_MIN <= v <= ELO_MAX):
+            raise ValueError(f"base_elo must be in [{ELO_MIN}, {ELO_MAX}]")
+        return v
+
+
 class ChatTurnModel(BaseModel):
     """A single turn in a coaching conversation."""
 
@@ -663,6 +680,59 @@ def engine_debug(_: None = Depends(verify_api_key)):
 
 
 # ------------------------------------------------------------------
+# Dynamic adaptation mode
+# ------------------------------------------------------------------
+
+
+@app.post("/adaptation/mode")
+@limiter.limit("30/minute")
+def set_adaptation_mode(
+    req: AdaptationModeRequest,
+    request: Request,
+    player=Depends(get_current_player),
+):
+    """Enable or disable dynamic adaptation mode for the authenticated player.
+
+    When enabled the engine's target ELO shifts each move based on observed
+    move quality, converging toward the player's actual skill level.  Use this
+    during first-play / skill-assessment sessions.
+
+    Request body::
+
+        {"enabled": true, "base_elo": 1200}   # base_elo optional
+
+    If ``base_elo`` is omitted the player's current computed adaptation ELO is
+    used as the starting point.
+    """
+    base_elo = req.base_elo
+    if base_elo is None and req.enabled:
+        adaptation = compute_adaptation(float(player.rating), float(player.confidence))
+        base_elo = adaptation["opponent"]["target_elo"]
+
+    state = _dynamic_registry.set_mode(
+        str(player.id),
+        enabled=req.enabled,
+        base_elo=base_elo,
+    )
+    return {
+        "enabled": state.enabled,
+        "current_elo": state.current_elo,
+        "move_count": state.move_count,
+    }
+
+
+@app.get("/adaptation/mode")
+def get_adaptation_mode(player=Depends(get_current_player)):
+    """Return the current dynamic adaptation state for the authenticated player."""
+    state = _dynamic_registry.get_state(str(player.id))
+    return {
+        "enabled": state.enabled,
+        "current_elo": state.current_elo,
+        "move_count": state.move_count,
+    }
+
+
+# ------------------------------------------------------------------
 # Move endpoint (pooled stockfish)
 # ------------------------------------------------------------------
 
@@ -683,6 +753,9 @@ def move(
     board = _board_from_payload(normalized_fen, req.moves_uci)
     adaptation = compute_adaptation(player.rating, player.confidence)
     target_elo = adaptation["opponent"]["target_elo"]
+    dynamic_elo = _dynamic_registry.get_elo(str(player.id))
+    if dynamic_elo is not None:
+        target_elo = dynamic_elo
 
     mode = (req.mode or "default").lower()
     resolved_movetime_ms = engine_pool.resolve_movetime_ms(mode, req.movetime_ms)
@@ -814,12 +887,15 @@ def live_move(
         player_id=str(player.id),
         explanation_style=adaptation["teaching"]["style"],
     )
+    if _dynamic_registry.get_state(str(player.id)).enabled:
+        _dynamic_registry.record_move_quality(str(player.id), result.move_quality)
     return {
         "status": "ok",
         "hint": result.hint,
         "engine_signal": result.engine_signal,
         "move_quality": result.move_quality,
         "mode": result.mode,
+        "dynamic_adaptation": _dynamic_registry.get_state(str(player.id)).enabled,
     }
 
 
