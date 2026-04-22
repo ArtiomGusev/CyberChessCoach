@@ -725,6 +725,20 @@ void SachmatuLenta::scoreMoves(std::vector<Move>& mv, int ply, const Move& ttBes
 static constexpr int INF          = 1'000'000;
 static constexpr int MATE_SCORE   =   900'000;
 static constexpr int DELTA_MARGIN =       200;
+static constexpr int MATE_BOUND   = MATE_SCORE - 64;   // 64 == MAX_PLY
+
+// Normalise mate scores before storing in TT so they are ply-independent.
+static inline int ttToStore(int score, int ply) {
+    if (score >=  MATE_BOUND) return score + ply;
+    if (score <= -MATE_BOUND) return score - ply;
+    return score;
+}
+// Reverse normalisation on retrieval.
+static inline int ttFromStore(int score, int ply) {
+    if (score >=  MATE_BOUND) return score - ply;
+    if (score <= -MATE_BOUND) return score + ply;
+    return score;
+}
 
 int SachmatuLenta::qsearch(int alpha, int beta, int ply) {
     int standPat = (currentTurn == BALTA) ? evalTapered() : -evalTapered();
@@ -740,12 +754,15 @@ int SachmatuLenta::qsearch(int alpha, int beta, int ply) {
     std::sort(pseudo.begin(), pseudo.end(), [](const Move& a, const Move& b){ return a.score > b.score; });
 
     for (const auto& m : pseudo) {
-        PType victim = board[m.toX][m.toY].type;
-        bool  isEP   = (board[m.fromX][m.fromY].type==PAWN && m.fromY!=m.toY && victim==NONE);
-        if (victim==NONE && !isEP) continue;          // skip quiet moves
+        PType victim  = board[m.toX][m.toY].type;
+        bool  isEP    = (board[m.fromX][m.fromY].type==PAWN && m.fromY!=m.toY && victim==NONE);
+        bool  isQProm = (board[m.fromX][m.fromY].type==PAWN && m.promo=='Q' && victim==NONE);
+        if (victim==NONE && !isEP && !isQProm) continue;   // skip quiet non-promotions
 
-        // Delta pruning
-        int captVal = (victim != NONE) ? EG_VAL[victim] : EG_VAL[PAWN];
+        // Delta pruning — promotion gain = queen minus pawn
+        int captVal = (victim != NONE) ? EG_VAL[victim] :
+                      isEP             ? EG_VAL[PAWN]   :
+                                         EG_VAL[QUEEN] - EG_VAL[PAWN];
         if (standPat + captVal + DELTA_MARGIN <= alpha) continue;
 
         if (leavesKingInCheck(m, currentTurn)) continue;
@@ -776,9 +793,10 @@ int SachmatuLenta::search(int depth, int alpha, int beta, int ply, bool nullOk) 
     TTEntry& tte = ttTable[idx];
     Move ttBest;
     if (tte.hash == currentHash && tte.depth >= (int8_t)depth) {
-        if      (tte.bound == TT_EXACT)                  return tte.score;
-        else if (tte.bound == TT_LOWER && tte.score >= beta) return tte.score;
-        else if (tte.bound == TT_UPPER && tte.score <= alpha) return tte.score;
+        int ttScore = ttFromStore(tte.score, ply);
+        if      (tte.bound == TT_EXACT)                   return ttScore;
+        else if (tte.bound == TT_LOWER && ttScore >= beta) return ttScore;
+        else if (tte.bound == TT_UPPER && ttScore <= alpha) return ttScore;
         ttBest = tte.best;
     } else if (tte.hash == currentHash) {
         ttBest = tte.best;
@@ -827,7 +845,9 @@ int SachmatuLenta::search(int depth, int alpha, int beta, int ply, bool nullOk) 
         if (leavesKingInCheck(m, currentTurn)) continue;
         legalCount++;
 
-        bool isCapture = (board[m.toX][m.toY].type != NONE);
+        bool isCapture = (board[m.toX][m.toY].type != NONE) ||
+                         (board[m.fromX][m.fromY].type == PAWN &&
+                          m.fromY != m.toY && board[m.toX][m.toY].type == NONE);
         bool isPromo   = (m.promo != 0);
 
         UndoInfo u = makeMove(m);
@@ -871,7 +891,7 @@ int SachmatuLenta::search(int depth, int alpha, int beta, int ply, bool nullOk) 
 
     if (!timeUp() && bestMove.isValid()) {
         tte.hash  = currentHash;
-        tte.score = bestScore;
+        tte.score = ttToStore(bestScore, ply);
         tte.depth = (int8_t)std::min(depth, 127);
         tte.bound = bound;
         tte.best  = bestMove;
@@ -889,7 +909,8 @@ SachmatuLenta::Move SachmatuLenta::getBestMove(Spalva s, int strengthLevel) {
     currentTurn = s;
     memset(killers, 0, sizeof(killers));
     memset(history, 0, sizeof(history));
-    hashHistory.clear();
+    // Preserve hashHistory: positions from syncMove() calls are needed so the
+    // repetition detector inside search() can see prior game positions.
     currentHash = computeHash();
 
     searchStart = std::chrono::steady_clock::now();
