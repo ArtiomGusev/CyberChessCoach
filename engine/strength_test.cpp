@@ -32,17 +32,18 @@ static void testAlwaysValidMove() {
 }
 
 // At strength=100 the engine must capture a free queen.
-// Position: white queen on d5 (row=3,col=3); black rook on d8 (row=0,col=3).
-// Black to move — Rd8xd5 wins the queen.
+// Position: black rook a5 (row=3,col=0); white queen h5 (row=3,col=7) — same rank.
+// Kings: black on a1 (row=7,col=0), white on h1 (row=7,col=7).
+// Black to move — Ra5xh5 wins the queen with check.
 static void testHangingQueenCapture() {
     printf("\nTest: strength=100 captures hanging queen\n");
-    const char* fen = "3r4/8/8/3Q4/8/8/6k1/6K1 b - - 0 1";
+    const char* fen = "8/8/8/r6Q/8/8/8/k6K b - - 0 1";
     SachmatuLenta engine;
     engine.loadFromBoard64(fen);
     SachmatuLenta::Move m = engine.getBestMove(JUODA, 100);
-    // Black rook d8(0,3) → d5(3,3)
-    bool ok = m.isValid() && m.fromX == 0 && m.fromY == 3 && m.toX == 3 && m.toY == 3;
-    check("strength=100: Rd8xd5 (0,3)->(3,3)", ok);
+    // Black rook a5(3,0) → h5(3,7)
+    bool ok = m.isValid() && m.fromX == 3 && m.fromY == 0 && m.toX == 3 && m.toY == 7;
+    check("strength=100: Ra5xh5 (3,0)->(3,7)", ok);
 }
 
 // At strength=100 the engine (white) must find the only mating move.
