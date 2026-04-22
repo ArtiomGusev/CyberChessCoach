@@ -69,20 +69,20 @@ _DELTA_HINT: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 _QUESTION_KEYWORDS: dict[str, list[str]] = {
-    "tactical": [
-        "tactic", "win", "attack", "fork", "pin", "hanging", "capture",
-        "threat", "combination", "sacrifice", "material",
+    "endgame": [
+        "endgame", "end game", "convert", "king activity", "rook end",
+        "pawn end", "winning endgame",
     ],
     "opening": [
         "opening", "develop", "castle", "center", "centre", "piece out", "start",
     ],
-    "endgame": [
-        "endgame", "end game", "convert", "king activity", "rook end",
-        "pawn end", "finish", "winning",
-    ],
     "strategic": [
         "plan", "strategy", "strategic", "structure", "long-term", "weak square",
         "outpost", "pawn chain", "imbalance",
+    ],
+    "tactical": [
+        "tactic", "attack", "fork", "pin", "hanging", "capture",
+        "threat", "combination", "sacrifice", "material", "win material",
     ],
 }
 
