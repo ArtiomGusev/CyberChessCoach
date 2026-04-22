@@ -97,7 +97,8 @@ class SkillUpdater:
         # ---------------------------------------
         # Define action + reward
         # ---------------------------------------
-        action = "tactics"  # temporary placeholder
+        # Derive action from the dominant weakness so bandit learns correctly.
+        action = max(weaknesses, key=weaknesses.get) if weaknesses else "general"
         reward = player.rating - rating_before
 
         # ---------------------------------------

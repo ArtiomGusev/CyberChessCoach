@@ -29,6 +29,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from llm.confidence_language_controller import compute_urgency
 from llm.rag.engine_signal.extract_engine_signal import extract_engine_signal
 from llm.seca.explainer.safe_explainer import SafeExplainer
 
@@ -124,6 +125,11 @@ def _build_hint(
 
     parts: list[str] = []
 
+    # 0. Urgency prefix from confidence_language_controller — keeps tone appropriate.
+    urgency = compute_urgency(engine_signal)
+    if urgency == "critical":
+        parts.append("Attention:")
+
     # 1. Engine evaluation sentence — always present
     if eval_type == "mate":
         parts.append(f"Engine: forced mate ({side} is winning).")
@@ -160,6 +166,7 @@ def generate_live_reply(
     uci: str,
     player_id: str = "demo",
     explanation_style: str | None = None,
+    stockfish_json: dict | None = None,
 ) -> LiveMoveReply:
     """Generate a deterministic coaching hint for a single move.
 
@@ -187,7 +194,7 @@ def generate_live_reply(
         mode (str)           — always "LIVE_V1".
     """
     # Engine signal always from extract_engine_signal, never user-supplied
-    engine_signal = extract_engine_signal({}, fen=fen)
+    engine_signal = extract_engine_signal(stockfish_json or {}, fen=fen)
 
     # Deterministic base explanation from SafeExplainer
     base_explanation = _safe_explainer.explain(engine_signal)

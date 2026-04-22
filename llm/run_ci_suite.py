@@ -87,6 +87,10 @@ TEST_TARGETS = [
     # Dynamic adaptation mode: registry unit tests, Pydantic validation,
     # AST wiring, HTTP stub layer (DA-01 – DA-30 + ELO constant contract).
     "llm/tests/test_dynamic_adaptation.py",
+    # SECA integration: SafeExplainer schema alignment, live-pipeline quality
+    # passthrough, confidence_language_controller wiring, SkillUpdater action
+    # derivation, dynamic-mode ELO convergence, and end-to-end ESV chain.
+    "llm/tests/test_seca_integration.py",
 ]
 
 COVERAGE_TARGETS = [
@@ -138,6 +142,7 @@ COVERAGE_TARGETS = [
     "llm.rag.meta.case_classifier",
     "llm.confidence_language_controller",
     "llm.explain_pipeline",
+    "llm.seca.explainer.safe_explainer",
     # llm.seca.engines.stockfish.pool is intentionally excluded from coverage targets:
     # the majority of its lines require a live Stockfish process and Redis, which are
     # unavailable in the unit-test environment. The pure logic (FenMoveCache, movetime
