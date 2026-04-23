@@ -32,6 +32,7 @@ Constraints
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 
 from llm.confidence_language_controller import compute_urgency
@@ -53,8 +54,12 @@ try:
     from llm.rag.retriever.retriever import retrieve as _retrieve  # type: ignore[import]
     from llm.rag.documents import ALL_RAG_DOCUMENTS as _DOCS  # type: ignore[import]
     _LLM_AVAILABLE = True
-except Exception:  # noqa: BLE001
+except Exception as _llm_import_exc:  # noqa: BLE001
+    logger.warning("LLM imports unavailable — deterministic path only: %s", _llm_import_exc)
     _LLM_AVAILABLE = False
+
+_LIVE_MAX_RETRIES = 2
+_LIVE_RETRY_DELAY_SECONDS = 0.5
 
 # ---------------------------------------------------------------------------
 # Label tables (deterministic fallback)
@@ -280,20 +285,27 @@ def generate_live_reply(
     engine_signal = extract_engine_signal(stockfish_json or {}, fen=fen)
     move_quality = engine_signal.get("last_move_quality", "unknown")
 
-    # --- LLM path ---
+    # --- LLM path with retry ---
     if _LLM_AVAILABLE:
-        try:
-            hint = _build_hint_llm(engine_signal, explanation_style)
-            if not hint.strip():
-                raise ValueError("Empty hint from LLM")
-            return LiveMoveReply(
-                hint=hint,
-                engine_signal=engine_signal,
-                move_quality=move_quality,
-                mode="LIVE_V1",
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Mode-1 LLM path failed (%s); using deterministic fallback", exc)
+        for attempt in range(_LIVE_MAX_RETRIES + 1):
+            if attempt > 0:
+                time.sleep(_LIVE_RETRY_DELAY_SECONDS)
+            try:
+                hint = _build_hint_llm(engine_signal, explanation_style)
+                if not hint.strip():
+                    raise ValueError("Empty hint from LLM")
+                return LiveMoveReply(
+                    hint=hint,
+                    engine_signal=engine_signal,
+                    move_quality=move_quality,
+                    mode="LIVE_V1",
+                )
+            except Exception as exc:  # noqa: BLE001
+                remaining = _LIVE_MAX_RETRIES - attempt
+                if remaining > 0:
+                    logger.debug("Mode-1 LLM attempt %d failed (%s); retrying", attempt + 1, exc)
+                else:
+                    logger.debug("Mode-1 LLM failed after %d attempts; using deterministic fallback", attempt + 1)
 
     # --- Deterministic fallback ---
     base_explanation = _safe_explainer.explain(engine_signal)

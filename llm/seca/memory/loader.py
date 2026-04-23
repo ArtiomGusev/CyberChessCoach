@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from llm.rag.memory.schema import DialogueMemory
+from llm.seca.memory.schema import DialogueMemory
 
 ROOT = Path("memory/users")
 

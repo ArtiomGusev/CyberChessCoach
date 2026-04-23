@@ -1,5 +1,9 @@
 import json
+import logging
+
 from sqlalchemy.orm import Session as DBSession
+
+logger = logging.getLogger(__name__)
 
 from .models import GameEvent
 from ..analytics.logger import AnalyticsLogger
@@ -39,12 +43,8 @@ class EventStorage:
             # self.db.add(rating_update)
             # self.db.add(confidence_update)
             self.db.commit()
-        except Exception as e:
-            import traceback
-
-            print("\n=== LEARNING PIPELINE CRASH ===")
-            traceback.print_exc()
-            print("=== END CRASH ===\n")
+        except Exception:
+            logger.exception("Learning pipeline crash in EventStorage.store_game")
             raise
         self.db.refresh(event)
 

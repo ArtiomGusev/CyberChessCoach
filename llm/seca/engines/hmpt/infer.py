@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import random
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 import torch
 import torch.nn as nn
@@ -56,9 +59,9 @@ class HMPTInference:
             try:
                 state = torch.load(self.model_path, map_location=self.device)
                 self.model.load_state_dict(state)
-                print(f"[HMPT] Loaded weights from {self.model_path}")
+                logger.info("HMPT loaded weights from %s", self.model_path)
             except Exception as e:
-                print(f"[HMPT] Failed to load weights, using stub. Reason: {e}")
+                logger.warning("HMPT failed to load weights from %s, using stub: %s", self.model_path, e)
 
     # --------------------------------------------------
     # Core public API

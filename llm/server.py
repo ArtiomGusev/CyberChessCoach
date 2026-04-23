@@ -477,7 +477,7 @@ class AnalyzeRequest(BaseModel):
 class LiveMoveRequest(BaseModel):
     fen: str
     uci: str
-    player_id: str = "demo"
+    player_id: str | None = None
 
     @field_validator("fen")
     @classmethod
@@ -494,8 +494,8 @@ class LiveMoveRequest(BaseModel):
 
     @field_validator("player_id")
     @classmethod
-    def validate_player_id(cls, v: str) -> str:
-        if len(v) > 100:
+    def validate_player_id(cls, v: str | None) -> str | None:
+        if v is not None and len(v) > 100:
             raise ValueError("player_id too long (max 100 chars)")
         return v
 

@@ -66,7 +66,8 @@ try:
     )
     from llm.rag.validators.explain_response_schema import EngineSignalSchema as _EngineSignalSchema  # type: ignore[import]
     _LLM_AVAILABLE = True
-except Exception:  # noqa: BLE001
+except Exception as _llm_import_exc:  # noqa: BLE001
+    logger.warning("LLM imports unavailable — deterministic path only: %s", _llm_import_exc)
     _LLM_AVAILABLE = False
 
 _CHAT_MAX_RETRIES = 2
