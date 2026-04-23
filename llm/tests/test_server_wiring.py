@@ -195,15 +195,16 @@ class TestLogMoveCallSite:
             "Positional-only call would break if the signature changes."
         )
 
-    def test_log_move_placeholder_is_documented(self):
-        """The 'demo' placeholder game_id must be documented as temporary."""
+    def test_log_move_uses_player_scoped_game_id(self):
+        """log_move must use get_or_create_auto_game, not the old 'demo' placeholder."""
         source = _SERVER_PY.read_text(encoding="utf-8")
-        # The placeholder is acceptable only while per-session game IDs are not yet wired;
-        # it must be clearly annotated so it is not silently forgotten.
-        assert 'game_id="demo"' in source or "game_id='demo'" in source, (
-            "The temporary game_id='demo' placeholder in log_move() was removed. "
-            "Either it was replaced with a real session-scoped game_id (good) or "
-            "the call was silently dropped. Verify log_move() is still called in /move."
+        assert 'game_id="demo"' not in source and "game_id='demo'" not in source, (
+            "The hard-coded game_id='demo' placeholder is still present in server.py. "
+            "Replace it with get_or_create_auto_game(str(player.id))."
+        )
+        assert "get_or_create_auto_game" in source, (
+            "server.py must call get_or_create_auto_game() to produce a player-scoped "
+            "game ID for log_move(); the per-player grouping replaced the 'demo' placeholder."
         )
 
 

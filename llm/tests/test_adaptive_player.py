@@ -35,6 +35,7 @@ import llm.seca.auth.models  # noqa: F401
 import llm.seca.events.models  # noqa: F401
 import llm.seca.brain.models  # noqa: F401
 import llm.seca.analytics.models  # noqa: F401
+import llm.seca.curriculum.models  # noqa: F401  — registers TrainingPlan with Base
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 

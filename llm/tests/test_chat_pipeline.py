@@ -37,6 +37,9 @@ Invariants pinned
 27. ENGINE_SIGNAL_BAND_TYPE:    evaluation sub-dict has "band" and "type" keys.
 28. PAST_MISTAKES_IN_CONTEXT:   past_mistakes list is reflected in context block.
 29. MOVE_COUNT_IN_CONTEXT:      move_count is reflected in context block.
+30. CHAT_RETRY_ON_ASSERTION:    AssertionError from _validate_neg triggers retry (not hard fail).
+31. CHAT_HARD_FAIL_ON_FIREWALL: OutputFirewallError from _check_output is not retried.
+32. CHAT_ESV_SCHEMA_VALIDATED:  EngineSignalSchema.model_validate() called on LLM path.
 """
 
 from __future__ import annotations
@@ -438,3 +441,99 @@ class TestContextBlockEnrichment:
         signal = _simple_signal()
         context = _build_context_block(signal, None, None, move_count=15)
         assert "15" in context
+
+
+# ---------------------------------------------------------------------------
+# Invariants 30-32: retry logic and ESV schema validation
+# ---------------------------------------------------------------------------
+
+
+class TestRetryAndSchemaValidation:
+    def test_retry_on_assertion_error(self):
+        """30. CHAT_RETRY_ON_ASSERTION — AssertionError triggers retry; success on second call."""
+        turns = _make_turns(("user", "What is my plan?"))
+        call_count = {"n": 0}
+
+        def _flaky_llm(*args, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise AssertionError("Mode-2 violation")
+            return "This is a valid coaching reply."
+
+        with (
+            patch(f"{_MODULE}._LLM_AVAILABLE", True),
+            patch(f"{_MODULE}._build_chat_llm", side_effect=_flaky_llm),
+            patch(f"{_MODULE}._EngineSignalSchema") as mock_schema,
+        ):
+            mock_schema.model_validate.return_value = None
+            result = generate_chat_reply(_STARTING_FEN, turns)
+
+        assert call_count["n"] == 2, (
+            f"_build_chat_llm should be called twice (initial + 1 retry); got {call_count['n']}"
+        )
+        assert result.reply == "This is a valid coaching reply."
+
+    def test_hard_fail_on_output_firewall(self):
+        """31. CHAT_HARD_FAIL_ON_FIREWALL — OutputFirewallError is not retried; goes to deterministic."""
+        from llm.rag.safety.output_firewall import OutputFirewallError
+
+        turns = _make_turns(("user", "What is my plan?"))
+        call_count = {"n": 0}
+
+        def _firewall_llm(*args, **kwargs):
+            call_count["n"] += 1
+            raise OutputFirewallError("unsafe content")
+
+        with (
+            patch(f"{_MODULE}._LLM_AVAILABLE", True),
+            patch(f"{_MODULE}._build_chat_llm", side_effect=_firewall_llm),
+            patch(f"{_MODULE}._OutputFirewallError", OutputFirewallError),
+        ):
+            result = generate_chat_reply(_STARTING_FEN, turns)
+
+        assert call_count["n"] == 1, (
+            f"OutputFirewallError must not be retried; _build_chat_llm called {call_count['n']} times"
+        )
+        assert isinstance(result.reply, str) and result.reply.strip(), (
+            "Deterministic fallback reply must be non-empty after firewall block"
+        )
+
+    def test_esv_schema_validated_on_llm_path(self):
+        """32. CHAT_ESV_SCHEMA_VALIDATED — EngineSignalSchema.model_validate called on LLM path."""
+        turns = _make_turns(("user", "Explain."))
+
+        with (
+            patch(f"{_MODULE}._LLM_AVAILABLE", True),
+            patch(f"{_MODULE}._build_chat_llm", return_value="Valid coaching reply."),
+            patch(f"{_MODULE}._EngineSignalSchema") as mock_schema,
+        ):
+            mock_schema.model_validate.return_value = None
+            generate_chat_reply(_STARTING_FEN, turns)
+
+        mock_schema.model_validate.assert_called_once(), (
+            "EngineSignalSchema.model_validate must be called once on the LLM path "
+            "to verify ESV structural integrity before returning."
+        )
+
+    def test_retry_hint_appended_on_second_attempt(self):
+        """Retry hint must be passed to _build_chat_llm on the second attempt."""
+        turns = _make_turns(("user", "What is my plan?"))
+        received_hints: list[str] = []
+
+        def _capture_llm(*args, retry_hint: str = "", **kwargs):
+            received_hints.append(retry_hint)
+            if len(received_hints) == 1:
+                raise AssertionError("validator failed")
+            return "OK reply."
+
+        with (
+            patch(f"{_MODULE}._LLM_AVAILABLE", True),
+            patch(f"{_MODULE}._build_chat_llm", side_effect=_capture_llm),
+            patch(f"{_MODULE}._EngineSignalSchema") as mock_schema,
+        ):
+            mock_schema.model_validate.return_value = None
+            generate_chat_reply(_STARTING_FEN, turns)
+
+        assert received_hints[0] == "", "First attempt must have empty retry_hint"
+        assert received_hints[1] != "", "Second attempt must carry a non-empty retry_hint"
+        assert "MODE-2" in received_hints[1], "Retry hint must reference MODE-2 rules"

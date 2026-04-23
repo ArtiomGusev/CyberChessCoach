@@ -33,7 +33,7 @@ Invariants pinned
 23. MODE1_HINT_MAX_2_SENTENCES: deterministic hint has at most 2 sentences.
 24. MODE1_SIMPLE_1_SENTENCE:  simple style produces exactly 1 sentence.
 25. MODE1_QUALITY_BEFORE_EVAL: quality comment precedes evaluation in deterministic hint.
-26. MODE1_NO_PHASE_TIP:       deterministic hint omits phase-specific coaching tips.
+26. MODE1_PHASE_TIP_STYLE:    simple style omits phase tip; intermediate/advanced append brief phase tip to eval sentence (no Mode-2 verbatim phrases).
 27. LLM_PATH_USED_WHEN_AVAILABLE: LLM response is returned when call_llm succeeds.
 28. LLM_FALLBACK_ON_ERROR:    deterministic fallback used when LLM raises.
 29. LLM_FALLBACK_ON_EMPTY:    deterministic fallback used when LLM returns empty string.
@@ -449,21 +449,28 @@ class TestMode1HintStructure:
             f"Quality comment must precede evaluation: {hint!r}"
         )
 
-    def test_no_phase_tip_in_hint(self):
-        """Mode-1 deterministic hint must not contain phase-specific coaching tips."""
-        phase_tip_words = [
-            "develop",          # opening tip
-            "tactical motifs",  # middlegame tip
-            "activate your king",  # endgame tip
+    def test_no_mode2_phase_tip_verbatim_in_hint(self):
+        """Mode-1 must not copy Mode-2 verbatim phase-tip phrasing.
+
+        Mode-1 has its own brief phase tip appended to the eval sentence in
+        intermediate/advanced styles (e.g. "focus on development and centre
+        control"), but it must not reuse the exact Mode-2 sentences from
+        chat_pipeline._PHASE_HINT (e.g. "prioritise development and centre
+        control", "tactical motifs", "activate your king").
+        """
+        mode2_phrases = [
+            "prioritise development",  # Mode-2 opening phrase
+            "tactical motifs",         # Mode-2 middlegame phrase
+            "activate your king",      # Mode-2 endgame phrase (Mode-1 uses "activate the king")
             "controlling the centre",
             "convert any material",
         ]
         for phase in ("opening", "middlegame", "endgame"):
             signal = _make_signal(phase=phase)
             hint = _build_hint(_UCI_NORMAL, signal, "")
-            for phrase in phase_tip_words:
+            for phrase in mode2_phrases:
                 assert phrase not in hint.lower(), (
-                    f"Phase tip '{phrase}' found in Mode-1 hint ({phase}): {hint!r}"
+                    f"Mode-2 phrase '{phrase}' found in Mode-1 hint ({phase}): {hint!r}"
                 )
 
     def test_all_quality_labels_covered(self):

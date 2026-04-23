@@ -67,6 +67,14 @@ _BAND_LABEL: dict[str, str] = {
     "decisive_advantage": "a decisive advantage",
 }
 
+# Brief phase tip suffix appended to the eval sentence in intermediate/advanced styles.
+# Uses different phrasing from Mode-2 (_PHASE_HINT in chat_pipeline) to keep layers distinct.
+_PHASE_TIP: dict[str, str] = {
+    "opening": "focus on development and centre control",
+    "middlegame": "look for active piece play",
+    "endgame": "activate the king and push your pawns",
+}
+
 # Level-differentiated quality comments used by the deterministic fallback.
 _QUALITY_COMMENT: dict[str, dict[str, str]] = {
     "blunder": {
@@ -168,11 +176,12 @@ def _build_hint(
     quality_by_style: dict[str, str] = _QUALITY_COMMENT.get(move_quality, {})
     quality_comment = quality_by_style.get(style, quality_by_style.get("intermediate", ""))
 
-    # Evaluation context sentence
+    # Evaluation context sentence (plain, used by simple style)
+    phase = engine_signal.get("phase", "")
     if eval_type == "mate":
         eval_sentence = f"Engine: forced mate ({side} is winning)."
     elif band == "equal":
-        eval_sentence = "The position is equal."
+        eval_sentence = "The engine evaluation is equal."
     else:
         band_label = _BAND_LABEL.get(band, band.replace("_", " "))
         eval_sentence = f"Position: {side} has {band_label}."
@@ -181,10 +190,26 @@ def _build_hint(
         core = quality_comment if quality_comment else eval_sentence
         return urgency_prefix + core
 
-    parts: list[str] = []
+    # For intermediate/advanced: append phase tip to the eval sentence (keeps max-2-sentence
+    # constraint since quality_comment + eval_with_tip = 2 items total).
+    phase_tip = _PHASE_TIP.get(phase, "") if eval_type != "mate" else ""
+    if phase_tip:
+        eval_with_tip = eval_sentence.rstrip(".") + " — " + phase_tip + "."
+    else:
+        eval_with_tip = eval_sentence
+
+    # Advanced with base_explanation: surface the SafeExplainer detail instead of eval+tip.
+    if style == "advanced" and base_explanation:
+        parts: list[str] = []
+        if quality_comment:
+            parts.append(quality_comment)
+        parts.append(base_explanation)
+        return urgency_prefix + " ".join(parts)
+
+    parts = []
     if quality_comment:
         parts.append(quality_comment)
-    parts.append(eval_sentence)
+    parts.append(eval_with_tip)
     return urgency_prefix + " ".join(parts)
 
 

@@ -23,6 +23,27 @@ def ensure_player(player_id: str):
 # -------------------------------------------------
 
 
+def get_or_create_auto_game(player_id: str) -> str:
+    """Return a stable per-player game ID for non-session move logging.
+
+    Uses a deterministic `auto-{player_id}` key so all moves from the same
+    authenticated player are grouped under one row until a real session system
+    replaces this (see server.py /game/start endpoint).
+    """
+    ensure_player(player_id)
+    game_id = f"auto-{player_id}"
+    conn = get_conn()
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO games (id, player_id) VALUES (?, ?)",
+            (game_id, player_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return game_id
+
+
 def create_game(player_id: str) -> str:
     ensure_player(player_id)
 

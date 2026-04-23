@@ -64,6 +64,7 @@ from llm.seca.coach.chat_pipeline import (
 from llm.seca.coach.live_move_pipeline import generate_live_reply
 from llm.seca.storage.repo import (
     create_game,
+    get_or_create_auto_game,
     log_move,
     log_explanation,
     update_learning_score,
@@ -832,7 +833,7 @@ def move(
     san = board.san(mv)
     ply = board.fullmove_number * 2 - (0 if board.turn else 1)
     log_move(
-        game_id="demo",  # temporary until session system
+        game_id=get_or_create_auto_game(str(player.id)),
         ply=ply,
         fen=normalized_fen,
         uci=mv.uci(),

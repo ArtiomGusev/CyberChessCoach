@@ -36,6 +36,7 @@ Constraints
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 
 from llm.rag.engine_signal.extract_engine_signal import extract_engine_signal
@@ -58,10 +59,21 @@ try:
     from llm.confidence_language_controller import build_language_controller_block as _build_clc  # type: ignore[import]
     from llm.rag.validators.mode_2_negative import validate_mode_2_negative as _validate_neg  # type: ignore[import]
     from llm.rag.prompts.input_sanitizer import sanitize_user_query as _sanitize  # type: ignore[import]
-    from llm.rag.safety.output_firewall import check_output as _check_output  # type: ignore[import]
+    from llm.rag.safety.output_firewall import (  # type: ignore[import]
+        check_output as _check_output,
+        OutputFirewallError as _OutputFirewallError,
+    )
+    from llm.rag.validators.explain_response_schema import EngineSignalSchema as _EngineSignalSchema  # type: ignore[import]
     _LLM_AVAILABLE = True
 except Exception:  # noqa: BLE001
     _LLM_AVAILABLE = False
+
+_CHAT_MAX_RETRIES = 2
+_CHAT_RETRY_DELAY_SECONDS = 0.5
+_CHAT_RETRY_HINT = (
+    "\n\nIMPORTANT: Follow MODE-2 rules strictly. "
+    "Do NOT speculate, invent moves, or mention engine intentions."
+)
 
 # ---------------------------------------------------------------------------
 # Label tables (deterministic fallback)
@@ -244,6 +256,7 @@ def _build_chat_llm(
     player_profile: dict | None,
     engine_signal: dict,
     past_mistakes: list[str] | None = None,
+    retry_hint: str = "",
 ) -> str:
     """Call the LLM with Mode-2 prompt including conversation history.
 
@@ -253,6 +266,8 @@ def _build_chat_llm(
     user_turns = [t for t in messages if t.role == "user"]
     raw_query = user_turns[-1].content if user_turns else ""
     clean_query = _sanitize(raw_query)
+    if retry_hint:
+        clean_query = clean_query + retry_hint
 
     # Format conversation history (exclude latest user message)
     history_turns = messages[:-1] if messages else []
@@ -439,13 +454,29 @@ def generate_chat_reply(
     """
     engine_signal = extract_engine_signal({}, fen=fen)
 
-    # --- LLM path ---
+    # --- LLM path with retry ---
     if _LLM_AVAILABLE:
-        try:
-            reply = _build_chat_llm(fen, messages, player_profile, engine_signal, past_mistakes)
-            return ChatReply(reply=reply, engine_signal=engine_signal, mode="CHAT_V1")
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Mode-2 LLM path failed (%s); using deterministic fallback", exc)
+        retry_hint = ""
+        for attempt in range(_CHAT_MAX_RETRIES + 1):
+            if attempt > 0:
+                time.sleep(_CHAT_RETRY_DELAY_SECONDS)
+            try:
+                reply = _build_chat_llm(
+                    fen, messages, player_profile, engine_signal, past_mistakes,
+                    retry_hint=retry_hint,
+                )
+                # ESV structural integrity check (programming-error guard; never from LLM).
+                _EngineSignalSchema.model_validate(engine_signal)
+                return ChatReply(reply=reply, engine_signal=engine_signal, mode="CHAT_V1")
+            except _OutputFirewallError:
+                logger.debug("Chat LLM blocked by output firewall; using deterministic fallback")
+                break
+            except AssertionError:
+                # Mode-2 negative validator failed — retry with stricter hint.
+                retry_hint = _CHAT_RETRY_HINT
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Mode-2 LLM path failed (%s); using deterministic fallback", exc)
+                break
 
     # --- Deterministic fallback ---
     base_explanation = _safe_explainer.explain(engine_signal)
