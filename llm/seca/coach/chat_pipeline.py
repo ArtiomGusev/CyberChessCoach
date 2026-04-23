@@ -40,6 +40,7 @@ import time
 from dataclasses import dataclass
 
 from llm.rag.engine_signal.extract_engine_signal import extract_engine_signal
+from llm.seca.coach.context_compact import compact_history, should_compact
 from llm.seca.explainer.safe_explainer import SafeExplainer
 
 logger = logging.getLogger(__name__)
@@ -273,8 +274,11 @@ def _build_chat_llm(
     history_turns = messages[:-1] if messages else []
     history_lines: list[str] = []
     for turn in history_turns[-_MAX_HISTORY_TURNS:]:
-        role_label = "User" if turn.role == "user" else "Coach"
-        history_lines.append(f"{role_label}: {turn.content[:500]}")
+        if turn.role == "system":
+            history_lines.append(turn.content[:500])
+        else:
+            role_label = "User" if turn.role == "user" else "Coach"
+            history_lines.append(f"{role_label}: {turn.content[:500]}")
     history_block = ""
     if history_lines:
         history_block = "\n\nCONVERSATION HISTORY:\n" + "\n".join(history_lines)
@@ -453,6 +457,10 @@ def generate_chat_reply(
         mode          — always "CHAT_V1".
     """
     engine_signal = extract_engine_signal({}, fen=fen)
+
+    # Auto-compact long histories before any processing to reduce token usage.
+    if should_compact(messages):
+        messages = compact_history(messages)
 
     # --- LLM path with retry ---
     if _LLM_AVAILABLE:

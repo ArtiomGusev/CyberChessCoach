@@ -95,6 +95,10 @@ TEST_TARGETS = [
     # live-move differentiation across beginner/club/intermediate/advanced, SafeExplainer
     # level-aware output, engine signal integrity across all levels.
     "llm/tests/test_player_level_quality.py",
+    # Context compaction: COMPACT-01..14 — threshold trigger, length reduction,
+    # blunder/strength/topic preservation, recent-turns verbatim, token savings,
+    # integration with generate_chat_reply.
+    "llm/tests/test_context_compact.py",
 ]
 
 COVERAGE_TARGETS = [
