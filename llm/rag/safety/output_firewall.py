@@ -149,9 +149,5 @@ def check_output(text: str) -> None:
     for category, patterns in _CATEGORIES:
         matched = [p.pattern for p in patterns if p.search(text)]
         if matched:
-            logger.warning(
-                "Output firewall blocked response [%s]: %d pattern(s) matched",
-                category,
-                len(matched),
-            )
+            logger.warning("Output firewall blocked response due to safety policy.")
             raise OutputFirewallError(category=category, patterns=matched)
