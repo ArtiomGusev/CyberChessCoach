@@ -99,6 +99,14 @@ TEST_TARGETS = [
     # blunder/strength/topic preservation, recent-turns verbatim, token savings,
     # integration with generate_chat_reply.
     "llm/tests/test_context_compact.py",
+    # LLM response quality: QUAL-01..27 — Mode-1/Mode-2 prompt correctness,
+    # SafeExplainer level differentiation, ConfidenceLanguageController tone,
+    # deterministic fallback adaptation across beginner/intermediate/advanced.
+    "llm/tests/test_llm_quality.py",
+    # Prompt injection: INJ-01..20 — input sanitizer pattern coverage, field
+    # sanitization for player_profile/past_mistakes/FEN/history, output firewall,
+    # Mode-2 negative validator, end-to-end injection resistance.
+    "llm/tests/test_prompt_injection.py",
 ]
 
 COVERAGE_TARGETS = [

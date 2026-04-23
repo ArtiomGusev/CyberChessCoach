@@ -252,6 +252,17 @@ class ChatReply:
 _MAX_HISTORY_TURNS = 10  # last 5 exchanges kept in context
 
 
+def _sanitize_field(value: str, max_len: int = 200) -> str:
+    """Strip newlines and control chars from structured data before prompt embedding.
+
+    Newlines are the primary vector for prompt-structure injection (an attacker
+    embedding a fake [SYSTEM] or 'User:' header inside a player_profile field).
+    Replaces every control character (< 0x20) and DEL (0x7F) with a space so
+    the value stays readable but cannot introduce new prompt sections.
+    """
+    return "".join(c if c >= "\x20" else " " for c in str(value).replace("\x7f", " "))[:max_len].strip()
+
+
 def _build_chat_llm(
     fen: str,
     messages: list[ChatTurn],
@@ -276,10 +287,10 @@ def _build_chat_llm(
     history_lines: list[str] = []
     for turn in history_turns[-_MAX_HISTORY_TURNS:]:
         if turn.role == "system":
-            history_lines.append(turn.content[:500])
+            history_lines.append(_sanitize_field(turn.content, max_len=500))
         else:
             role_label = "User" if turn.role == "user" else "Coach"
-            history_lines.append(f"{role_label}: {turn.content[:500]}")
+            history_lines.append(f"{role_label}: {_sanitize_field(turn.content, max_len=500)}")
     history_block = ""
     if history_lines:
         history_block = "\n\nCONVERSATION HISTORY:\n" + "\n".join(history_lines)
@@ -287,20 +298,22 @@ def _build_chat_llm(
     # Player context block
     player_block = ""
     if player_profile:
-        skill = player_profile.get("skill_estimate", "")
+        skill = _sanitize_field(player_profile.get("skill_estimate", ""), max_len=80)
         mistakes = player_profile.get("common_mistakes", [])
         strengths = player_profile.get("strengths", [])
         if skill:
             player_block += f"\nPlayer skill level: {skill}."
         if mistakes:
-            tags = [(m.get("tag", str(m)) if isinstance(m, dict) else str(m)) for m in mistakes[:5]]
+            tags = [_sanitize_field(m.get("tag", str(m)) if isinstance(m, dict) else str(m), max_len=60)
+                    for m in mistakes[:5]]
             player_block += f"\nRecurring mistake areas: {', '.join(tags)}."
         if strengths:
-            player_block += f"\nPlayer strengths: {', '.join(str(s) for s in strengths[:3])}."
+            player_block += f"\nPlayer strengths: {', '.join(_sanitize_field(str(s), max_len=60) for s in strengths[:3])}."
         if player_block:
             player_block = "\n\nPLAYER CONTEXT:" + player_block
     if past_mistakes:
-        player_block += f"\nRecent training focus: {', '.join(past_mistakes[:5])}."
+        safe_mistakes = [_sanitize_field(m, max_len=60) for m in past_mistakes[:5]]
+        player_block += f"\nRecent training focus: {', '.join(safe_mistakes)}."
 
     # RAG retrieval + style block
     rag_docs = _retrieve(engine_signal, _DOCS)
@@ -362,19 +375,21 @@ def _build_context_block(
         parts.append(f"This is move {move_count} of the game.")
 
     if player_profile:
-        skill = player_profile.get("skill_estimate", "")
+        skill = _sanitize_field(player_profile.get("skill_estimate", ""), max_len=80)
         mistakes = player_profile.get("common_mistakes", [])
         strengths = player_profile.get("strengths", [])
         if skill:
             parts.append(f"Player skill level: {skill}.")
         if mistakes:
-            tags = [(m.get("tag", str(m)) if isinstance(m, dict) else str(m)) for m in mistakes[:5]]
+            tags = [_sanitize_field(m.get("tag", str(m)) if isinstance(m, dict) else str(m), max_len=60)
+                    for m in mistakes[:5]]
             parts.append(f"Recurring mistake areas: {', '.join(tags)}.")
         if strengths:
-            parts.append(f"Strengths: {', '.join(str(s) for s in strengths[:3])}.")
+            parts.append(f"Strengths: {', '.join(_sanitize_field(str(s), max_len=60) for s in strengths[:3])}.")
 
     if past_mistakes:
-        parts.append(f"Recent training focus: {', '.join(past_mistakes[:5])}.")
+        safe_mistakes = [_sanitize_field(m, max_len=60) for m in past_mistakes[:5]]
+        parts.append(f"Recent training focus: {', '.join(safe_mistakes)}.")
 
     return " ".join(parts)
 

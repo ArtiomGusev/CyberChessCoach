@@ -69,12 +69,14 @@ def render_mode_1_prompt(
         snippets = [d["content"]["description"][:120] for d in rag_docs[:2]]
         rag_block = "\n\nREFERENCE CONTEXT:\n" + "\n".join(f"• {s}" for s in snippets)
 
+    safe_fen = "".join(c if c >= "\x20" else " " for c in fen)
+
     prompt = f"""{system_prompt}
 
 ────────────────────────────
 POSITION CONTEXT
 ────────────────────────────
-FEN: {fen}
+FEN: {safe_fen}
 Player level: {level}
 Move quality: {move_quality}
 Engine evaluation: {eval_desc}

@@ -23,6 +23,8 @@ def render_mode_2_prompt(
 
     rag_text = "\n\n".join(rag_blocks) if rag_blocks else "(no retrieved context)"
 
+    safe_fen = "".join(c if c >= "\x20" else " " for c in fen)
+
     prompt = f"""{system_prompt}
 
 ────────────────────────────
@@ -38,7 +40,7 @@ RETRIEVED CONTEXT (REFERENCE)
 ────────────────────────────
 POSITION
 ────────────────────────────
-FEN: {fen}
+FEN: {safe_fen}
 
 ────────────────────────────
 USER REQUEST

@@ -49,7 +49,7 @@ MAX_USER_QUERY_LENGTH = 2000
 _CAT_A: list[re.Pattern[str]] = [
     re.compile(r"ignore\s+(all\s+)?previous\s+instructions?", re.IGNORECASE),
     re.compile(r"disregard\s+(all\s+)?(previous\s+)?instructions?", re.IGNORECASE),
-    re.compile(r"forget\s+(all\s+)?(previous\s+)?instructions?", re.IGNORECASE),
+    re.compile(r"forget\s+.{0,30}instructions?", re.IGNORECASE),
     re.compile(r"override\s+(your\s+)?(instructions?|rules?|prompt|guidelines?|constraints?)", re.IGNORECASE),
     re.compile(r"(new|updated?|replace\s+your)\s+system\s+prompt\b", re.IGNORECASE),
     re.compile(r"change\s+your\s+(instructions?|rules?|guidelines?|behavior)\b", re.IGNORECASE),
@@ -76,7 +76,7 @@ _CAT_B: list[re.Pattern[str]] = [
 # Category C — Prompt / data extraction
 # ---------------------------------------------------------------------------
 _CAT_C: list[re.Pattern[str]] = [
-    re.compile(r"reveal\s+(the\s+)?(hidden\s+|your\s+)?system\s+prompt", re.IGNORECASE),
+    re.compile(r"reveal\s+.{0,30}system\s+prompt", re.IGNORECASE),
     re.compile(r"(show|print|output|display|expose|leak|dump|repeat|tell\s+me)\s+(your\s+|the\s+)?(system\s+prompt|instructions?|training\s+data|confidential|private|internal\s+rules?)", re.IGNORECASE),
     re.compile(r"what\s+(are|is)\s+your\s+(system\s+prompt|instructions?|rules?|guidelines?|constraints?|prompt)\b", re.IGNORECASE),
     re.compile(r"repeat\s+(the\s+)?internal\s+instructions?", re.IGNORECASE),
