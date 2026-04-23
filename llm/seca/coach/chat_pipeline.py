@@ -1,7 +1,5 @@
 """
-Long-form chat coaching pipeline — deterministic, no RL.
-
-Produces a context-aware coaching reply for a multi-turn chess conversation.
+Long-form chat coaching pipeline — LLM-powered with deterministic fallback.
 
 Architecture
 ------------
@@ -15,34 +13,58 @@ Inputs:
                    layer (e.g. ["tactical_vision", "endgame_technique"]).
 
 Processing:
-    1. Extract engine signal from the FEN via extract_engine_signal()
-       (neutral stockfish_json — no engine process required for chat).
-    2. Build a deterministic context block: evaluation band, game phase,
-       player profile, past mistakes.
-    3. Assemble a coaching reply that always cites the engine evaluation.
+    1. Extract engine signal from the FEN via extract_engine_signal().
+    2. Try LLM path:
+       a. Sanitize latest user query.
+       b. Build Mode-2 prompt with conversation history, RAG docs, player
+          context, and engine signal.
+       c. Call Ollama; validate and repair output.
+       d. Return ChatReply with LLM-generated explanation.
+    3. On any LLM failure, fall back to the deterministic _build_reply().
     4. Return ChatReply(reply, engine_signal, mode="CHAT_V1").
 
 Constraints
 -----------
 - No reinforcement learning.
 - No dynamic skill adaptation.
-- reply always references the engine evaluation band and phase.
 - engine_signal is always produced by extract_engine_signal(), never
-  sourced from or overridden by any user-provided text.
-- SafeExplainer produces the base evaluation sentence deterministically.
+  sourced from LLM or user input.
+- LLM output is validated by validate_mode_2_negative before returning.
+- Deterministic fallback always available when LLM is unreachable.
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from llm.rag.engine_signal.extract_engine_signal import extract_engine_signal
 from llm.seca.explainer.safe_explainer import SafeExplainer
 
+logger = logging.getLogger(__name__)
+
 _safe_explainer = SafeExplainer()
 
 # ---------------------------------------------------------------------------
-# Label tables (deterministic)
+# Optional LLM imports
+# ---------------------------------------------------------------------------
+
+try:
+    from llm.explain_pipeline import call_llm as _call_llm  # type: ignore[import]
+    from llm.rag.prompts.system_v2_mode_2 import SYSTEM_PROMPT as _SYSTEM_PROMPT  # type: ignore[import]
+    from llm.rag.prompts.mode_2.render import render_mode_2_prompt as _render  # type: ignore[import]
+    from llm.rag.retriever.retriever import retrieve as _retrieve  # type: ignore[import]
+    from llm.rag.documents import ALL_RAG_DOCUMENTS as _DOCS  # type: ignore[import]
+    from llm.confidence_language_controller import build_language_controller_block as _build_clc  # type: ignore[import]
+    from llm.rag.validators.mode_2_negative import validate_mode_2_negative as _validate_neg  # type: ignore[import]
+    from llm.rag.prompts.input_sanitizer import sanitize_user_query as _sanitize  # type: ignore[import]
+    from llm.rag.safety.output_firewall import check_output as _check_output  # type: ignore[import]
+    _LLM_AVAILABLE = True
+except Exception:  # noqa: BLE001
+    _LLM_AVAILABLE = False
+
+# ---------------------------------------------------------------------------
+# Label tables (deterministic fallback)
 # ---------------------------------------------------------------------------
 
 _BAND_LABEL: dict[str, str] = {
@@ -171,7 +193,6 @@ def _map_skill_level(player_profile: dict | None) -> str:
     skill = str(player_profile.get("skill_estimate", "")).lower()
     if "beginner" in skill or "novice" in skill:
         return "beginner"
-    # "club" is mid-tier (≈1200–1800 ELO) → intermediate coaching depth
     if "advanced" in skill or "expert" in skill or "master" in skill:
         return "advanced"
     return "intermediate"
@@ -197,7 +218,7 @@ class ChatReply:
     Attributes
     ----------
     reply : str
-        Coaching reply that always references the engine evaluation.
+        Coaching reply referencing the engine evaluation.
     engine_signal : dict
         Structured engine signal from extract_engine_signal(); never
         derived from LLM or user input.
@@ -211,16 +232,87 @@ class ChatReply:
 
 
 # ---------------------------------------------------------------------------
-# Internal helpers
+# LLM path
+# ---------------------------------------------------------------------------
+
+_MAX_HISTORY_TURNS = 10  # last 5 exchanges kept in context
+
+
+def _build_chat_llm(
+    fen: str,
+    messages: list[ChatTurn],
+    player_profile: dict | None,
+    engine_signal: dict,
+    past_mistakes: list[str] | None = None,
+) -> str:
+    """Call the LLM with Mode-2 prompt including conversation history.
+
+    Raises on any failure so the caller can fall back to _build_reply_deterministic.
+    """
+    # Sanitize latest user query
+    user_turns = [t for t in messages if t.role == "user"]
+    raw_query = user_turns[-1].content if user_turns else ""
+    clean_query = _sanitize(raw_query)
+
+    # Format conversation history (exclude latest user message)
+    history_turns = messages[:-1] if messages else []
+    history_lines: list[str] = []
+    for turn in history_turns[-_MAX_HISTORY_TURNS:]:
+        role_label = "User" if turn.role == "user" else "Coach"
+        history_lines.append(f"{role_label}: {turn.content[:500]}")
+    history_block = ""
+    if history_lines:
+        history_block = "\n\nCONVERSATION HISTORY:\n" + "\n".join(history_lines)
+
+    # Player context block
+    player_block = ""
+    if player_profile:
+        skill = player_profile.get("skill_estimate", "")
+        mistakes = player_profile.get("common_mistakes", [])
+        strengths = player_profile.get("strengths", [])
+        if skill:
+            player_block += f"\nPlayer skill level: {skill}."
+        if mistakes:
+            tags = [(m.get("tag", str(m)) if isinstance(m, dict) else str(m)) for m in mistakes[:5]]
+            player_block += f"\nRecurring mistake areas: {', '.join(tags)}."
+        if strengths:
+            player_block += f"\nPlayer strengths: {', '.join(str(s) for s in strengths[:3])}."
+        if player_block:
+            player_block = "\n\nPLAYER CONTEXT:" + player_block
+    if past_mistakes:
+        player_block += f"\nRecent training focus: {', '.join(past_mistakes[:5])}."
+
+    # RAG retrieval + style block
+    rag_docs = _retrieve(engine_signal, _DOCS)
+    style_block = _build_clc(engine_signal)
+
+    system = _SYSTEM_PROMPT + "\n\n" + style_block + history_block + player_block
+
+    prompt = _render(
+        system_prompt=system,
+        engine_signal=engine_signal,
+        rag_docs=rag_docs,
+        fen=fen,
+        user_query=clean_query,
+    )
+
+    response = _call_llm(prompt).strip()
+    if not response:
+        raise ValueError("Empty LLM response")
+
+    # Output firewall + Mode-2 negative validation
+    _check_output(response)
+    _validate_neg(response)
+
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Deterministic fallback
 # ---------------------------------------------------------------------------
 
 
 def _format_engine_context(engine_signal: dict) -> str:
-    """Produce a one-line engine evaluation summary sentence.
-
-    Always mentions the evaluation type (cp/mate), band, side, and
-    current game phase so the reply contractually references engine eval.
-    """
     eval_info = engine_signal.get("evaluation", {})
     band = eval_info.get("band", "equal")
     side = eval_info.get("side", "unknown")
@@ -244,11 +336,6 @@ def _build_context_block(
     past_mistakes: list[str] | None,
     move_count: int | None = None,
 ) -> str:
-    """Assemble all available coaching context into a single paragraph.
-
-    Always leads with the engine evaluation reference.  Player profile,
-    past mistakes, and move count are appended when present.
-    """
     parts = [_format_engine_context(engine_signal)]
 
     if move_count is not None:
@@ -261,18 +348,18 @@ def _build_context_block(
         if skill:
             parts.append(f"Player skill level: {skill}.")
         if mistakes:
-            tags = [(m.get("tag", str(m)) if isinstance(m, dict) else str(m)) for m in mistakes[:3]]
+            tags = [(m.get("tag", str(m)) if isinstance(m, dict) else str(m)) for m in mistakes[:5]]
             parts.append(f"Recurring mistake areas: {', '.join(tags)}.")
         if strengths:
-            parts.append(f"Strengths: {', '.join(str(s) for s in strengths[:2])}.")
+            parts.append(f"Strengths: {', '.join(str(s) for s in strengths[:3])}.")
 
     if past_mistakes:
-        parts.append(f"Recent training focus: {', '.join(past_mistakes[:3])}.")
+        parts.append(f"Recent training focus: {', '.join(past_mistakes[:5])}.")
 
     return " ".join(parts)
 
 
-def _build_reply(
+def _build_reply_deterministic(
     user_query: str,
     context_block: str,
     engine_signal: dict,
@@ -280,36 +367,29 @@ def _build_reply(
     history: list[ChatTurn],
     skill_level: str = "intermediate",
 ) -> str:
-    """Build the final coaching reply.
-
-    Structure:
-        [previous topic reference if applicable]
-        [engine context block — always present]
-        [move quality note if available]
-        [base explanation from SafeExplainer]
-        [response to user query]
-    """
+    """Deterministic Mode-2 reply used when LLM is unavailable."""
     parts: list[str] = []
 
-    # Reference a prior user question when the conversation has history
     prior_user_turns = [t for t in history[:-1] if t.role == "user"]
     if prior_user_turns:
         prev = prior_user_turns[-1].content[:80].strip()
         parts.append(f'Following up on your earlier question about "{prev}":')
 
-    # Engine context always leads the reply
     parts.append(context_block)
 
-    # Move quality note (if the engine reported one)
     move_quality = engine_signal.get("last_move_quality", "")
     if move_quality and move_quality not in ("unknown", ""):
         parts.append(f"Last move quality: {move_quality}.")
 
-    # Base evaluation from SafeExplainer
     if base_explanation:
         parts.append(base_explanation)
 
-    # Address the user's specific query with level-differentiated coaching advice
+    # Phase tip — always included in Mode-2 (absent from Mode-1)
+    phase = engine_signal.get("phase", "middlegame")
+    phase_tip = _PHASE_HINT.get(phase, "")
+    if phase_tip:
+        parts.append(phase_tip)
+
     query = user_query.strip()
     if query:
         question_type = _detect_question_type(query)
@@ -331,51 +411,52 @@ def generate_chat_reply(
     past_mistakes: list[str] | None = None,
     move_count: int | None = None,
 ) -> ChatReply:
-    """Generate a deterministic coaching reply for the current chat turn.
+    """Generate a coaching reply for the current chat turn.
+
+    Attempts the LLM path first (full Mode-2 pipeline with RAG, history,
+    and validation); falls back to the deterministic reply when Ollama is
+    unavailable or validation fails.
 
     Parameters
     ----------
     fen:
-        Current board position (FEN string).  Must be a valid FEN or
-        "startpos".
+        Current board position (FEN string or "startpos").
     messages:
-        Full conversation history including the latest user message at
-        the end.  May be empty (produces a position-only analysis reply).
+        Full conversation history including the latest user message at the end.
     player_profile:
-        Optional SECA player model dict with keys skill_estimate,
-        common_mistakes (list of {tag, count}), and strengths (list[str]).
+        Optional SECA player model dict (skill_estimate, common_mistakes, strengths).
     past_mistakes:
         Optional list of MistakeCategory strings from the analytics layer.
     move_count:
-        Optional number of half-moves played so far; injected into the
-        context block so the LLM knows the game phase ("This is move N of
-        the game.").  None omits the field.
+        Optional half-move count; injected into deterministic context block.
 
     Returns
     -------
     ChatReply
-        reply (str)        — coaching reply always referencing engine eval.
-        engine_signal (dict) — from extract_engine_signal(); never from LLM.
-        mode (str)         — always "CHAT_V1".
+        reply         — coaching explanation referencing engine evaluation.
+        engine_signal — from extract_engine_signal(); never from LLM.
+        mode          — always "CHAT_V1".
     """
-    # Engine signal always from extract_engine_signal, never user-supplied
     engine_signal = extract_engine_signal({}, fen=fen)
 
-    # Deterministic base explanation from SafeExplainer
-    base_explanation = _safe_explainer.explain(engine_signal)
+    # --- LLM path ---
+    if _LLM_AVAILABLE:
+        try:
+            reply = _build_chat_llm(fen, messages, player_profile, engine_signal, past_mistakes)
+            return ChatReply(reply=reply, engine_signal=engine_signal, mode="CHAT_V1")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Mode-2 LLM path failed (%s); using deterministic fallback", exc)
 
-    # Context block (always includes engine evaluation reference)
+    # --- Deterministic fallback ---
+    base_explanation = _safe_explainer.explain(engine_signal)
     context_block = _build_context_block(
         engine_signal, player_profile, past_mistakes, move_count
     )
-
-    # Latest user message (may be empty for session-open call)
     user_turns = [t for t in messages if t.role == "user"]
     user_query = user_turns[-1].content if user_turns else ""
-
     skill_level = _map_skill_level(player_profile)
 
-    reply = _build_reply(
+    reply = _build_reply_deterministic(
         user_query=user_query,
         context_block=context_block,
         engine_signal=engine_signal,
@@ -383,5 +464,4 @@ def generate_chat_reply(
         history=messages,
         skill_level=skill_level,
     )
-
     return ChatReply(reply=reply, engine_signal=engine_signal, mode="CHAT_V1")

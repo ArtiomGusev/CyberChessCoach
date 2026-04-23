@@ -129,6 +129,7 @@ object QuickCoachLogic {
         engineAvailable: Boolean = true,
         classificationOverride: MistakeClassification? = null,
         engineSignal: EngineSignalDto? = null,
+        isHumanMoveCoachUpdate: Boolean = false,
     ): QuickCoachUpdate {
         val classification = classificationOverride ?: classifyCapture(capturedPiece)
         return QuickCoachUpdate(
@@ -138,6 +139,7 @@ object QuickCoachLogic {
             bestMove = bestMove,
             engineAvailable = engineAvailable,
             engineSignal = engineSignal,
+            isHumanMoveCoachUpdate = isHumanMoveCoachUpdate,
         )
     }
 

@@ -875,17 +875,24 @@ def move(
 
 @app.post("/live/move")
 @limiter.limit("30/minute")
-def live_move(
+async def live_move(
     req: LiveMoveRequest,
     request: Request,
     player=Depends(get_current_player),
 ):
+    """Mode-1: per-move coaching feedback after the human's move.
+
+    LLM-powered (1-2 sentences); falls back to deterministic hint when
+    Ollama is unavailable.  Runs in a thread-pool executor so the async
+    event loop is not blocked during the Ollama HTTP call.
+    """
     adaptation = compute_adaptation(player.rating, player.confidence)
-    result = generate_live_reply(
-        fen=req.fen,
-        uci=req.uci,
-        player_id=str(player.id),
-        explanation_style=adaptation["teaching"]["style"],
+    result = await asyncio.to_thread(
+        generate_live_reply,
+        req.fen,
+        req.uci,
+        str(player.id),
+        adaptation["teaching"]["style"],
     )
     if _dynamic_registry.get_state(str(player.id)).enabled:
         _dynamic_registry.record_move_quality(str(player.id), result.move_quality)
@@ -972,24 +979,25 @@ def report_outcome(req: OutcomeRequest, request: Request, _: None = Depends(veri
 
 @app.post("/chat")
 @limiter.limit("10/minute")
-def chat(
+async def chat(
     req: ChatRequest,
     request: Request,
     _: str = Depends(verify_api_key),
 ):
-    """Long-form coaching conversation endpoint.
+    """Mode-2: long-form coaching explanation for the LLM panel.
 
-    Accepts the current FEN, full conversation history, and optional
-    player context.  Returns a deterministic coaching reply that always
-    references the engine evaluation.  No RL adaptation occurs.
+    LLM-powered with conversation history, RAG, and Mode-2 validation;
+    falls back to deterministic reply when Ollama is unavailable.
+    Runs in a thread-pool executor so the async event loop is not blocked.
     """
     turns = [_ChatPipelineTurn(role=t.role, content=t.content) for t in req.messages]
-    result = generate_chat_reply(
-        fen=req.fen,
-        messages=turns,
-        player_profile=req.player_profile,
-        past_mistakes=req.past_mistakes,
-        move_count=req.move_count,
+    result = await asyncio.to_thread(
+        generate_chat_reply,
+        req.fen,
+        turns,
+        req.player_profile,
+        req.past_mistakes,
+        req.move_count,
     )
     return {
         "reply": result.reply,
@@ -1010,7 +1018,7 @@ async def chat_stream(
     request: Request,
     _: str = Depends(verify_api_key),
 ):
-    """Streaming variant of POST /chat — same pipeline, chunked via Server-Sent Events.
+    """Streaming variant of POST /chat — same LLM pipeline, chunked via Server-Sent Events.
 
     Emits one SSE event per word of the coaching reply, then a final ``done``
     event carrying ``engine_signal`` and ``mode``.  Wire format::
@@ -1019,7 +1027,7 @@ async def chat_stream(
         ...
         data: {"type": "done", "engine_signal": {...}, "mode": "CHAT_V1"}\n\n
 
-    Uses the same deterministic chat_pipeline.generate_chat_reply(); no RL.
+    Uses the same LLM-powered chat_pipeline.generate_chat_reply(); no RL.
     The pipeline runs in a thread-pool executor so the event loop is not blocked.
     """
     turns = [_ChatPipelineTurn(role=t.role, content=t.content) for t in req.messages]

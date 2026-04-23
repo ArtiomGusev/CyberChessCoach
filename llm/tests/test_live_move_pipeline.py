@@ -1,11 +1,10 @@
 """
-Unit tests for the per-move live coaching pipeline.
+Unit tests for the per-move live coaching pipeline (Mode 1).
 
 Modules under test
 ------------------
 llm.seca.coach.live_move_pipeline
-    LiveMoveReply, generate_live_reply,
-    _build_hint
+    LiveMoveReply, generate_live_reply, _build_hint
 
 Invariants pinned
 -----------------
@@ -13,38 +12,46 @@ Invariants pinned
  2. HINT_NONNULL:             LiveMoveReply.hint is a non-empty string.
  3. ENGINE_SIGNAL_KEYS:       engine_signal has all required top-level keys.
  4. MODE_LIVE_V1:             mode is always "LIVE_V1".
- 5. ENGINE_EVAL_IN_HINT:      hint always contains engine evaluation band or type.
+ 5. ENGINE_EVAL_IN_HINT:      deterministic hint contains evaluation band or type.
  6. MOVE_QUALITY_IS_STR:      move_quality is a string.
  7. ENGINE_SIGNAL_NEVER_FROM_USER: engine_signal never reflects player_id text.
- 8. DETERMINISM:              identical inputs → identical LiveMoveReply.
+ 8. DETERMINISM:              identical inputs → identical LiveMoveReply (fallback path).
  9. FROZEN:                   LiveMoveReply is immutable (frozen dataclass).
 10. BAND_VALUES:              band is one of the four valid strings.
-11. FORMAT_MATE_HINT:         mate eval type → "mate" in hint.
-12. FORMAT_CP_HINT:           cp eval type → "advantage" or "equal" in hint.
-13. PHASE_HINT_PRESENT:       phase hint text appears in the hint.
-14. QUALITY_COMMENT_BLUNDER:  "blunder" quality label → blunder comment in hint.
-15. QUALITY_COMMENT_BEST:     "best" quality label → best comment in hint.
-16. LAYER_NO_RL:              live_move_pipeline.py imports no RL/brain modules.
-17. LAYER_NO_SQL:             live_move_pipeline.py imports no sqlalchemy.
-18. STARTPOS_FEN:             works correctly with the starting position FEN.
-19. MID_FEN:                  works correctly with a mid-game FEN.
-20. PLAYER_ID_NOT_IN_SIGNAL:  player_id value is absent from engine_signal.
-21. UCI_4_CHARS:              4-char UCI move (e.g. "e2e4") produces a valid reply.
-22. UCI_5_CHARS:              5-char UCI move (promotion, e.g. "e7e8q") is accepted.
-23. ENGINE_SIGNAL_BAND_TYPE:  evaluation sub-dict has "band" and "type" keys.
+11. FORMAT_MATE_HINT:         mate eval type → "mate" in deterministic hint.
+12. FORMAT_CP_HINT:           cp eval type → "advantage" or "equal" in deterministic hint.
+13. QUALITY_COMMENT_BLUNDER:  "blunder" quality label → blunder comment in deterministic hint.
+14. QUALITY_COMMENT_BEST:     "best" quality label → best comment in deterministic hint.
+15. LAYER_NO_RL:              live_move_pipeline.py imports no RL/brain modules.
+16. LAYER_NO_SQL:             live_move_pipeline.py imports no sqlalchemy.
+17. STARTPOS_FEN:             works correctly with the starting position FEN.
+18. MID_FEN:                  works correctly with a mid-game FEN.
+19. PLAYER_ID_NOT_IN_SIGNAL:  player_id value is absent from engine_signal.
+20. UCI_4_CHARS:              4-char UCI move (e.g. "e2e4") produces a valid reply.
+21. UCI_5_CHARS:              5-char UCI move (promotion, e.g. "e7e8q") is accepted.
+22. ENGINE_SIGNAL_BAND_TYPE:  evaluation sub-dict has "band" and "type" keys.
+23. MODE1_HINT_MAX_2_SENTENCES: deterministic hint has at most 2 sentences.
+24. MODE1_SIMPLE_1_SENTENCE:  simple style produces exactly 1 sentence.
+25. MODE1_QUALITY_BEFORE_EVAL: quality comment precedes evaluation in deterministic hint.
+26. MODE1_NO_PHASE_TIP:       deterministic hint omits phase-specific coaching tips.
+27. LLM_PATH_USED_WHEN_AVAILABLE: LLM response is returned when call_llm succeeds.
+28. LLM_FALLBACK_ON_ERROR:    deterministic fallback used when LLM raises.
+29. LLM_FALLBACK_ON_EMPTY:    deterministic fallback used when LLM returns empty string.
 """
 
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from llm.seca.coach.live_move_pipeline import (
     LiveMoveReply,
-    generate_live_reply,
     _build_hint,
+    generate_live_reply,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -103,40 +110,61 @@ def _make_signal(
     }
 
 
+def _sentence_count(text: str) -> int:
+    """Count sentence-ending punctuation marks (period, ! or ?)."""
+    return len(re.findall(r"[.!?](?:\s|$)", text.strip()))
+
+
+def _patch_llm_unavailable():
+    """Context manager: force LLM path to fail so tests use the deterministic fallback."""
+    return patch(
+        "llm.seca.coach.live_move_pipeline._LLM_AVAILABLE",
+        False,
+    )
+
+
 # ---------------------------------------------------------------------------
-# 1–6  Core return-value invariants
+# 1–6  Core return-value invariants  (LLM disabled → deterministic)
 # ---------------------------------------------------------------------------
 
 
 class TestLiveMoveReplyInvariants:
 
     def test_returns_live_move_reply_instance(self):
-        result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
+        with _patch_llm_unavailable():
+            result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
         assert isinstance(result, LiveMoveReply)
 
     def test_hint_is_non_empty_string(self):
-        result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
+        with _patch_llm_unavailable():
+            result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
         assert isinstance(result.hint, str) and result.hint.strip()
 
     def test_engine_signal_has_all_required_keys(self):
-        result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
+        with _patch_llm_unavailable():
+            result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
         missing = _REQUIRED_ESV_KEYS - result.engine_signal.keys()
         assert not missing, f"Missing engine_signal keys: {missing}"
 
     def test_mode_is_live_v1(self):
-        result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
+        with _patch_llm_unavailable():
+            result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
         assert result.mode == "LIVE_V1"
 
     def test_hint_contains_engine_evaluation_reference(self):
-        result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
+        with _patch_llm_unavailable():
+            result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
         band = result.engine_signal["evaluation"]["band"]
         band_word = band.replace("_", " ")
         assert any(
             w in result.hint for w in band_word.split()
-        ), f"Hint does not reference evaluation band '{band}': {result.hint!r}"
+        ) or "equal" in result.hint.lower() or "mate" in result.hint.lower(), (
+            f"Hint does not reference evaluation band '{band}': {result.hint!r}"
+        )
 
     def test_move_quality_is_string(self):
-        result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
+        with _patch_llm_unavailable():
+            result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
         assert isinstance(result.move_quality, str)
 
 
@@ -149,37 +177,38 @@ class TestEngineSignalIsolation:
 
     def test_engine_signal_does_not_contain_player_id(self):
         sentinel = "INJECTION_PROBE_XYZZY"
-        result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL, player_id=sentinel)
+        with _patch_llm_unavailable():
+            result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL, player_id=sentinel)
         signal_str = str(result.engine_signal)
-        assert sentinel not in signal_str, (
-            "engine_signal must never reflect player_id: " + signal_str
-        )
+        assert sentinel not in signal_str
 
     def test_engine_signal_band_is_valid(self):
-        result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
+        with _patch_llm_unavailable():
+            result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
         band = result.engine_signal["evaluation"]["band"]
         assert band in _VALID_BANDS, f"Unknown band: {band!r}"
 
 
 # ---------------------------------------------------------------------------
-# 8  Determinism
+# 8  Determinism (fallback path)
 # ---------------------------------------------------------------------------
 
 
 class TestDeterminism:
 
     def test_identical_inputs_produce_identical_output(self):
-        r1 = generate_live_reply(_MID_FEN, _UCI_NORMAL, player_id="player1")
-        r2 = generate_live_reply(_MID_FEN, _UCI_NORMAL, player_id="player1")
+        with _patch_llm_unavailable():
+            r1 = generate_live_reply(_MID_FEN, _UCI_NORMAL, player_id="player1")
+            r2 = generate_live_reply(_MID_FEN, _UCI_NORMAL, player_id="player1")
         assert r1.hint == r2.hint
         assert r1.engine_signal == r2.engine_signal
         assert r1.move_quality == r2.move_quality
         assert r1.mode == r2.mode
 
     def test_different_fens_may_differ(self):
-        r1 = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
-        r2 = generate_live_reply(_MID_FEN, _UCI_NORMAL)
-        # Both must be valid; we just confirm no crash and non-empty hints
+        with _patch_llm_unavailable():
+            r1 = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
+            r2 = generate_live_reply(_MID_FEN, _UCI_NORMAL)
         assert r1.hint.strip()
         assert r2.hint.strip()
 
@@ -192,12 +221,14 @@ class TestDeterminism:
 class TestDataclassImmutability:
 
     def test_live_move_reply_is_frozen(self):
-        result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
+        with _patch_llm_unavailable():
+            result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
         with pytest.raises((AttributeError, TypeError)):
             result.mode = "MODIFIED"  # type: ignore[misc]
 
     def test_live_move_reply_hint_is_frozen(self):
-        result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
+        with _patch_llm_unavailable():
+            result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
         with pytest.raises((AttributeError, TypeError)):
             result.hint = "hacked"  # type: ignore[misc]
 
@@ -210,11 +241,13 @@ class TestDataclassImmutability:
 class TestBandValues:
 
     def test_starting_fen_band_is_valid(self):
-        result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
+        with _patch_llm_unavailable():
+            result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
         assert result.engine_signal["evaluation"]["band"] in _VALID_BANDS
 
     def test_mid_fen_band_is_valid(self):
-        result = generate_live_reply(_MID_FEN, _UCI_NORMAL)
+        with _patch_llm_unavailable():
+            result = generate_live_reply(_MID_FEN, _UCI_NORMAL)
         assert result.engine_signal["evaluation"]["band"] in _VALID_BANDS
 
 
@@ -247,36 +280,7 @@ class TestBuildHintFormatting:
 
 
 # ---------------------------------------------------------------------------
-# 13  Phase hint
-# ---------------------------------------------------------------------------
-
-
-class TestPhaseHintPresent:
-
-    def test_opening_phase_hint_in_hint(self):
-        signal = _make_signal(phase="opening")
-        hint = _build_hint(_UCI_NORMAL, signal, "")
-        assert "develop" in hint.lower() or "centre" in hint.lower(), (
-            f"Opening phase hint missing: {hint!r}"
-        )
-
-    def test_middlegame_phase_hint_in_hint(self):
-        signal = _make_signal(phase="middlegame")
-        hint = _build_hint(_UCI_NORMAL, signal, "")
-        assert "tactical" in hint.lower() or "activity" in hint.lower(), (
-            f"Middlegame phase hint missing: {hint!r}"
-        )
-
-    def test_endgame_phase_hint_in_hint(self):
-        signal = _make_signal(phase="endgame")
-        hint = _build_hint(_UCI_NORMAL, signal, "")
-        assert "king" in hint.lower() or "endgame" in hint.lower() or "convert" in hint.lower(), (
-            f"Endgame phase hint missing: {hint!r}"
-        )
-
-
-# ---------------------------------------------------------------------------
-# 14–15  Move quality comments
+# 13–14  Move quality comments
 # ---------------------------------------------------------------------------
 
 
@@ -297,7 +301,6 @@ class TestMoveQualityComments:
     def test_unknown_quality_produces_no_quality_comment(self):
         signal = _make_signal(move_quality="unknown")
         hint = _build_hint(_UCI_NORMAL, signal, "")
-        # "unknown" should not appear as a quality label in the hint
         assert "unknown" not in hint.lower(), f"'unknown' leaked into hint: {hint!r}"
 
     def test_mistake_quality_produces_mistake_comment(self):
@@ -307,7 +310,7 @@ class TestMoveQualityComments:
 
 
 # ---------------------------------------------------------------------------
-# 16–17  Layer boundaries
+# 15–16  Layer boundaries
 # ---------------------------------------------------------------------------
 
 
@@ -333,30 +336,30 @@ class TestLayerBoundary:
 
 
 # ---------------------------------------------------------------------------
-# 18–19  FEN variety
+# 17–18  FEN variety
 # ---------------------------------------------------------------------------
 
 
 class TestFenVariety:
 
     def test_starting_position_fen(self):
-        result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
-        assert isinstance(result, LiveMoveReply)
-        assert result.hint.strip()
+        with _patch_llm_unavailable():
+            result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
+        assert isinstance(result, LiveMoveReply) and result.hint.strip()
 
     def test_mid_game_fen(self):
-        result = generate_live_reply(_MID_FEN, _UCI_NORMAL)
-        assert isinstance(result, LiveMoveReply)
-        assert result.hint.strip()
+        with _patch_llm_unavailable():
+            result = generate_live_reply(_MID_FEN, _UCI_NORMAL)
+        assert isinstance(result, LiveMoveReply) and result.hint.strip()
 
     def test_endgame_fen(self):
-        result = generate_live_reply(_ENDGAME_FEN, _UCI_NORMAL)
-        assert isinstance(result, LiveMoveReply)
-        assert result.hint.strip()
+        with _patch_llm_unavailable():
+            result = generate_live_reply(_ENDGAME_FEN, _UCI_NORMAL)
+        assert isinstance(result, LiveMoveReply) and result.hint.strip()
 
 
 # ---------------------------------------------------------------------------
-# 20  player_id isolation
+# 19  player_id isolation
 # ---------------------------------------------------------------------------
 
 
@@ -364,46 +367,165 @@ class TestPlayerIdIsolation:
 
     def test_player_id_not_in_engine_signal(self):
         player_id = "unique_player_id_abc123"
-        result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL, player_id=player_id)
+        with _patch_llm_unavailable():
+            result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL, player_id=player_id)
         assert player_id not in str(result.engine_signal)
 
     def test_different_player_ids_same_signal(self):
-        r1 = generate_live_reply(_STARTING_FEN, _UCI_NORMAL, player_id="alice")
-        r2 = generate_live_reply(_STARTING_FEN, _UCI_NORMAL, player_id="bob")
-        # Engine signal must be identical regardless of player_id
+        with _patch_llm_unavailable():
+            r1 = generate_live_reply(_STARTING_FEN, _UCI_NORMAL, player_id="alice")
+            r2 = generate_live_reply(_STARTING_FEN, _UCI_NORMAL, player_id="bob")
         assert r1.engine_signal == r2.engine_signal
 
 
 # ---------------------------------------------------------------------------
-# 21–22  UCI move length variants
+# 20–21  UCI move length variants
 # ---------------------------------------------------------------------------
 
 
 class TestUciMoveVariants:
 
     def test_4_char_uci_accepted(self):
-        result = generate_live_reply(_STARTING_FEN, "e2e4")
+        with _patch_llm_unavailable():
+            result = generate_live_reply(_STARTING_FEN, "e2e4")
         assert result.hint.strip()
 
     def test_5_char_uci_promotion_accepted(self):
-        result = generate_live_reply(_STARTING_FEN, "e7e8q")
+        with _patch_llm_unavailable():
+            result = generate_live_reply(_STARTING_FEN, "e7e8q")
         assert result.hint.strip()
 
 
 # ---------------------------------------------------------------------------
-# 23  engine_signal sub-dict structure
+# 22  engine_signal sub-dict structure
 # ---------------------------------------------------------------------------
 
 
 class TestEngineSignalSubDict:
 
     def test_evaluation_has_band_and_type(self):
-        result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
+        with _patch_llm_unavailable():
+            result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
         ev = result.engine_signal.get("evaluation", {})
-        assert "band" in ev, "evaluation missing 'band'"
-        assert "type" in ev, "evaluation missing 'type'"
+        assert "band" in ev and "type" in ev
 
     def test_evaluation_type_is_cp_or_mate(self):
-        result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
+        with _patch_llm_unavailable():
+            result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
         ev_type = result.engine_signal["evaluation"]["type"]
         assert ev_type in ("cp", "mate"), f"Unexpected eval type: {ev_type!r}"
+
+
+# ---------------------------------------------------------------------------
+# 23–26  Mode-1 specific: short, quality-first, no phase tip
+# ---------------------------------------------------------------------------
+
+
+class TestMode1HintStructure:
+
+    def test_default_hint_at_most_two_sentences(self):
+        """Deterministic Mode-1 hint must be at most 2 sentences."""
+        signal = _make_signal(move_quality="blunder", phase="middlegame")
+        hint = _build_hint(_UCI_NORMAL, signal, "")
+        count = _sentence_count(hint)
+        assert count <= 2, f"Hint has more than 2 sentences ({count}): {hint!r}"
+
+    def test_simple_style_hint_is_one_sentence(self):
+        """Simple (beginner) style produces at most 1 sentence."""
+        signal = _make_signal(move_quality="mistake", phase="opening")
+        hint = _build_hint(_UCI_NORMAL, signal, "", explanation_style="simple")
+        count = _sentence_count(hint)
+        assert count <= 1, f"Simple hint has more than 1 sentence ({count}): {hint!r}"
+
+    def test_quality_comment_before_eval(self):
+        """Quality comment must appear before the evaluation sentence."""
+        signal = _make_signal(move_quality="blunder", band="clear_advantage", side="white")
+        hint = _build_hint(_UCI_NORMAL, signal, "")
+        blunder_pos = hint.lower().find("blunder")
+        advantage_pos = hint.lower().find("advantage")
+        assert blunder_pos != -1, f"'blunder' not found: {hint!r}"
+        assert advantage_pos != -1, f"'advantage' not found: {hint!r}"
+        assert blunder_pos < advantage_pos, (
+            f"Quality comment must precede evaluation: {hint!r}"
+        )
+
+    def test_no_phase_tip_in_hint(self):
+        """Mode-1 deterministic hint must not contain phase-specific coaching tips."""
+        phase_tip_words = [
+            "develop",          # opening tip
+            "tactical motifs",  # middlegame tip
+            "activate your king",  # endgame tip
+            "controlling the centre",
+            "convert any material",
+        ]
+        for phase in ("opening", "middlegame", "endgame"):
+            signal = _make_signal(phase=phase)
+            hint = _build_hint(_UCI_NORMAL, signal, "")
+            for phrase in phase_tip_words:
+                assert phrase not in hint.lower(), (
+                    f"Phase tip '{phrase}' found in Mode-1 hint ({phase}): {hint!r}"
+                )
+
+    def test_all_quality_labels_covered(self):
+        """All standard quality labels produce a non-empty quality comment."""
+        for quality in ("blunder", "mistake", "inaccuracy", "good", "excellent", "best"):
+            signal = _make_signal(move_quality=quality, band="small_advantage")
+            hint = _build_hint(_UCI_NORMAL, signal, "")
+            assert hint.strip(), f"Empty hint for quality={quality!r}"
+
+    def test_level_differentiation_simple_vs_advanced(self):
+        """Simple and advanced styles produce different hint text."""
+        signal = _make_signal(move_quality="blunder")
+        simple = _build_hint(_UCI_NORMAL, signal, "", explanation_style="simple")
+        advanced = _build_hint(_UCI_NORMAL, signal, "", explanation_style="advanced")
+        assert simple != advanced, "Simple and advanced styles should differ"
+
+
+# ---------------------------------------------------------------------------
+# 27–29  LLM path tests
+# ---------------------------------------------------------------------------
+
+
+class TestLLMPath:
+
+    _LLM_MODULE = "llm.seca.coach.live_move_pipeline"
+
+    def test_llm_response_returned_when_available(self):
+        """When call_llm succeeds, the LLM response is used as the hint."""
+        llm_hint = "Nice move! The position is equal and balanced."
+        with (
+            patch(f"{self._LLM_MODULE}._LLM_AVAILABLE", True),
+            patch(f"{self._LLM_MODULE}._build_hint_llm", return_value=llm_hint),
+        ):
+            result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
+        assert result.hint == llm_hint
+        assert result.mode == "LIVE_V1"
+
+    def test_deterministic_fallback_on_llm_error(self):
+        """Deterministic fallback is used when the LLM path raises."""
+        with (
+            patch(f"{self._LLM_MODULE}._LLM_AVAILABLE", True),
+            patch(f"{self._LLM_MODULE}._build_hint_llm", side_effect=RuntimeError("Ollama down")),
+        ):
+            result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
+        assert isinstance(result.hint, str) and result.hint.strip()
+        assert result.mode == "LIVE_V1"
+
+    def test_deterministic_fallback_on_empty_llm_response(self):
+        """Deterministic fallback is used when LLM returns an empty string."""
+        with (
+            patch(f"{self._LLM_MODULE}._LLM_AVAILABLE", True),
+            patch(f"{self._LLM_MODULE}._build_hint_llm", return_value=""),
+        ):
+            result = generate_live_reply(_STARTING_FEN, _UCI_NORMAL)
+        assert isinstance(result.hint, str) and result.hint.strip()
+
+    def test_engine_signal_never_from_llm(self):
+        """engine_signal is always from extract_engine_signal, not from the LLM."""
+        sentinel = "LLM_INJECTED_SIGNAL"
+        with (
+            patch(f"{self._LLM_MODULE}._LLM_AVAILABLE", True),
+            patch(f"{self._LLM_MODULE}._build_hint_llm", return_value=f"Your move. {sentinel}"),
+        ):
+            result = generate_live_reply(_MID_FEN, _UCI_NORMAL)
+        assert sentinel not in str(result.engine_signal)

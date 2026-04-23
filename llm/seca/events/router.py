@@ -259,7 +259,7 @@ def finish_game(
     analysis_dominant_category = None
     analysis_games_analyzed = 0
     try:
-        recent_games = storage.get_recent_games(player_id=str(player.id), limit=20)
+        recent_games = storage.get_recent_games(player_id=str(player.id), limit=50)
         if recent_games:
             stats = HistoricalAnalysisPipeline(db).run(str(player.id), recent_games)
             analysis_dominant_category = stats.dominant_category

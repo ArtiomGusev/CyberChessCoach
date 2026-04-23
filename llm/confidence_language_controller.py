@@ -12,7 +12,7 @@ def compute_confidence(esv: dict) -> str:
 
 
 def compute_urgency(esv: dict) -> str:
-    if "forced_mate" in esv["tactical_flags"]:
+    if "forced_mate" in esv.get("tactical_flags", []):
         return "critical"
 
     if esv["last_move_quality"] == "blunder":

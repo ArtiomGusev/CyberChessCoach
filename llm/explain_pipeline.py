@@ -17,6 +17,9 @@ from llm.rag.safety.output_firewall import check_output, OutputFirewallError
 _ollama_base = os.getenv("COACH_OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
 OLLAMA_URL = f"{_ollama_base}/api/generate"
 MODEL_NAME = os.getenv("COACH_OLLAMA_MODEL", "qwen2.5:7b-instruct-q2_K")
+# Explicit context window size sent to Ollama on every request.
+# Without this, quantized models may default to 4K–8K, silently truncating history.
+NUM_CTX = int(os.getenv("COACH_OLLAMA_NUM_CTX", "32768"))
 
 MAX_RETRIES = 2
 _RETRY_DELAY_SECONDS = 0.5
@@ -34,6 +37,7 @@ def call_llm(prompt: str) -> str:
             "model": MODEL_NAME,
             "prompt": prompt,
             "stream": False,
+            "options": {"num_ctx": NUM_CTX},
         },
         timeout=120,
     )

@@ -329,8 +329,11 @@ class MainActivity : AppCompatActivity() {
             apiKey = BuildConfig.COACH_API_KEY,
         )
         viewModel.onQuickCoachUpdate = { update ->
-            // Track for end-of-game accuracy computation
-            moveClassifications.add(update.classification)
+            // Track for end-of-game accuracy computation — only on human-move updates
+            // to avoid double-counting (one human-move coach update + one AI-score update per turn)
+            if (update.isHumanMoveCoachUpdate) {
+                moveClassifications.add(update.classification)
+            }
 
             // Show engine score badge; degrade gracefully when engine is unavailable
             txtEngineScore.text = if (update.engineAvailable) {

@@ -1,42 +1,63 @@
 """
-Per-move live coaching pipeline — deterministic, no RL.
+Per-move live coaching pipeline — LLM-powered with deterministic fallback.
 
 Architecture
 ------------
 Inputs:
-    fen         Current board position (FEN string) after the move.
-    uci         The move just played in UCI notation (e.g. "e2e4").
-    player_id   Player identifier (reserved for future profile enrichment).
+    fen               Board position (FEN) after the human's move.
+    uci               The human's move in UCI notation (e.g. "e2e4").
+    player_id         Player identifier.
+    explanation_style Player skill style: "simple" | "intermediate" | "advanced".
 
 Processing:
-    1. Extract engine signal from the FEN via extract_engine_signal()
-       (neutral stockfish_json — no engine process required).
-    2. Build a coaching hint that always cites the engine evaluation band,
-       game phase, and move quality.
-    3. Return LiveMoveReply(hint, engine_signal, move_quality, mode="LIVE_V1").
+    1. Extract engine signal from FEN via extract_engine_signal()
+       (no Stockfish process required — heuristic from FEN).
+    2. Try LLM path:
+       a. Build Mode-1 prompt (system prompt + engine context + RAG snippets).
+       b. Call Ollama; validate response.
+       c. Return LLM-generated 1-2 sentence coaching hint.
+    3. On any LLM failure, fall back to the deterministic _build_hint().
+    4. Return LiveMoveReply(hint, engine_signal, move_quality, mode="LIVE_V1").
 
 Constraints
 -----------
 - No reinforcement learning.
 - No dynamic skill adaptation.
-- hint always references the engine evaluation band and phase.
 - engine_signal is always produced by extract_engine_signal(), never
-  sourced from or overridden by any user-provided text.
-- SafeExplainer produces the base evaluation sentence deterministically.
+  sourced from user input.
+- LLM hint is constrained to 1-2 sentences by the system prompt.
+- Deterministic fallback always available when LLM is unreachable.
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from llm.confidence_language_controller import compute_urgency
 from llm.rag.engine_signal.extract_engine_signal import extract_engine_signal
 from llm.seca.explainer.safe_explainer import SafeExplainer
 
+logger = logging.getLogger(__name__)
+
 _safe_explainer = SafeExplainer()
 
 # ---------------------------------------------------------------------------
-# Label tables (deterministic)
+# Optional LLM imports — absent when httpx / Ollama stack is not installed
+# ---------------------------------------------------------------------------
+
+try:
+    from llm.explain_pipeline import call_llm as _call_llm  # type: ignore[import]
+    from llm.rag.prompts.system_mode_1 import SYSTEM_PROMPT_MODE_1  # type: ignore[import]
+    from llm.rag.prompts.mode_1.render import render_mode_1_prompt  # type: ignore[import]
+    from llm.rag.retriever.retriever import retrieve as _retrieve  # type: ignore[import]
+    from llm.rag.documents import ALL_RAG_DOCUMENTS as _DOCS  # type: ignore[import]
+    _LLM_AVAILABLE = True
+except Exception:  # noqa: BLE001
+    _LLM_AVAILABLE = False
+
+# ---------------------------------------------------------------------------
+# Label tables (deterministic fallback)
 # ---------------------------------------------------------------------------
 
 _BAND_LABEL: dict[str, str] = {
@@ -46,21 +67,39 @@ _BAND_LABEL: dict[str, str] = {
     "decisive_advantage": "a decisive advantage",
 }
 
-_PHASE_HINT: dict[str, str] = {
-    "opening": "Keep developing your pieces and controlling the centre.",
-    "middlegame": "Look for tactical motifs and improve piece activity.",
-    "endgame": "Activate your king and convert any material advantage.",
+# Level-differentiated quality comments used by the deterministic fallback.
+_QUALITY_COMMENT: dict[str, dict[str, str]] = {
+    "blunder": {
+        "simple": "Oops — that was a blunder. A piece was left unprotected.",
+        "intermediate": "That was a blunder — try to find a better continuation.",
+        "advanced": "That was a blunder — a significant error that concedes material or position.",
+    },
+    "mistake": {
+        "simple": "That move gave away too much — try to protect your pieces.",
+        "intermediate": "That move was a mistake — consider the alternatives.",
+        "advanced": "That move was a mistake — a better alternative was available.",
+    },
+    "inaccuracy": {
+        "simple": "You had a better move there — keep looking for improvements.",
+        "intermediate": "A slight inaccuracy — you had a stronger option.",
+        "advanced": "An inaccuracy — a more precise continuation was available.",
+    },
+    "good": {
+        "simple": "Nice move!",
+        "intermediate": "Good move — that was a strong choice.",
+        "advanced": "Good move — that maintains a solid position.",
+    },
+    "excellent": {
+        "simple": "Great move!",
+        "intermediate": "Excellent move — one of the best continuations.",
+        "advanced": "Excellent move — among the top engine choices.",
+    },
+    "best": {
+        "simple": "Perfect move!",
+        "intermediate": "Best move — the engine agrees that is optimal.",
+        "advanced": "Best move — the engine's top choice.",
+    },
 }
-
-_QUALITY_COMMENT: dict[str, str] = {
-    "blunder": "That was a blunder — try to find a better continuation.",
-    "mistake": "That move was a mistake — consider the alternatives.",
-    "inaccuracy": "A slight inaccuracy — you had a stronger option.",
-    "good": "Good move — that was a strong choice.",
-    "excellent": "Excellent move — that is one of the best continuations.",
-    "best": "Best move — the engine agrees that is optimal.",
-}
-
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -74,7 +113,7 @@ class LiveMoveReply:
     Attributes
     ----------
     hint : str
-        Coaching hint for this move, always referencing engine evaluation.
+        1-2 sentence coaching hint referencing the engine evaluation.
     engine_signal : dict
         Structured engine signal from extract_engine_signal(); never
         derived from user input.
@@ -91,7 +130,7 @@ class LiveMoveReply:
 
 
 # ---------------------------------------------------------------------------
-# Internal helpers
+# Deterministic fallback hint builder
 # ---------------------------------------------------------------------------
 
 
@@ -101,59 +140,79 @@ def _build_hint(
     base_explanation: str,
     explanation_style: str | None = None,
 ) -> str:
-    """Build a deterministic per-move coaching hint.
+    """Deterministic 1-2 sentence coaching hint (LLM fallback).
 
-    Always leads with the engine evaluation reference.  Appends move-quality
-    feedback and a phase-specific tip when available.
+    Leads with move-quality feedback (most relevant to the player), then
+    appends a single evaluation context sentence.  Phase-specific tips are
+    intentionally absent — they belong in Mode 2 (the chat / LLM panel).
 
     Parameters
     ----------
     explanation_style:
-        Optional style from the player's skill profile.
-        - None / "intermediate": all parts except base explanation
-          (current default behaviour — backwards-compatible).
-        - "simple":  eval sentence + quality comment only (beginners:
-          concise feedback, no technical detail).
-        - "advanced": all parts including the technical base explanation.
+        "simple" → 1 sentence (quality only, or eval if quality unknown).
+        None / "intermediate" / "advanced" → 2 sentences (quality + eval).
     """
     eval_info = engine_signal.get("evaluation", {})
     band = eval_info.get("band", "equal")
     side = eval_info.get("side", "unknown")
     eval_type = eval_info.get("type", "cp")
-    phase = engine_signal.get("phase", "middlegame")
     move_quality = engine_signal.get("last_move_quality", "unknown")
 
-    parts: list[str] = []
+    style = explanation_style if explanation_style in ("simple", "advanced") else "intermediate"
 
-    # 0. Urgency prefix from confidence_language_controller — keeps tone appropriate.
+    # Urgency prefix (critical positions only)
     urgency = compute_urgency(engine_signal)
-    if urgency == "critical":
-        parts.append("Attention:")
+    urgency_prefix = "Attention: " if urgency == "critical" else ""
 
-    # 1. Engine evaluation sentence — always present
+    # Move quality comment (primary — about what the human just did)
+    quality_by_style: dict[str, str] = _QUALITY_COMMENT.get(move_quality, {})
+    quality_comment = quality_by_style.get(style, quality_by_style.get("intermediate", ""))
+
+    # Evaluation context sentence
     if eval_type == "mate":
-        parts.append(f"Engine: forced mate ({side} is winning).")
+        eval_sentence = f"Engine: forced mate ({side} is winning)."
+    elif band == "equal":
+        eval_sentence = "The position is equal."
     else:
         band_label = _BAND_LABEL.get(band, band.replace("_", " "))
-        parts.append(f"Engine: {side} has {band_label} [{phase}].")
+        eval_sentence = f"Position: {side} has {band_label}."
 
-    # 2. Move quality comment (only when the engine provided a known label)
-    quality_comment = _QUALITY_COMMENT.get(move_quality, "")
+    if style == "simple":
+        core = quality_comment if quality_comment else eval_sentence
+        return urgency_prefix + core
+
+    parts: list[str] = []
     if quality_comment:
         parts.append(quality_comment)
+    parts.append(eval_sentence)
+    return urgency_prefix + " ".join(parts)
 
-    # 3. Base evaluation sentence from SafeExplainer — only for advanced players.
-    # Omitted for simple/intermediate styles to keep feedback concise.
-    if base_explanation and explanation_style == "advanced":
-        parts.append(base_explanation)
 
-    # 4. Phase-specific coaching tip — omitted for simple style (keep hint short).
-    if explanation_style != "simple":
-        phase_tip = _PHASE_HINT.get(phase, "")
-        if phase_tip:
-            parts.append(phase_tip)
+# ---------------------------------------------------------------------------
+# LLM hint builder
+# ---------------------------------------------------------------------------
 
-    return " ".join(parts)
+
+def _build_hint_llm(
+    engine_signal: dict,
+    explanation_style: str | None,
+) -> str:
+    """Generate a coaching hint via the LLM (Mode-1 system prompt).
+
+    Raises on any failure so the caller can fall back to _build_hint().
+    """
+    rag_docs = _retrieve(engine_signal, _DOCS)
+    prompt = render_mode_1_prompt(
+        system_prompt=SYSTEM_PROMPT_MODE_1,
+        engine_signal=engine_signal,
+        fen="",  # FEN already captured in engine_signal context
+        explanation_style=explanation_style,
+        rag_docs=rag_docs,
+    )
+    response = _call_llm(prompt).strip()
+    if not response:
+        raise ValueError("Empty LLM response")
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -168,42 +227,52 @@ def generate_live_reply(
     explanation_style: str | None = None,
     stockfish_json: dict | None = None,
 ) -> LiveMoveReply:
-    """Generate a deterministic coaching hint for a single move.
+    """Generate a coaching hint for the human's move.
+
+    Attempts the LLM path first (full Mode-1 pipeline); falls back to the
+    deterministic _build_hint() when Ollama is unavailable or returns an
+    empty / invalid response.
 
     Parameters
     ----------
     fen :
-        Board position after the move was played (FEN string).
-        Must be a valid FEN or "startpos".
+        Board position after the human's move (FEN string or "startpos").
     uci :
-        The move just played in UCI notation (e.g. "e2e4", "e7e8q").
+        The human's move in UCI notation (e.g. "e2e4", "e7e8q").
     player_id :
-        Player identifier — stored for reference but not reflected in the
-        engine signal (engine truth is always from extract_engine_signal).
+        Player identifier — not reflected in the engine signal.
     explanation_style :
-        Player skill style from compute_adaptation()["teaching"]["style"].
-        One of "simple", "intermediate", "advanced", or None (defaults to
-        "intermediate" behaviour: eval + quality + phase tip).
+        "simple" (beginner), "intermediate" (default), or "advanced".
 
     Returns
     -------
     LiveMoveReply
-        hint (str)           — coaching hint always referencing engine eval.
-        engine_signal (dict) — from extract_engine_signal(); never from user.
-        move_quality (str)   — engine's last_move_quality or "unknown".
-        mode (str)           — always "LIVE_V1".
+        hint           — 1-2 sentence coaching feedback.
+        engine_signal  — from extract_engine_signal(); never from user input.
+        move_quality   — engine's last_move_quality or "unknown".
+        mode           — always "LIVE_V1".
     """
-    # Engine signal always from extract_engine_signal, never user-supplied
     engine_signal = extract_engine_signal(stockfish_json or {}, fen=fen)
-
-    # Deterministic base explanation from SafeExplainer
-    base_explanation = _safe_explainer.explain(engine_signal)
-
-    # Move quality from the engine signal (not from user input)
     move_quality = engine_signal.get("last_move_quality", "unknown")
 
-    hint = _build_hint(uci, engine_signal, base_explanation, explanation_style=explanation_style)
+    # --- LLM path ---
+    if _LLM_AVAILABLE:
+        try:
+            hint = _build_hint_llm(engine_signal, explanation_style)
+            if not hint.strip():
+                raise ValueError("Empty hint from LLM")
+            return LiveMoveReply(
+                hint=hint,
+                engine_signal=engine_signal,
+                move_quality=move_quality,
+                mode="LIVE_V1",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Mode-1 LLM path failed (%s); using deterministic fallback", exc)
 
+    # --- Deterministic fallback ---
+    base_explanation = _safe_explainer.explain(engine_signal)
+    hint = _build_hint(uci, engine_signal, base_explanation, explanation_style=explanation_style)
     return LiveMoveReply(
         hint=hint,
         engine_signal=engine_signal,

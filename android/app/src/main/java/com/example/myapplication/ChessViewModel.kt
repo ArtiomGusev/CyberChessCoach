@@ -27,6 +27,10 @@ class ChessViewModel(
     private var stateId: Long = 0
     private var aiJob: Job? = null
 
+    private var lastHumanMoveHint: String? = null
+    private var lastHumanMoveClassification: MistakeClassification? = null
+    private var lastHumanMoveEngineSignal: EngineSignalDto? = null
+
     // ── Move history for PGN export ──────────────────────────────────────────
     private val moveHistory = mutableListOf<String>()
 
@@ -81,6 +85,9 @@ $moves"""
         aiThinking = false
         turn = Turn.HUMAN
         moveHistory.clear()
+        lastHumanMoveHint = null
+        lastHumanMoveClassification = null
+        lastHumanMoveEngineSignal = null
         Log.d("STATE", "Game state invalidated. New ID: $stateId")
     }
 
@@ -102,8 +109,11 @@ $moves"""
 
                 when (result) {
                     MoveResult.SUCCESS -> {
-                        moveHistory.add(uciFromCoords(fr, fc, tr, tc))
+                        val humanUci = uciFromCoords(fr, fc, tr, tc)
+                        moveHistory.add(humanUci)
                         turn = Turn.AI
+                        val fenAfterHuman = exportFEN()
+                        dispatchHumanMoveCoach(fenAfterHuman, humanUci, requestId)
                         requestAIMove(exportFEN, applyAIMove)
                     }
                     MoveResult.PROMOTION -> {
@@ -162,18 +172,60 @@ $moves"""
     }
 
     /**
-     * Obtains the Stockfish evaluation and live coaching hint for the position
-     * after the AI move and emits a [QuickCoachUpdate] via [onQuickCoachUpdate].
+     * Fires immediately after the human's move: calls POST /live/move with the
+     * human's FEN and UCI, stores the result, and emits a [QuickCoachUpdate]
+     * with [QuickCoachUpdate.isHumanMoveCoachUpdate] = true.
      *
-     * Falls back to a "?" score when [engineEvalClient] is null or the call fails.
-     * When [liveCoachClient] is set, the [QuickCoachUpdate.explanation] is the
-     * per-move hint from POST /live/move; otherwise the static derived explanation
-     * is used.  [QuickCoachUpdate.engineAvailable] is set to false on eval errors.
+     * No-ops when [liveCoachClient] is null.
+     */
+    private fun dispatchHumanMoveCoach(
+        fen: String,
+        uci: String,
+        requestId: Long,
+    ) {
+        val liveClient = liveCoachClient ?: return
+        viewModelScope.launch(ioDispatcher) {
+            val liveResult = if (uci.length in 4..5) liveClient.getLiveCoaching(fen, uci) else null
+            withContext(Dispatchers.Main) {
+                if (stateId != requestId) return@withContext
+                val liveSuccess = liveResult as? ApiResult.Success
+                val liveHint = liveSuccess?.data?.hint?.takeIf { it.isNotBlank() }
+                val backendClassification = liveSuccess?.data?.moveQuality
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { QuickCoachLogic.fromBackendString(it) }
+                val liveEngineSignal = liveSuccess?.data?.engineSignal
+                lastHumanMoveHint = liveHint
+                lastHumanMoveClassification = backendClassification
+                lastHumanMoveEngineSignal = liveEngineSignal
+                val update = QuickCoachLogic.buildUpdateFromEngine(
+                    capturedPiece = '.',
+                    engineScore = null,
+                    liveHint = liveHint,
+                    engineAvailable = true,
+                    classificationOverride = backendClassification,
+                    engineSignal = liveEngineSignal,
+                    isHumanMoveCoachUpdate = true,
+                )
+                onQuickCoachUpdate?.invoke(update)
+            }
+        }
+    }
+
+    /**
+     * Obtains the Stockfish centipawn evaluation after the AI move and emits a
+     * [QuickCoachUpdate] via [onQuickCoachUpdate].
+     *
+     * The coaching hint displayed is sourced from [lastHumanMoveHint], which was
+     * stored by [dispatchHumanMoveCoach] earlier in the same turn (Mode-1 fires
+     * after the human's move, not the AI's move).
+     *
+     * Falls back to a "?" score when [engineEvalClient] is null.
+     * [QuickCoachUpdate.engineAvailable] is set to false on eval errors.
      *
      * Must be called on the Main thread immediately after [processAIMoveResult].
      *
      * @param capturedPiece Piece char that the AI captured ('.' if none).
-     * @param uci           The AI move in UCI notation (e.g. "e2e4").
+     * @param uci           The AI move in UCI notation (unused — kept for signature compat).
      * @param exportFEN     Lambda that exports the current board FEN (post-AI).
      * @param requestId     State snapshot to guard against stale results after reset.
      */
@@ -184,42 +236,39 @@ $moves"""
         requestId: Long,
     ) {
         val evalClient = engineEvalClient
-        val liveClient = liveCoachClient
 
-        if (evalClient == null && liveClient == null) {
-            onQuickCoachUpdate?.invoke(QuickCoachLogic.buildUpdateFromEngine(capturedPiece, null))
+        if (evalClient == null) {
+            onQuickCoachUpdate?.invoke(
+                QuickCoachLogic.buildUpdateFromEngine(
+                    capturedPiece,
+                    null,
+                    liveHint = lastHumanMoveHint,
+                    classificationOverride = lastHumanMoveClassification,
+                    engineSignal = lastHumanMoveEngineSignal,
+                )
+            )
             return
         }
 
         val fenAfterAI = exportFEN()
         viewModelScope.launch(ioDispatcher) {
-            // /engine/eval — provides centipawn score and best move
-            val evalResult = evalClient?.evaluate(fenAfterAI)
-
-            // /live/move — provides coaching hint; optional supplement
-            val liveResult = if (uci.length in 4..5) liveClient?.getLiveCoaching(fenAfterAI, uci) else null
+            val evalResult = evalClient.evaluate(fenAfterAI)
 
             withContext(Dispatchers.Main) {
                 if (stateId == requestId) {
                     val evalSuccess = evalResult as? ApiResult.Success
                     val score = evalSuccess?.data?.score
                     val bestMove = evalSuccess?.data?.bestMove
-                    val engineAvailable = evalResult == null || evalResult is ApiResult.Success
-                    val liveSuccess = liveResult as? ApiResult.Success
-                    val liveHint = liveSuccess?.data?.hint?.takeIf { it.isNotBlank() }
-                    val backendClassification = liveSuccess?.data?.moveQuality
-                        ?.takeIf { it.isNotBlank() }
-                        ?.let { QuickCoachLogic.fromBackendString(it) }
-                    val liveEngineSignal = liveSuccess?.data?.engineSignal
+                    val engineAvailable = evalResult is ApiResult.Success
 
                     val update = QuickCoachLogic.buildUpdateFromEngine(
                         capturedPiece,
                         score,
                         bestMove,
-                        liveHint,
-                        engineAvailable,
-                        backendClassification,
-                        liveEngineSignal,
+                        liveHint = lastHumanMoveHint,
+                        engineAvailable = engineAvailable,
+                        classificationOverride = lastHumanMoveClassification,
+                        engineSignal = lastHumanMoveEngineSignal,
                     )
                     onQuickCoachUpdate?.invoke(update)
                 }

@@ -77,7 +77,14 @@ class ChessViewModelEngineEvalTest {
         Dispatchers.resetMain()
     }
 
-    /** Plays one human move with FakeEngine and drains all coroutines. */
+    /**
+     * Plays one human move with FakeEngine and drains all coroutines.
+     *
+     * exportFEN() is now called three times per turn:
+     *  1. Human-move FEN snapshot for dispatchHumanMoveCoach (fenBeforeAI).
+     *  2. FEN for requestAIMove → getBestMove (fenBeforeAI).
+     *  3. FEN for dispatchEngineEval → evaluate (fenAfterAI).
+     */
     private fun playMove(
         viewModel: ChessViewModel,
         capturedPiece: Char = '.',
@@ -90,7 +97,7 @@ class ChessViewModelEngineEvalTest {
             applyHumanMove = { MoveResult.SUCCESS },
             exportFEN = {
                 fenCallCount++
-                if (fenCallCount == 1) fenBeforeAI else fenAfterAI
+                if (fenCallCount <= 2) fenBeforeAI else fenAfterAI
             },
             applyAIMove = { _, _, _, _ -> capturedPiece },
         )

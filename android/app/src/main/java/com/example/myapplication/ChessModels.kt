@@ -60,4 +60,11 @@ data class QuickCoachUpdate(
      * Reuses [EngineSignalDto] from the chat pipeline so display logic is shared.
      */
     val engineSignal: EngineSignalDto? = null,
+    /**
+     * True when this update carries the coaching hint for the human's own move
+     * (fired immediately after the human moves, before the AI replies).
+     * False for AI-score updates emitted after the engine evaluates the position.
+     * Only human-move updates should be added to the move classification history.
+     */
+    val isHumanMoveCoachUpdate: Boolean = false,
 )
