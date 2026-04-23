@@ -91,6 +91,10 @@ TEST_TARGETS = [
     # passthrough, confidence_language_controller wiring, SkillUpdater action
     # derivation, dynamic-mode ELO convergence, and end-to-end ESV chain.
     "llm/tests/test_seca_integration.py",
+    # Player level quality: PLQ-01..10 — skill-level mapping correctness, chat and
+    # live-move differentiation across beginner/club/intermediate/advanced, SafeExplainer
+    # level-aware output, engine signal integrity across all levels.
+    "llm/tests/test_player_level_quality.py",
 ]
 
 COVERAGE_TARGETS = [

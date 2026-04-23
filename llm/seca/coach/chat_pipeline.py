@@ -171,7 +171,8 @@ def _map_skill_level(player_profile: dict | None) -> str:
     skill = str(player_profile.get("skill_estimate", "")).lower()
     if "beginner" in skill or "novice" in skill:
         return "beginner"
-    if "advanced" in skill or "expert" in skill or "master" in skill or "club" in skill:
+    # "club" is mid-tier (≈1200–1800 ELO) → intermediate coaching depth
+    if "advanced" in skill or "expert" in skill or "master" in skill:
         return "advanced"
     return "intermediate"
 
