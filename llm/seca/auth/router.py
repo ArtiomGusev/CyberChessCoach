@@ -58,8 +58,10 @@ def get_current_player(
     authorization: str = Header(...),
     db: DBSession = Depends(get_db),
 ):
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        raise HTTPException(status_code=401, detail="Invalid token")
     try:
-        token = authorization.replace("Bearer ", "")
         payload = decode_token(token)
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid token")
@@ -76,18 +78,33 @@ def get_current_player(
 # ---------------------------
 # Schemas
 # ---------------------------
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class RegisterRequest(BaseModel):
     email: str
     password: str
 
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        v = v.strip()
+        if len(v) < 3 or "@" not in v or len(v) > 320:
+            raise ValueError("Invalid email address")
+        return v
+
 
 class LoginRequest(BaseModel):
     email: str
     password: str
     device_info: str = ""
+
+    @field_validator("device_info")
+    @classmethod
+    def validate_device_info(cls, v: str) -> str:
+        if len(v) > 200:
+            raise ValueError("device_info too long (max 200 chars)")
+        return v
 
 
 class ChangePasswordRequest(BaseModel):
@@ -104,8 +121,8 @@ def register(request: Request, req: RegisterRequest, db: DBSession = Depends(get
     service = AuthService(db)
     try:
         player = service.register(req.email, req.password)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Registration failed")
     token, _ = service.login(req.email, req.password, device_info="register")
     return {
         "access_token": token,
@@ -134,7 +151,9 @@ def logout(
     authorization: str = Header(...),
     db: DBSession = Depends(get_db),
 ):
-    token = authorization.replace("Bearer ", "")
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
     try:
         payload = decode_token(token)
     except Exception:

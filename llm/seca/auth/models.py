@@ -28,12 +28,12 @@ class Session(Base):
     __tablename__ = "sessions"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    player_id = Column(String, ForeignKey("players.id"))
+    player_id = Column(String, ForeignKey("players.id"), index=True)
 
     token_hash = Column(String, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
-    expires_at = Column(DateTime, default=lambda: datetime.utcnow() + timedelta(days=7))
+    expires_at = Column(DateTime, nullable=False, default=lambda: datetime.utcnow() + timedelta(days=7), index=True)
     device_info = Column(String, default="")
 
     player = relationship("Player", back_populates="sessions")

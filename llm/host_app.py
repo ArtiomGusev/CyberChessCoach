@@ -1,4 +1,5 @@
 import asyncio
+import hmac
 import logging
 import os
 import time
@@ -12,6 +13,7 @@ from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from starlette.middleware.base import BaseHTTPMiddleware
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -29,7 +31,7 @@ def verify_api_key(x_api_key: str = Header(None)):
         if _IS_PROD:
             raise HTTPException(status_code=500, detail="Server misconfiguration")
         return  # dev mode: unauthenticated access allowed
-    if x_api_key != _API_KEY:
+    if not hmac.compare_digest(x_api_key or "", _API_KEY):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
@@ -102,6 +104,25 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(default_response_class=DefaultResponseClass, lifespan=lifespan)
 app.state.limiter = _limiter
+
+_MAX_BODY_BYTES = 512 * 1024
+
+
+class _LimitBodySize(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        cl = request.headers.get("content-length")
+        if cl:
+            try:
+                if int(cl) > _MAX_BODY_BYTES:
+                    return JSONResponse(
+                        status_code=413, content={"error": "Request body too large"}
+                    )
+            except ValueError:
+                return JSONResponse(status_code=400, content={"error": "Invalid Content-Length"})
+        return await call_next(request)
+
+
+app.add_middleware(_LimitBodySize)
 
 
 @app.exception_handler(RateLimitExceeded)
@@ -326,7 +347,8 @@ def debug_miss_metrics(_: None = Depends(verify_api_key)):
 
 
 @app.get("/engine/predictions")
-async def engine_predictions(fen: str):
+@_limiter.limit("30/minute")
+async def engine_predictions(request: Request, fen: str):
     normalized_fen = normalize_fen(fen) or fen
     return {
         "fen": normalized_fen,

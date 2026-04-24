@@ -4,8 +4,10 @@ from datetime import datetime
 from sqlalchemy.orm import Session as DBSession
 
 from .models import Player, Session
-from .hashing import hash_password, verify_password
+from .hashing import hash_password, needs_rehash, verify_password
 from .tokens import create_access_token
+
+_MAX_SESSIONS = 10
 
 
 class AuthService:
@@ -16,8 +18,10 @@ class AuthService:
     # Register
     # ---------------------------
     def register(self, email: str, password: str) -> Player:
+        if len(password) < 8:
+            raise ValueError("Password must be at least 8 characters")
         if self.db.query(Player).filter_by(email=email).first():
-            raise ValueError("Email already registered")
+            raise ValueError("Registration failed")
 
         player = Player(
             email=email,
@@ -41,21 +45,44 @@ class AuthService:
         if not verify_password(password, player.password_hash):
             raise ValueError("Invalid credentials")
 
-        # 1️⃣ create session_id manually BEFORE DB insert
-        import uuid, hashlib
+        # Opportunistically upgrade legacy hashes (H1)
+        if needs_rehash(player.password_hash):
+            player.password_hash = hash_password(password)
+
+        # Prune expired sessions for this player (H3)
+        now = datetime.utcnow()
+        self.db.query(Session).filter(
+            Session.player_id == player.id,
+            Session.expires_at.isnot(None),
+            Session.expires_at < now,
+        ).delete(synchronize_session=False)
+
+        # Cap concurrent active sessions at _MAX_SESSIONS (H3)
+        active = (
+            self.db.query(Session)
+            .filter(Session.player_id == player.id)
+            .order_by(Session.created_at.asc())
+            .all()
+        )
+        if len(active) >= _MAX_SESSIONS:
+            for old in active[: len(active) - _MAX_SESSIONS + 1]:
+                self.db.delete(old)
+
+        # 1. create session_id manually BEFORE DB insert
+        import uuid
 
         session_id = str(uuid.uuid4())
 
-        # 2️⃣ create JWT using this session_id
+        # 2. create JWT using this session_id
         token = create_access_token(
             player_id=str(player.id),
             session_id=session_id,
         )
 
-        # 3️⃣ hash token
+        # 3. hash token
         token_hash = hashlib.sha256(token.encode()).hexdigest()
 
-        # 4️⃣ create DB session WITH token_hash already set
+        # 4. create DB session WITH token_hash already set
         session = Session(
             id=session_id,
             player_id=player.id,
@@ -76,12 +103,8 @@ class AuthService:
         if not session:
             return None
 
-        # Defence-in-depth: reject DB sessions whose server-side expiry has passed.
-        # The primary expiry gate is the JWT exp claim (15 min), checked by
-        # decode_token() before this method is called.  This guard catches edge
-        # cases such as clock-skew drift, manually expired sessions, or a valid
-        # JWT referencing a stale DB record after SECRET_KEY rotation.
-        if session.expires_at is not None and session.expires_at < datetime.utcnow():
+        # Fail-closed: treat missing expiry as expired (M1)
+        if session.expires_at is None or session.expires_at < datetime.utcnow():
             return None
 
         token_hash = hashlib.sha256(token.encode()).hexdigest()
@@ -99,6 +122,10 @@ class AuthService:
         if len(new_password) < 8:
             raise ValueError("New password must be at least 8 characters")
         player.password_hash = hash_password(new_password)
+        # Revoke all sessions so stolen tokens can't be reused after a password change (H2)
+        self.db.query(Session).filter(
+            Session.player_id == player.id
+        ).delete(synchronize_session=False)
         self.db.commit()
 
     # ---------------------------

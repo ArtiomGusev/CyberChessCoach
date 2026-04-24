@@ -55,11 +55,11 @@ class TestRegister:
     def test_register_hashes_password(self, service):
         player = service.register("bob@example.com", "mypassword")
         assert player.password_hash != "mypassword"
-        assert "$pbkdf2-sha256$" in player.password_hash
+        assert "$pbkdf2-sha256-v2$" in player.password_hash
 
     def test_register_duplicate_email_raises_value_error(self, service):
         service.register("dup@example.com", "pass1234")
-        with pytest.raises(ValueError, match="Email already registered"):
+        with pytest.raises(ValueError, match="Registration failed"):
             service.register("dup@example.com", "anotherpass")
 
     def test_register_does_not_raise_http_exception(self, service):

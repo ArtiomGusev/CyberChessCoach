@@ -34,6 +34,17 @@ class CoachFeedbackRequest(BaseModel):
     session_fen: str
     is_helpful: bool
 
+    @field_validator("session_fen")
+    @classmethod
+    def validate_session_fen(cls, v: str) -> str:
+        stripped = v.strip()
+        if stripped.lower() == "startpos":
+            return v
+        parts = stripped.split()
+        if len(parts) != 6 or len(stripped) > 100:
+            raise ValueError("invalid FEN")
+        return v
+
 
 @router.post("/coach-feedback")
 def coach_feedback(

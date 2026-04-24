@@ -1,4 +1,5 @@
 import asyncio
+import hmac
 import json
 import logging
 import os
@@ -232,7 +233,7 @@ def verify_api_key(x_api_key: str = Header(None)):
         if IS_PROD:
             raise HTTPException(status_code=500, detail="Server misconfiguration")
         return  # dev mode only — never allowed in prod
-    if x_api_key != API_KEY:
+    if not hmac.compare_digest(x_api_key or "", API_KEY):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
@@ -603,6 +604,17 @@ class ChatRequest(BaseModel):
     messages: list[ChatTurnModel]
     player_profile: dict | None = None
     past_mistakes: list[str] | None = None
+
+    @field_validator("player_profile")
+    @classmethod
+    def validate_player_profile(cls, v: dict | None) -> dict | None:
+        if v is not None:
+            if len(v) > 20:
+                raise ValueError("player_profile too many keys (max 20)")
+            total = sum(len(str(k)) + len(str(val)) for k, val in v.items())
+            if total > 2000:
+                raise ValueError("player_profile too large (max 2000 chars total)")
+        return v
     move_count: int | None = None
 
     @field_validator("fen")
@@ -620,8 +632,12 @@ class ChatRequest(BaseModel):
     @field_validator("past_mistakes")
     @classmethod
     def validate_past_mistakes(cls, v: list | None) -> list | None:
-        if v is not None and len(v) > 20:
-            raise ValueError("past_mistakes list too long (max 20)")
+        if v is not None:
+            if len(v) > 20:
+                raise ValueError("past_mistakes list too long (max 20)")
+            for item in v:
+                if len(item) > 500:
+                    raise ValueError("past_mistakes item too long (max 500 chars)")
         return v
 
     @field_validator("move_count")

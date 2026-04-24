@@ -74,9 +74,9 @@ jobs:
           done
 
       # 8. Decode the base64-encoded keystore secret into a temp file.
-      #    When KEYSTORE_BASE64 is absent (forks, PRs without secrets) the step is
-      #    a no-op and assembleRelease falls back to producing an unsigned APK.
+      #    Skipped on PRs: signing is only needed for the artefact produced on push.
       - name: Decode release keystore
+        if: github.event_name == 'push'
         id: keystore
         shell: bash
         env:
@@ -108,11 +108,17 @@ jobs:
           } >> android/gradle.properties
 
       # 10. Build the release APK.
-      #     COACH_API_BASE is a plain URL variable (visible in the APK — not a secret).
-      #     COACH_API_KEY is semi-public once baked into the APK; it is a rate-limit
-      #     shield only — real per-user auth uses JWT tokens from /auth/login.
-      #     Both fall back to dev defaults when not configured (unit-test CI is fine).
-      - name: Build release APK
+      #     PR builds use dev defaults (no secrets exposed to PR runners).
+      #     Push builds inject COACH_API_KEY for the production artefact.
+      - name: Build release APK (PR)
+        if: github.event_name == 'pull_request'
+        working-directory: android
+        env:
+          COACH_API_BASE: ${{ vars.COACH_API_BASE }}
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Build release APK (push)
+        if: github.event_name == 'push'
         working-directory: android
         env:
           COACH_API_BASE: ${{ vars.COACH_API_BASE }}
