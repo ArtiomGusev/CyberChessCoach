@@ -283,9 +283,9 @@ def test_dependency_security_audits_ci_requirements():
     dep_sec = workflow["jobs"]["dependency-security"]
     step_runs = "\n".join(step.get("run", "") for step in dep_sec["steps"])
 
-    assert "requirements.txt" in step_runs, (
-        "dependency-security job does not audit llm/requirements.txt."
-    )
+    assert (
+        "requirements.txt" in step_runs
+    ), "dependency-security job does not audit llm/requirements.txt."
     assert "requirements-ci.txt" in step_runs, (
         "dependency-security job does not audit llm/requirements-ci.txt. "
         "CI-only dependencies (e.g. pytest) are outside the vulnerability scan — "
@@ -597,12 +597,12 @@ def _assert_zero_downtime_ssh_step(ssh_step: dict, *, label: str) -> None:
     re-deploy (production-deploy.yml) to ensure they remain in sync.
     """
     assert ssh_step["uses"] == "appleboy/ssh-action@v1.2.0", f"{label}: wrong SSH action"
-    assert ssh_step["with"]["key"] == "${{ secrets.HETZNER_SSH_KEY }}", (
-        f"{label}: SSH key must come from secrets.HETZNER_SSH_KEY"
-    )
-    assert ssh_step["with"]["host"] == "${{ secrets.HETZNER_HOST }}", (
-        f"{label}: host must come from secrets.HETZNER_HOST"
-    )
+    assert (
+        ssh_step["with"]["key"] == "${{ secrets.HETZNER_SSH_KEY }}"
+    ), f"{label}: SSH key must come from secrets.HETZNER_SSH_KEY"
+    assert (
+        ssh_step["with"]["host"] == "${{ secrets.HETZNER_HOST }}"
+    ), f"{label}: host must come from secrets.HETZNER_HOST"
     assert ssh_step["with"]["username"] == "deploy", f"{label}: username must be 'deploy'"
 
     script: str = ssh_step["with"]["script"]
@@ -650,21 +650,21 @@ def test_production_deploy_workflow_structure():
 
     # Trigger — PyYAML parses the `on:` key as boolean True (YAML 1.1)
     triggers = workflow[True]
-    assert "workflow_dispatch" in triggers, (
-        "production-deploy.yml must be manually triggerable via workflow_dispatch"
-    )
+    assert (
+        "workflow_dispatch" in triggers
+    ), "production-deploy.yml must be manually triggerable via workflow_dispatch"
     dispatch_inputs = triggers["workflow_dispatch"]["inputs"]
     assert "api_digest" in dispatch_inputs, "Must require api_digest input"
     assert dispatch_inputs["api_digest"]["required"] is True, "api_digest must be required"
 
     # Concurrency — same group as fly-deploy.yml deploy job (prevents simultaneous runs)
     concurrency = workflow["concurrency"]
-    assert concurrency["group"] == "hetzner-production", (
-        "concurrency group must match fly-deploy.yml's deploy job to prevent races"
-    )
-    assert concurrency["cancel-in-progress"] is False, (
-        "cancel-in-progress must be False — a deploy in progress must not be interrupted"
-    )
+    assert (
+        concurrency["group"] == "hetzner-production"
+    ), "concurrency group must match fly-deploy.yml's deploy job to prevent races"
+    assert (
+        concurrency["cancel-in-progress"] is False
+    ), "cancel-in-progress must be False — a deploy in progress must not be interrupted"
 
     # Job structure
     deploy = workflow["jobs"]["deploy"]
