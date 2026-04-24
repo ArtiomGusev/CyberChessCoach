@@ -54,3 +54,8 @@ CVE-2026-4878 until:2027-07-01
 # tar 1.35+dfsg-3: hidden file injection via crafted archives. MEDIUM.
 # Affects tar.
 CVE-2026-5704 until:2027-07-01
+
+# systemd 257.9-1~deb13u1: nspawn escape-to-host action via crafted optional
+# config file. HIGH. Affects libsystemd0, libudev1 in python:3.13-slim.
+# The application does not use systemd-nspawn; accepted risk.
+CVE-2026-40226 until:2027-07-01
