@@ -1,4 +1,8 @@
+import logging
+
 import chess
+
+logger = logging.getLogger(__name__)
 
 _PIECE_CP = {
     chess.PAWN: 100,
@@ -7,6 +11,14 @@ _PIECE_CP = {
     chess.ROOK: 500,
     chess.QUEEN: 900,
 }
+
+_VALID_EVAL_TYPES = frozenset(("cp", "mate"))
+
+# All move-quality labels Stockfish or internal code may produce.
+# Any value outside this set is normalized to "unknown" with a warning.
+_KNOWN_MOVE_QUALITIES = frozenset(
+    ("unknown", "ok", "best", "excellent", "good", "inaccuracy", "mistake", "blunder")
+)
 
 
 def side_from_fen(fen: str | None) -> str | None:
@@ -64,15 +76,44 @@ def extract_engine_signal(
     *,
     fen: str | None = None,
 ) -> dict:
+    _had_eval = bool(stockfish_json and stockfish_json.get("evaluation"))
     stockfish_json = _enrich_from_fen(stockfish_json or {}, fen)
+    if not _had_eval:
+        logger.debug(
+            "No Stockfish evaluation data; applied FEN material fallback (fen=%r)", fen
+        )
 
     evaluation = stockfish_json.get("evaluation", {})
     eval_type = evaluation.get("type", "cp")
+    if eval_type not in _VALID_EVAL_TYPES:
+        logger.warning(
+            "Unknown eval_type %r from Stockfish; treating as 'cp'", eval_type
+        )
+        eval_type = "cp"
+
     _raw_value = evaluation.get("value", 0)
     try:
         value = int(_raw_value)
     except (TypeError, ValueError):
+        logger.warning(
+            "Non-numeric eval value %r from Stockfish; using 0", _raw_value
+        )
         value = 0
+
+    # Extract errors dict safely — Stockfish may send a non-dict value
+    errors = stockfish_json.get("errors", {})
+    if not isinstance(errors, dict):
+        logger.warning(
+            "'errors' field is not a dict (%r); ignoring move quality", type(errors).__name__
+        )
+        errors = {}
+    last_move_quality = errors.get("last_move_quality", "unknown")
+    if last_move_quality not in _KNOWN_MOVE_QUALITIES:
+        logger.warning(
+            "Unknown last_move_quality %r from Stockfish; normalizing to 'unknown'",
+            last_move_quality,
+        )
+        last_move_quality = "unknown"
 
     # -------------------------
     # MATE (TERMINAL STATE)
@@ -97,9 +138,7 @@ def extract_engine_signal(
                 "side": side,
             },
             "eval_delta": eval_delta,
-            "last_move_quality": stockfish_json.get("errors", {}).get(
-                "last_move_quality", "unknown"
-            ),
+            "last_move_quality": last_move_quality,
             "tactical_flags": stockfish_json.get("tactical_flags", []),
             "position_flags": stockfish_json.get("position_flags", []),
             "phase": stockfish_json.get("phase", "middlegame"),
@@ -139,7 +178,7 @@ def extract_engine_signal(
             "side": side,
         },
         "eval_delta": eval_delta,
-        "last_move_quality": stockfish_json.get("errors", {}).get("last_move_quality", "unknown"),
+        "last_move_quality": last_move_quality,
         "tactical_flags": stockfish_json.get("tactical_flags", []),
         "position_flags": stockfish_json.get("position_flags", []),
         "phase": stockfish_json.get("phase", "middlegame"),

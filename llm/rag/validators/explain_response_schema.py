@@ -57,7 +57,9 @@ class EngineSignalSchema(BaseModel):
 
     evaluation: EvaluationSchema
     eval_delta: Literal["increase", "decrease", "stable"]
-    last_move_quality: str
+    last_move_quality: Literal[
+        "unknown", "ok", "best", "excellent", "good", "inaccuracy", "mistake", "blunder"
+    ]
     tactical_flags: list[str]
     position_flags: list[str]
     phase: Literal["opening", "middlegame", "endgame"]

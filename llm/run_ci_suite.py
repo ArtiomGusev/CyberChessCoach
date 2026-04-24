@@ -107,6 +107,10 @@ TEST_TARGETS = [
     # sanitization for player_profile/past_mistakes/FEN/history, output firewall,
     # Mode-2 negative validator, end-to-end injection resistance.
     "llm/tests/test_prompt_injection.py",
+    # Stockfish notation correctness: ESV-01..43 — CP threshold boundaries (20/21/60/61/120/121),
+    # eval_delta boundaries (49/50), sign convention, mate path, errors type guard,
+    # eval_type normalization, value coercion, FEN enrichment, schema round-trip.
+    "llm/tests/test_stockfish_notation.py",
 ]
 
 COVERAGE_TARGETS = [
