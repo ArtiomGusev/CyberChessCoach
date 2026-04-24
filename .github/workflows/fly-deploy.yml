@@ -673,6 +673,20 @@ jobs:
             set -euo pipefail
             cd /opt/chesscoach
 
+            # ── 0. Pre-flight: verify required secrets are in .env.prod ───────
+            #    The server crashes at module load (not health-check time) when
+            #    SECRET_KEY is missing in prod, which causes a silent 90-second
+            #    wait before the deploy rolls back.  Fail fast with a clear
+            #    message instead.
+            for _var in SECA_API_KEY SECRET_KEY SECA_ENV; do
+              if ! grep -qE "^${_var}=.+" .env.prod 2>/dev/null; then
+                echo "::error::Required variable ${_var} is missing or empty in /opt/chesscoach/.env.prod"
+                echo "  Add it:  echo '${_var}=<value>' >> /opt/chesscoach/.env.prod"
+                echo "  SECRET_KEY hint:  python3 -c \"import secrets; print(secrets.token_hex(32))\""
+                exit 1
+              fi
+            done
+
             # ── 1. Record running container for rollback reference ────────────
             PREV_CONTAINER=$(docker compose -f docker-compose.prod.yml ps -q api 2>/dev/null | head -1 || true)
             PREV_IMAGE=$([ -n "$PREV_CONTAINER" ] && \
