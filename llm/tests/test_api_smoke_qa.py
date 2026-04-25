@@ -194,12 +194,15 @@ class TestApi03InvalidFenReturns400:
 class TestApi06SecaDoctorStructure:
     """API-06: seca_doctor.py must define the required safety check infrastructure."""
 
-    _SECA_DOCTOR = _LLM_ROOT / "seca_doctor.py"
+    _SECA_DOCTOR = _LLM_ROOT / "seca" / "seca_doctor.py"
 
     def test_seca_doctor_file_exists(self):
         """seca_doctor.py must exist in the llm/ directory."""
-        # Try common locations
+        # Try common locations.  Canonical home is llm/seca/seca_doctor.py
+        # (the script lives in the seca package); the older _LLM_ROOT and
+        # _REPO_ROOT locations are kept as fallbacks for legacy checkouts.
         candidates = [
+            _LLM_ROOT / "seca" / "seca_doctor.py",
             _LLM_ROOT / "seca_doctor.py",
             _REPO_ROOT / "seca_doctor.py",
         ]
@@ -211,7 +214,11 @@ class TestApi06SecaDoctorStructure:
 
     def test_seca_doctor_is_callable(self):
         """seca_doctor.py must be a valid Python file that can be imported for inspection."""
-        for candidate in [_LLM_ROOT / "seca_doctor.py", _REPO_ROOT / "seca_doctor.py"]:
+        for candidate in [
+            _LLM_ROOT / "seca" / "seca_doctor.py",
+            _LLM_ROOT / "seca_doctor.py",
+            _REPO_ROOT / "seca_doctor.py",
+        ]:
             if candidate.exists():
                 src = candidate.read_text(encoding="utf-8")
                 # Must be non-empty and have at least one function/check
