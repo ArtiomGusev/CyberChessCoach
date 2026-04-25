@@ -227,10 +227,37 @@ def test_security_workflow_uses_safe_checkout_and_codeql_v4():
         == "github/codeql-action/init@v4"
     )
     assert _step_named(codeql_python_job, "Initialize CodeQL")["with"]["languages"] == "python"
-    assert (
-        _step_named(codeql_python_job, "Analyze with CodeQL")["uses"]
-        == "github/codeql-action/analyze@v4"
+
+    # The analyze step is matched by its `uses:` (the action contract) rather
+    # than its display name, because we wrap it in a SARIF-filter pipeline:
+    #   Initialize → Analyze (upload: never) → Filter SARIF → Upload filtered
+    # See .github/scripts/filter_codeql_sarif.py for the rationale (one
+    # accepted false positive: py/weak-cryptographic-hash on hashing.py).
+    analyze_steps = [
+        s for s in codeql_python_job["steps"]
+        if s.get("uses") == "github/codeql-action/analyze@v4"
+    ]
+    assert len(analyze_steps) == 1, (
+        "codeql-python must call github/codeql-action/analyze@v4 exactly once"
     )
+    analyze = analyze_steps[0]
+    assert analyze["with"]["upload"] == "never", (
+        "analyze must use upload: never so the filter step can run before SARIF upload"
+    )
+    assert analyze["with"]["output"] == "codeql-sarif", (
+        "analyze must write SARIF to the codeql-sarif directory the filter reads"
+    )
+
+    # Filter step runs after analyze, before upload.
+    filter_step = _step_named(codeql_python_job, "Filter accepted false positives from SARIF")
+    assert filter_step["run"] == "python .github/scripts/filter_codeql_sarif.py codeql-sarif"
+
+    # Upload step uses the filtered SARIF, in the codeql-python category so
+    # alerts have stable identity in the Security tab across runs.
+    upload_step = _step_named(codeql_python_job, "Upload filtered SARIF")
+    assert upload_step["uses"] == "github/codeql-action/upload-sarif@v4"
+    assert upload_step["with"]["sarif_file"] == "codeql-sarif"
+    assert upload_step["with"]["category"] == "codeql-python"
 
     codeql_javascript_job = jobs["codeql-javascript"]
     assert "schedule" in codeql_javascript_job["if"]
@@ -508,25 +535,51 @@ def test_android_build_job_apk_step_uses_vars_not_secrets():
     """COACH_API_BASE is visible in the APK binary — must be vars.*, not secrets.*.
     COACH_API_KEY is a rate-limit shield only and is appropriately secrets.*.
     The upload step must target the unsigned release APK path.
+
+    The build step is split into PR and push variants so PR forks never see
+    the production COACH_API_KEY.  Both variants must apply the COACH_API_BASE
+    rule (vars only, never secrets); only the push variant injects
+    COACH_API_KEY.  Upload must run on push only.
     """
     workflow = _load_workflow("fly-deploy.yml")
     android_build = workflow["jobs"]["android-build"]
 
-    apk_step = _step_named(android_build, "Build release APK")
-    assert apk_step["working-directory"] == "android"
-    assert apk_step["run"] == "./gradlew assembleRelease --no-daemon"
+    pr_apk = _step_named(android_build, "Build release APK (PR)")
+    push_apk = _step_named(android_build, "Build release APK (push)")
 
-    api_base_ref = apk_step["env"]["COACH_API_BASE"]
-    assert (
-        "vars.COACH_API_BASE" in api_base_ref
-    ), "COACH_API_BASE is visible in the APK; use vars.COACH_API_BASE (not secrets.*)"
-    assert "secrets.COACH_API_BASE" not in api_base_ref
+    for label, step in (("PR", pr_apk), ("push", push_apk)):
+        assert step["working-directory"] == "android", (
+            f"{label} APK build must run from android/"
+        )
+        assert step["run"] == "./gradlew assembleRelease --no-daemon", (
+            f"{label} APK build command changed unexpectedly"
+        )
+        api_base_ref = step["env"]["COACH_API_BASE"]
+        assert "vars.COACH_API_BASE" in api_base_ref, (
+            f"{label}: COACH_API_BASE is visible in the APK; "
+            f"use vars.COACH_API_BASE (not secrets.*)"
+        )
+        assert "secrets.COACH_API_BASE" not in api_base_ref, (
+            f"{label}: COACH_API_BASE must come from vars, never secrets"
+        )
 
-    assert "secrets.COACH_API_KEY" in apk_step["env"]["COACH_API_KEY"]
+    # Trigger gating: PR runs without the production key, push runs with it.
+    assert pr_apk["if"] == "github.event_name == 'pull_request'"
+    assert push_apk["if"] == "github.event_name == 'push'"
+
+    # PR builds must NOT carry the production rate-limit key.
+    assert "COACH_API_KEY" not in (pr_apk.get("env") or {}), (
+        "PR APK builds must not see secrets.COACH_API_KEY (PR runs from forks "
+        "would otherwise leak the rate-limit shield)"
+    )
+    # Push builds inject it.
+    assert "secrets.COACH_API_KEY" in push_apk["env"]["COACH_API_KEY"]
 
     upload_step = _step_named(android_build, "Upload release APK")
     assert upload_step["with"]["path"].endswith("app-release-unsigned.apk")
     assert upload_step["uses"].startswith("actions/upload-artifact@")
+    # Upload only runs on push; PR runners shouldn't publish artefacts.
+    assert upload_step["if"] == "github.event_name == 'push'"
 
 
 def test_build_gradle_kts_release_enforces_https_and_obfuscation():
