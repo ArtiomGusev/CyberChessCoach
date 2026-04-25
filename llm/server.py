@@ -1,5 +1,4 @@
 import asyncio
-import hmac
 import json
 import logging
 import os
@@ -11,7 +10,7 @@ import threading
 from contextlib import asynccontextmanager
 from functools import lru_cache
 from typing import Literal
-from fastapi import FastAPI, Header, HTTPException, Depends, Request, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from slowapi.errors import RateLimitExceeded
@@ -30,6 +29,7 @@ from llm.seca.auth.router import (
     get_current_player,
     init_schema as init_auth_schema,
 )
+from llm.seca.auth.api_key import verify_api_key
 from llm.seca.events.router import router as game_router
 from llm.seca.curriculum.router import router as curriculum_router
 from llm.seca.inference.router import router as inference_router
@@ -289,15 +289,6 @@ DEFAULT_PREWARM_FENS = [
     "r1bqkbnr/pppp1ppp/2n5/4p3/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq - 2 3",
     "r2q1rk1/pp2bppp/2n1bn2/2pp4/3P4/2PBPN2/PP1N1PPP/R1BQ1RK1 w - - 0 9",
 ]
-
-
-def verify_api_key(x_api_key: str = Header(None)):
-    if API_KEY is None:
-        if IS_PROD:
-            raise HTTPException(status_code=500, detail="Server misconfiguration")
-        return  # dev mode only — never allowed in prod
-    if not hmac.compare_digest(x_api_key or "", API_KEY):
-        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 app.include_router(player_router)

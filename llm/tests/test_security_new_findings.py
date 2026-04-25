@@ -6,8 +6,10 @@ confirmed finding. All tests are CI-safe: no live Stockfish, no real HTTP server
 no network I/O. In-memory SQLite is used where a database is required.
 
 Stable test IDs:
-  SN_01   server.py verify_api_key uses hmac.compare_digest (timing-safe key check)
-  SN_01b  host_app.py verify_api_key uses hmac.compare_digest (timing-safe key check)
+  SN_01   shared verify_api_key (seca/auth/api_key.py) uses hmac.compare_digest
+  SN_01b  server.py imports the shared verify_api_key (no local definition)
+  SN_01c  host_app.py imports the shared verify_api_key (no local definition)
+  SN_01d  shared seca/auth/api_key.py imports hmac
   SN_02   /engine/predictions in host_app.py has @_limiter.limit() rate-limit decorator
   SN_03   /auth/register 400 error does not expose duplicate-email oracle
   SN_04   auth/service.py register() enforces minimum password length (≥ 8 chars)
@@ -110,39 +112,67 @@ class TestTimingSafeApiKeyComparison:
     oracle). hmac.compare_digest guarantees constant-time comparison.
     """
 
-    def test_sn01_server_verify_api_key_uses_hmac_compare_digest(self):
-        """SN_01: server.py verify_api_key must use hmac.compare_digest."""
-        tree = _parse("server.py")
+    def test_sn01_shared_verify_api_key_uses_hmac_compare_digest(self):
+        """SN_01: the shared verify_api_key implementation must use hmac.compare_digest.
+
+        ``verify_api_key`` was previously duplicated in server.py and
+        host_app.py with SN_01 / SN_01b pinning each copy.  After
+        deduplication the single implementation lives at
+        ``llm/seca/auth/api_key.py`` and is imported by both apps.
+        Pinning the shared module covers both consumers.
+        """
+        tree = _parse("seca/auth/api_key.py")
         func = _find_func(tree, "verify_api_key")
-        assert func is not None, "verify_api_key() not found in server.py"
+        assert func is not None, "verify_api_key() not found in seca/auth/api_key.py"
         assert _has_compare_digest_call(func), (
-            "verify_api_key() in server.py uses == / != for API key comparison. "
-            "Replace with hmac.compare_digest() to prevent timing side-channel attacks."
+            "verify_api_key() in seca/auth/api_key.py uses == / != for API key "
+            "comparison.  Replace with hmac.compare_digest() to prevent timing "
+            "side-channel attacks."
         )
 
-    def test_sn01b_host_app_verify_api_key_uses_hmac_compare_digest(self):
-        """SN_01b: host_app.py verify_api_key must use hmac.compare_digest."""
-        tree = _parse("host_app.py")
-        func = _find_func(tree, "verify_api_key")
-        assert func is not None, "verify_api_key() not found in host_app.py"
-        assert _has_compare_digest_call(func), (
-            "verify_api_key() in host_app.py uses == / != for API key comparison. "
-            "Replace with hmac.compare_digest() to prevent timing side-channel attacks."
-        )
+    def test_sn01b_server_imports_shared_verify_api_key(self):
+        """SN_01b: server.py must import verify_api_key from the shared module.
 
-    def test_sn01c_hmac_imported_in_server(self):
-        """SN_01c: server.py must import hmac to use compare_digest."""
+        Guards against re-introducing a local copy that could drift from
+        the timing-safe implementation.  Either ``from
+        llm.seca.auth.api_key import verify_api_key`` or any equivalent
+        path that pulls the shared symbol counts; what is forbidden is a
+        local ``def verify_api_key`` block.
+        """
         source = _read("server.py")
-        assert "import hmac" in source, (
-            "server.py does not import hmac. "
-            "hmac.compare_digest() cannot be called without this import."
+        assert "from llm.seca.auth.api_key import verify_api_key" in source, (
+            "server.py does not import verify_api_key from the shared "
+            "llm.seca.auth.api_key module."
+        )
+        tree = _parse("server.py")
+        local_def = _find_func(tree, "verify_api_key")
+        assert local_def is None, (
+            "server.py defines a local verify_api_key() — must use the shared "
+            "implementation in llm/seca/auth/api_key.py to avoid drift."
         )
 
-    def test_sn01d_hmac_imported_in_host_app(self):
-        """SN_01d: host_app.py must import hmac to use compare_digest."""
+    def test_sn01c_host_app_imports_shared_verify_api_key(self):
+        """SN_01c: host_app.py must import verify_api_key from the shared module.
+
+        Same reasoning as SN_01b — no local verify_api_key permitted.
+        """
         source = _read("host_app.py")
+        assert "from llm.seca.auth.api_key import verify_api_key" in source, (
+            "host_app.py does not import verify_api_key from the shared "
+            "llm.seca.auth.api_key module."
+        )
+        tree = _parse("host_app.py")
+        local_def = _find_func(tree, "verify_api_key")
+        assert local_def is None, (
+            "host_app.py defines a local verify_api_key() — must use the shared "
+            "implementation in llm/seca/auth/api_key.py to avoid drift."
+        )
+
+    def test_sn01d_hmac_imported_in_shared_module(self):
+        """SN_01d: the shared module must import hmac for compare_digest."""
+        source = _read("seca/auth/api_key.py")
         assert "import hmac" in source, (
-            "host_app.py does not import hmac. "
+            "seca/auth/api_key.py does not import hmac. "
             "hmac.compare_digest() cannot be called without this import."
         )
 

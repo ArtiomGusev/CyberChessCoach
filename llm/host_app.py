@@ -1,5 +1,4 @@
 import asyncio
-import hmac
 import logging
 import os
 import time
@@ -7,7 +6,7 @@ from contextlib import asynccontextmanager
 from typing import List, Tuple
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
@@ -16,24 +15,15 @@ import chess
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 from starlette.middleware.base import BaseHTTPMiddleware
 
+# Shared X-Api-Key verifier — single source of truth for both this debug
+# host and the production server.py.  See module docstring for rationale.
+from llm.seca.auth.api_key import verify_api_key
+
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 load_dotenv()
-
-_API_KEY = os.getenv("SECA_API_KEY")
-_IS_PROD = os.getenv("SECA_ENV", "dev") in {"prod", "production"}
-
-
-def verify_api_key(x_api_key: str = Header(None)):
-    """Guard debug endpoints — mirrors server.py:verify_api_key."""
-    if _API_KEY is None:
-        if _IS_PROD:
-            raise HTTPException(status_code=500, detail="Server misconfiguration")
-        return  # dev mode: unauthenticated access allowed
-    if not hmac.compare_digest(x_api_key or "", _API_KEY):
-        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 # --- Response Class Setup ---
