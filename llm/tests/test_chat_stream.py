@@ -145,15 +145,19 @@ def _parse_sse_events(body: str) -> list[dict]:
 
 class TestAstChatStream:
 
-    def test_chat_stream_has_verify_api_key(self):
-        """SSE_AUTH_REQUIRED: chat_stream() must have Depends(verify_api_key) in server.py."""
+    def test_chat_stream_requires_player_session(self):
+        """SSE_AUTH_REQUIRED: chat_stream() must have Depends(get_current_player) in server.py.
+
+        T3 unified auth: /chat/stream now requires a JWT-authenticated player
+        session, the same as /chat.  Anonymous coaching is no longer permitted.
+        """
         tree = _parse(_SERVER_PY)
         funcs = _get_functions(tree)
         func = funcs.get("chat_stream")
         assert func is not None, "chat_stream() not found in server.py"
-        assert _depends_on(func, "verify_api_key"), (
-            "POST /chat/stream must have Depends(verify_api_key) — "
-            "streaming endpoint must enforce the same auth as /chat"
+        assert _depends_on(func, "get_current_player"), (
+            "POST /chat/stream must have Depends(get_current_player) — "
+            "streaming endpoint must enforce the same JWT auth as /chat"
         )
 
 

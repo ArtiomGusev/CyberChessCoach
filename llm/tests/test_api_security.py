@@ -135,13 +135,18 @@ class TestAstEndpointProtection:
             func, "verify_api_key"
         ), "POST /analyze must have Depends(verify_api_key) — endpoint is unauthenticated"
 
-    def test_explanation_outcome_has_verify_api_key(self):
-        """SEC_OUTCOME_AUTH_APPLIED: /explanation_outcome has verify_api_key dependency."""
+    def test_explanation_outcome_requires_player_session(self):
+        """SEC_OUTCOME_AUTH_APPLIED: /explanation_outcome must require a player session.
+
+        T3 unified auth: /explanation_outcome now requires Depends(get_current_player)
+        — outcome reporting is per-player learning state, so the authenticated
+        player.id is the trust anchor (replacing the shared X-Api-Key).
+        """
         func = self._funcs.get("report_outcome")
         assert func is not None, "report_outcome() not found in server.py"
-        assert _depends_on(func, "verify_api_key"), (
-            "POST /explanation_outcome must have Depends(verify_api_key) — "
-            "unauthenticated write to learning state"
+        assert _depends_on(func, "get_current_player"), (
+            "POST /explanation_outcome must have Depends(get_current_player) — "
+            "outcome reporting writes per-player learning state"
         )
 
     def test_live_move_requires_player_session(self):

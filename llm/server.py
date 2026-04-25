@@ -567,12 +567,16 @@ class LiveMoveRequest(BaseModel):
 
 
 class StartGameRequest(BaseModel):
-    player_id: str
+    # T3: player_id is now derived from the authenticated session.  The field
+    # is accepted (optional) for backwards compatibility with older Android
+    # clients that still send it, and ignored server-side.  Remove the field
+    # once all clients have been updated to omit it.
+    player_id: str | None = None
 
     @field_validator("player_id")
     @classmethod
-    def validate_player_id(cls, v: str) -> str:
-        if len(v) > 100:
+    def validate_player_id(cls, v: str | None) -> str | None:
+        if v is not None and len(v) > 100:
             raise ValueError("player_id too long (max 100 chars)")
         return v
 
@@ -1041,8 +1045,10 @@ def next_training(player_id: str, player=Depends(get_current_player)):
 
 @app.post("/game/start")
 @limiter.limit("20/minute")
-def start_game(req: StartGameRequest, request: Request, _: str = Depends(verify_api_key)):
-    game_id = create_game(req.player_id)
+def start_game(req: StartGameRequest, request: Request, player=Depends(get_current_player)):
+    # T3: player_id is sourced from the JWT, not the request body.  Any
+    # req.player_id sent by older clients is ignored (see StartGameRequest).
+    game_id = create_game(str(player.id))
     return {"game_id": game_id}
 
 
@@ -1053,7 +1059,7 @@ def start_game(req: StartGameRequest, request: Request, _: str = Depends(verify_
 
 @app.post("/explain")
 @limiter.limit("30/minute")
-def explain(req: AnalyzeRequest, request: Request, _: str = Depends(verify_api_key)):
+def explain(req: AnalyzeRequest, request: Request, player=Depends(get_current_player)):
     engine_signal = extract_engine_signal(req.stockfish_json, fen=req.fen)
     explanation = safe_explainer.explain(engine_signal)
 
@@ -1068,7 +1074,7 @@ def explain(req: AnalyzeRequest, request: Request, _: str = Depends(verify_api_k
 
 @app.post("/explanation_outcome")
 @limiter.limit("20/minute")
-def report_outcome(req: OutcomeRequest, request: Request, _: None = Depends(verify_api_key)):
+def report_outcome(req: OutcomeRequest, request: Request, player=Depends(get_current_player)):
     # record_outcome() raises ValueError("Unknown explanation_id") when the id
     # is not already registered via record_explanation().  Nothing in the live
     # request path currently registers ids, so every call landed here would
@@ -1096,7 +1102,7 @@ def report_outcome(req: OutcomeRequest, request: Request, _: None = Depends(veri
 async def chat(
     req: ChatRequest,
     request: Request,
-    _: str = Depends(verify_api_key),
+    player=Depends(get_current_player),
 ):
     """Mode-2: long-form coaching explanation for the LLM panel.
 
@@ -1130,7 +1136,7 @@ async def chat(
 async def chat_stream(
     req: ChatRequest,
     request: Request,
-    _: str = Depends(verify_api_key),
+    player=Depends(get_current_player),
 ):
     """Streaming variant of POST /chat — same LLM pipeline, chunked via Server-Sent Events.
 

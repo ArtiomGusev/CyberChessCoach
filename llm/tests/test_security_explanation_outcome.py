@@ -52,15 +52,23 @@ class TestTrk01ExplanationOutcomeUnknownId(unittest.TestCase):
     def setUpClass(cls):
         import llm.server as srv
         cls.client = TestClient(srv.app, raise_server_exceptions=False)
-        # Read the API key the running app actually uses.  Earlier tests in
-        # the suite may set SECA_API_KEY before this module imports server,
-        # so a hardcoded fixture value would 401 under suite-wide ordering.
-        cls.api_key = srv.API_KEY or ""
+        # T3: /explanation_outcome now requires a JWT-authenticated player
+        # session.  Register an ephemeral player and use the issued access
+        # token as a Bearer credential.  A fresh email per run keeps tests
+        # independent under suite-wide ordering.
+        import uuid
+        email = f"trk01-{uuid.uuid4().hex[:8]}@test.example"
+        password = "TestPassword!23"
+        r = cls.client.post(
+            "/auth/register", json={"email": email, "password": password}
+        )
+        assert r.status_code == 200, f"setUpClass register failed: {r.status_code} {r.text[:200]}"
+        cls.token = r.json()["access_token"]
 
     def _post(self):
         return self.client.post(
             "/explanation_outcome",
-            headers={"X-Api-Key": self.api_key},
+            headers={"Authorization": f"Bearer {self.token}"},
             json=_PAYLOAD,
         )
 
