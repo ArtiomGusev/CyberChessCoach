@@ -269,5 +269,91 @@ class FreezeBackgroundTasksTest(unittest.TestCase):
                 freeze._assert_no_background_tasks()  # no raise
 
 
+# ---------------------------------------------------------------------------
+# End-to-end lifespan integration
+# ---------------------------------------------------------------------------
+
+
+class FreezeIntegrationTest(unittest.TestCase):
+    """End-to-end: the real FastAPI lifespan path must enforce the freeze.
+
+    The unit tests above monkey-patch ``_crash`` to raise an exception so
+    assertions can observe rejection without sys.exit.  This class
+    instead exercises the full production code path
+    (server.lifespan → init_db → init_auth_schema → SafeWorldModel →
+    enforce → _scan_loaded_modules → _crash → sys.exit(1)) using
+    FastAPI's real ``TestClient`` and confirms ``SystemExit`` propagates.
+
+    Without this test, a future refactor that, say, swallowed the freeze
+    guard's exit inside lifespan's ``except Exception:`` block would
+    silently disable the rule-3 enforcement and the unit tests would
+    still all pass.
+    """
+
+    _FAKE_FORBIDDEN = "llm.seca.brain.bandit._integration_test_only_fake"
+
+    def setUp(self):
+        # Hermetic: stash any non-allowlisted brain.* state so the
+        # integration scenario starts from a production-shaped sys.modules.
+        self._stashed: dict[str, types.ModuleType] = {}
+        for name in list(sys.modules.keys()):
+            if (
+                name.startswith("llm.seca.brain.")
+                and name not in freeze.ALLOWED_BRAIN_MODULES
+            ):
+                self._stashed[name] = sys.modules.pop(name)
+        sys.modules.pop(self._FAKE_FORBIDDEN, None)
+
+    def tearDown(self):
+        sys.modules.pop(self._FAKE_FORBIDDEN, None)
+        for name, mod in self._stashed.items():
+            sys.modules[name] = mod
+
+    def test_clean_lifespan_succeeds(self):
+        """With no forbidden brain modules pre-loaded, the production
+        lifespan (init_db → init_auth_schema → enforce) must complete
+        without crashing, and basic routes must serve."""
+        from fastapi.testclient import TestClient
+        from llm.server import app
+
+        with TestClient(app) as client:
+            r = client.get("/health")
+            self.assertEqual(r.status_code, 200)
+
+    def test_lifespan_crashes_with_forbidden_brain_module(self):
+        """If a non-allowlisted brain.* module is in sys.modules when
+        FastAPI lifespan starts, ``enforce(world_model)`` must call
+        ``sys.exit(1)`` — and SystemExit must propagate out of lifespan
+        rather than being swallowed by the surrounding ``except Exception``
+        block (SystemExit is a BaseException, not Exception, so the
+        production code is correct by construction; this test pins that
+        property).
+
+        We invoke the lifespan async context manager directly via
+        ``asyncio.run`` rather than through ``TestClient(app)``.  The
+        TestClient path uses anyio's blocking portal which runs the
+        startup coroutine inside a TaskGroup; SystemExit propagating
+        out of that task is wrapped in a BaseExceptionGroup that lives
+        on the task object, while the main thread receives a plain
+        CancelledError instead.  The direct asyncio.run path preserves
+        the SystemExit shape that production process exit relies on.
+        """
+        import asyncio
+        from llm.server import lifespan as server_lifespan, app
+
+        async def _trigger_startup() -> None:
+            async with server_lifespan(app):
+                # If startup completes, the freeze guard failed silently.
+                self.fail(
+                    "lifespan startup unexpectedly succeeded with forbidden "
+                    "brain module pre-loaded — freeze guard regression."
+                )
+
+        sys.modules[self._FAKE_FORBIDDEN] = types.ModuleType(self._FAKE_FORBIDDEN)
+        with self.assertRaises(SystemExit) as cm:
+            asyncio.run(_trigger_startup())
+        self.assertEqual(cm.exception.code, 1)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
