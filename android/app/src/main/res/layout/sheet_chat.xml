@@ -8,7 +8,7 @@
     android:background="#0B0F14">
 
     <!-- MINI BOARD PREVIEW -->
-    <com.example.myapplication.ChessBoardView
+    <ai.chesscoach.app.ChessBoardView
         android:id="@+id/miniBoard"
         android:layout_width="120dp"
         android:layout_height="120dp"

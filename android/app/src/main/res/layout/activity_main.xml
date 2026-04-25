@@ -11,7 +11,7 @@
         android:background="#000000">
 
         <!-- CHESS BOARD -->
-        <com.example.myapplication.ChessBoardView
+        <ai.chesscoach.app.ChessBoardView
             android:id="@+id/chessBoard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

@@ -45,7 +45,7 @@
             android:paddingTop="16dp"
             android:paddingBottom="4dp"/>
 
-        <com.example.myapplication.RatingSparklineView
+        <ai.chesscoach.app.RatingSparklineView
             android:id="@+id/progressSparkline"
             android:layout_width="match_parent"
             android:layout_height="72dp"
@@ -152,7 +152,7 @@
             android:paddingTop="16dp"
             android:paddingBottom="8dp"/>
 
-        <com.example.myapplication.WeaknessBarChartView
+        <ai.chesscoach.app.WeaknessBarChartView
             android:id="@+id/weaknessChart"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

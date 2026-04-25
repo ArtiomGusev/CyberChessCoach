@@ -21,7 +21,7 @@ val hasReleaseSigningConfig: Boolean = listOf(
 ).all { it != null }
 
 android {
-    namespace = "com.example.myapplication"
+    namespace = "ai.chesscoach.app"
     compileSdk = 36
 
     buildFeatures {
@@ -29,7 +29,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.myapplication"
+        applicationId = "ai.chesscoach.app"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

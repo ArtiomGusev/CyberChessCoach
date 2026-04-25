@@ -122,7 +122,7 @@ def _run_android_group(label: str, test_class: str) -> int:
     cmd = [
         gradlew,
         "testDebugUnitTest",
-        f"--tests=com.example.myapplication.{test_class}",
+        f"--tests=ai.chesscoach.app.{test_class}",
     ]
     result = subprocess.run(cmd, cwd=android_dir, check=False)
     if result.returncode != 0:

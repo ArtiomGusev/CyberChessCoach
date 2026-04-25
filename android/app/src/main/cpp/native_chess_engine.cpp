@@ -18,10 +18,10 @@ extern "C" {
 
 /**
  * The JNI function (PURE, SAFE, SINGLE MOVE)
- * Signature: Java_com_example_myapplication_ChessNative_getBestMove
+ * Signature: Java_ai_chesscoach_app_ChessNative_getBestMove
  */
 JNIEXPORT jobject JNICALL
-Java_com_example_myapplication_ChessNative_getBestMove(
+Java_ai_chesscoach_app_ChessNative_getBestMove(
         JNIEnv* env,
         jobject /* this */,
         jstring fen
@@ -46,7 +46,7 @@ Java_com_example_myapplication_ChessNative_getBestMove(
 
     // 4️⃣ Create AIMove Kotlin object
     // Note: FindClass needs the full package name with slashes
-    jclass moveCls = env->FindClass("com/example/myapplication/AIMove");
+    jclass moveCls = env->FindClass("ai/chesscoach/app/AIMove");
     if (!moveCls) {
         LOGE("Could not find AIMove class");
         return nullptr;
@@ -72,7 +72,7 @@ Java_com_example_myapplication_ChessNative_getBestMove(
 }
 
 JNIEXPORT jobject JNICALL
-Java_com_example_myapplication_ChessNative_getBestMoveWithStrength(
+Java_ai_chesscoach_app_ChessNative_getBestMoveWithStrength(
         JNIEnv* env,
         jobject /* this */,
         jstring fen,
@@ -90,7 +90,7 @@ Java_com_example_myapplication_ChessNative_getBestMoveWithStrength(
     SachmatuLenta::Move m = engine.getBestMove(JUODA, static_cast<int>(strengthLevel));
     if (!m.isValid()) return nullptr;
 
-    jclass moveCls = env->FindClass("com/example/myapplication/AIMove");
+    jclass moveCls = env->FindClass("ai/chesscoach/app/AIMove");
     if (!moveCls) { LOGE("Could not find AIMove class"); return nullptr; }
 
     jmethodID ctor = env->GetMethodID(moveCls, "<init>", "(IIII)V");
