@@ -687,20 +687,58 @@ class TestCORSConfiguration:
                 "A wildcard CORS policy allows any origin to make credentialed requests."
             )
 
-    def test_sh19b_cors_warning_when_origins_empty(self):
-        """SH_19b: server.py must log a warning when CORS origins are not configured."""
+    def test_sh19b_cors_misconfig_is_never_silent(self):
+        """SH_19b: server.py must surface an empty CORS_ALLOWED_ORIGINS loudly.
+
+        Behaviour is split by environment so both dev ergonomics and prod
+        safety are preserved:
+
+          - In production (``IS_PROD`` true) an empty CORS_ALLOWED_ORIGINS
+            must cause a hard ``RuntimeError`` at startup, mirroring the
+            existing SECA_API_KEY / SECRET_KEY pattern.  A misconfigured
+            production deployment fails loud at boot rather than silently
+            blocking every browser.
+
+          - In development an empty CORS_ALLOWED_ORIGINS must emit at
+            least a logger.* line that mentions the env var, so a
+            contributor running locally without the var can see that the
+            dev-default fallback is in effect rather than wondering why
+            cross-origin requests work.
+
+        Either path is acceptable; what is not acceptable is silent
+        misconfiguration.
+        """
         source = _read("server.py")
-        # Check that a warning call and a CORS reference appear in proximity.
-        # They may span multiple lines, so check presence independently.
-        has_cors_ref = "CORS_ALLOWED_ORIGINS" in source
-        has_warning_call = bool(re.search(r"logger\.warning|logging\.warning", source))
-        # Both must be present, and the warning block must mention CORS context
-        warning_section = re.search(
-            r"logger\.warning.*?CORS|CORS.*?logger\.warning", source, re.DOTALL
+        assert "CORS_ALLOWED_ORIGINS" in source, (
+            "CORS_ALLOWED_ORIGINS env var is not referenced in server.py at all."
         )
-        assert has_cors_ref and has_warning_call and warning_section, (
-            "server.py does not log a warning when CORS origins are empty. "
-            "Silent misconfiguration can block all cross-origin requests with no feedback."
+        # Prod hard-fail must mention CORS_ALLOWED_ORIGINS in its RuntimeError
+        # message — searched as one block so newlines between IS_PROD branch
+        # and raise RuntimeError do not defeat the regex.
+        has_prod_hard_fail = bool(
+            re.search(
+                r"IS_PROD[\s\S]{0,200}raise RuntimeError[\s\S]{0,200}CORS_ALLOWED_ORIGINS"
+                r"|CORS_ALLOWED_ORIGINS[\s\S]{0,200}raise RuntimeError[\s\S]{0,200}IS_PROD"
+                r"|raise RuntimeError\([\s\S]{0,300}CORS_ALLOWED_ORIGINS",
+                source,
+            )
+        )
+        # Dev-mode log line must reference the env var.  Either logger.info or
+        # logger.warning is acceptable — the point is visibility, not severity.
+        has_dev_log = bool(
+            re.search(
+                r"logger\.(info|warning)[\s\S]{0,300}CORS_ALLOWED_ORIGINS"
+                r"|CORS_ALLOWED_ORIGINS[\s\S]{0,300}logger\.(info|warning)",
+                source,
+            )
+        )
+        assert has_prod_hard_fail, (
+            "server.py does not raise RuntimeError on empty CORS_ALLOWED_ORIGINS "
+            "in production.  Silent failure in prod is unacceptable."
+        )
+        assert has_dev_log, (
+            "server.py does not log when CORS_ALLOWED_ORIGINS is empty in dev. "
+            "Contributors must see the dev-default fallback rather than guess."
         )
 
 
