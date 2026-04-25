@@ -1,7 +1,34 @@
-CREATE TABLE IF NOT EXISTS players (
-    id TEXT PRIMARY KEY,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+-- Raw-sqlite schema for the storage tables that are NOT modelled by
+-- SQLAlchemy.  Authoritative ownership map:
+--
+--   SQLAlchemy (Base.metadata.create_all in init_auth_schema)
+--   ----------------------------------------------------------
+--     players                       — auth/models.py:Player
+--     sessions                      — auth/models.py:Session
+--     game_events                   — events/models.py:GameEvent
+--     analytics_events              — analytics/models.py:AnalyticsEvent
+--     rating_updates                — brain/models.py:RatingUpdate
+--     confidence_updates            — brain/models.py:ConfidenceUpdate
+--     bandit_experiences            — brain/models.py:BanditExperience
+--     training_decisions            — brain/training/models.py:TrainingDecision
+--     training_outcomes             — brain/training/models.py:TrainingOutcome
+--
+--   This file (executed by storage/db.py:init_db)
+--   ---------------------------------------------
+--     games                         — repo.py game-lifecycle rows
+--     moves                         — repo.py per-ply move log
+--     explanations                  — repo.py /explanation_outcome learning score
+--
+-- Why split?  ``games``, ``moves``, ``explanations`` are written exclusively
+-- by repo.py via raw sqlite3 (no ORM session) for the /move and
+-- /explanation_outcome request paths.  Modelling them in SQLAlchemy would
+-- gain nothing without porting repo.py too.  Leaving them here is the
+-- minimal-change boundary; the duplicate ``players`` /
+-- ``training_decisions`` / ``training_outcomes`` definitions that used to
+-- live here were removed because they conflicted with the SQLAlchemy
+-- models — schema.sql ran first under FastAPI lifespan, creating only
+-- partial tables, then ``Base.metadata.create_all`` saw the tables
+-- already present and skipped the missing columns.
 
 CREATE TABLE IF NOT EXISTS games (
     id TEXT PRIMARY KEY,
@@ -33,50 +60,3 @@ CREATE TABLE IF NOT EXISTS explanations (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(game_id) REFERENCES games(id)
 );
-
-CREATE TABLE IF NOT EXISTS training_decisions (
-    id TEXT PRIMARY KEY,
-
-    player_id TEXT NOT NULL,
-    created_at TIMESTAMP NOT NULL,
-
-    -- context snapshot
-    rating_before REAL NOT NULL,
-    confidence_before REAL NOT NULL,
-    recent_accuracy REAL,
-    weakness_tactics REAL,
-    weakness_time REAL,
-    games_last_week INTEGER,
-
-    -- chosen action
-    strategy TEXT NOT NULL,
-
-    -- lifecycle
-    outcome_ready INTEGER DEFAULT 0
-);
-
-CREATE TABLE IF NOT EXISTS training_outcomes (
-    id TEXT PRIMARY KEY,
-
-    decision_id TEXT NOT NULL,
-    measured_at TIMESTAMP NOT NULL,
-
-    rating_after REAL NOT NULL,
-    confidence_after REAL NOT NULL,
-    games_played INTEGER,
-
-    -- computed reward
-    rating_delta REAL NOT NULL,
-    confidence_delta REAL NOT NULL,
-
-    FOREIGN KEY(decision_id) REFERENCES training_decisions(id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_training_decisions_player
-ON training_decisions(player_id);
-
-CREATE INDEX IF NOT EXISTS idx_training_decisions_ready
-ON training_decisions(outcome_ready);
-
-CREATE INDEX IF NOT EXISTS idx_training_outcomes_decision
-ON training_outcomes(decision_id);
