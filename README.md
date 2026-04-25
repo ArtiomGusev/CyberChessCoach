@@ -271,34 +271,55 @@ Healthy quality distribution: majority 8–9, occasional 7, rare ≤ 6. Sustaine
 ## Repository Structure
 
 ```
-├── android/                  # Android application (UI, game orchestration)
-├── engine/                   # C++ opponent engine (~1800 Elo, JNI bridge)
+├── android/                          # Android client (package ai.chesscoach.app, JNI bridge)
+├── engine/                           # C++ opponent engine (~1800 Elo)
 ├── llm/
-│   ├── server.py             # FastAPI application entry point
-│   ├── explain_pipeline.py   # Mode-2 pipeline with bounded retries
-│   ├── engine_pool.py        # Stockfish pool management
+│   ├── server.py                     # FastAPI application entry point
+│   ├── explain_pipeline.py           # Mode-2 pipeline with bounded retries
+│   ├── engine_pool.py                # Stockfish pool management
+│   ├── conftest.py                   # Session-autouse SQLAlchemy schema fixture
 │   ├── rag/
-│   │   ├── engine_signal/    # ESV extraction
-│   │   ├── retriever/        # Deterministic document retrieval
-│   │   ├── prompts/          # Mode-2 prompt templates (golden-tested)
-│   │   ├── validators/       # Output contracts
-│   │   └── tests/            # Golden, contract, regression, quality tests
+│   │   ├── engine_signal/            # ESV extraction
+│   │   ├── retriever/                # Deterministic document retrieval
+│   │   ├── prompts/                  # Mode-2 prompt templates (golden-tested)
+│   │   ├── validators/               # Output contracts
+│   │   └── tests/                    # Golden, contract, regression, quality tests
 │   ├── seca/
-│   │   ├── safety/           # freeze.py — SECA enforcement at startup
-│   │   ├── auth/             # JWT authentication
-│   │   ├── curriculum/       # Skill-based curriculum scheduling
-│   │   ├── adaptation/       # Opponent Elo and teaching style adaptation
-│   │   ├── coach/            # Chat and live-move coaching pipelines
-│   │   ├── storage/          # PostgreSQL-backed event store and repo
-│   │   └── engines/          # Engine adapters
-│   └── tests/                # API contract and pipeline regression tests
+│   │   ├── safety/freeze.py          # Runtime allowlist + keyword scan (CLAUDE.md rule 3)
+│   │   ├── auth/                     # JWT auth, Pydantic schemas, init_schema()
+│   │   ├── coach/                    # /chat and /live/move coaching pipelines
+│   │   ├── inference/                # /seca/explain (mounted at /seca prefix)
+│   │   ├── events/                   # /game/finish + GameEvent SQLAlchemy schema
+│   │   ├── analytics/                # AnalyticsEvent + analytics router
+│   │   ├── adaptation/               # Opponent Elo, teaching style, dynamic mode
+│   │   ├── curriculum/               # Skill-based curriculum scheduler
+│   │   ├── learning/                 # ExplanationOutcomeTracker, SkillState
+│   │   ├── explainer/                # SafeExplainer deterministic fallback
+│   │   ├── runtime/safe_mode.py      # SAFE_MODE constant + assert_safe()
+│   │   ├── world_model/safe_stub.py  # Identity stub — the only world model used live
+│   │   ├── storage/                  # init_db() + raw-sqlite repo (games / moves / explanations)
+│   │   ├── skill/                    # SkillPipeline orchestrator
+│   │   ├── skills/                   # SkillUpdater (live, used by /game/finish)
+│   │   ├── engines/stockfish/        # Stockfish engine pool
+│   │   └── shared_limiter.py         # slowapi limiter shared across routers
+│   └── tests/                        # API contract, security, freeze, schema-boundary
 └── docs/
-    ├── ARCHITECTURE.md       # Formal system specification
-    ├── TESTING.md            # Test strategy and validator rules
-    ├── OPERATIONS.md         # Production operation guide
-    ├── OPERATIONS_RETRIES.md # Bounded retry policy
-    └── RELEASE.md            # Mandatory release procedure
+    ├── ARCHITECTURE.md               # Formal system specification
+    ├── TESTING.md                    # Test strategy and validator rules
+    ├── OPERATIONS.md                 # Production operation guide
+    ├── OPERATIONS_RETRIES.md         # Bounded retry policy
+    └── RELEASE.md                    # Mandatory release procedure
 ```
+
+**Dormant ML / RL research code** lives under `seca/{brain, henm,
+closed_loop, optim, models, evolution}`, plus `seca/learning/online_learner.py`
+and most of `seca/world_model/` (everything except `safe_stub.py`).  None of
+this is loaded into the live runtime.  `safety/freeze.py` enforces the
+prohibition at startup via an explicit `ALLOWED_BRAIN_MODULES` allowlist
+plus a keyword scan for training entry points (`optimizer.step`,
+`loss.backward`, `.partial_fit(`, `bandit.update`, etc.) across the seca
+tree.  See `llm/tests/test_safety_freeze.py` (16 tests across three layers
+plus an end-to-end lifespan integration test).
 
 ## Testing
 
