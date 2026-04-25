@@ -523,12 +523,21 @@ class TestApiContractStress:
                 patch("llm.seca.events.router.SkillUpdater"),
             ):
                 MockStorage.return_value.store_game.return_value = SimpleNamespace(id=1)
-                r = finish_game(
-                    req=GameFinishRequest(pgn=pgn, result="win", accuracy=0.80, weaknesses={}),
-                    player=player,
-                    request=None,
-                    db=db,
-                )
+                from starlette.requests import Request as _Req
+                from llm.seca.shared_limiter import limiter as _limiter
+                _scope = {"type": "http", "method": "POST", "path": "/game/finish",
+                          "headers": [], "client": ("127.0.0.1", 0)}
+                _prev = _limiter.enabled
+                _limiter.enabled = False
+                try:
+                    r = finish_game(
+                        req=GameFinishRequest(pgn=pgn, result="win", accuracy=0.80, weaknesses={}),
+                        player=player,
+                        request=_Req(_scope),
+                        db=db,
+                    )
+                finally:
+                    _limiter.enabled = _prev
             assert r["status"] == "stored", f"game/finish failed for PGN len={len(pgn)}"
 
     def test_next_training_contract_stable_across_50_calls(self, monkeypatch):
@@ -565,14 +574,23 @@ class TestApiContractStress:
             ):
                 MockStorage.return_value.store_game.return_value = SimpleNamespace(id=1)
                 _HDR = '[Event "Test"]\n[Site "?"]\n[Date "????.??.??"]\n[Round "?"]\n[White "?"]\n[Black "?"]\n[Result "*"]\n\n'
-                r = finish_game(
-                    req=GameFinishRequest(
-                        pgn=_HDR + "1. e4 *", result=result_type, accuracy=0.75, weaknesses={}
-                    ),
-                    player=player,
-                    request=None,
-                    db=db,
-                )
+                from starlette.requests import Request as _Req
+                from llm.seca.shared_limiter import limiter as _limiter
+                _scope = {"type": "http", "method": "POST", "path": "/game/finish",
+                          "headers": [], "client": ("127.0.0.1", 0)}
+                _prev = _limiter.enabled
+                _limiter.enabled = False
+                try:
+                    r = finish_game(
+                        req=GameFinishRequest(
+                            pgn=_HDR + "1. e4 *", result=result_type, accuracy=0.75, weaknesses={}
+                        ),
+                        player=player,
+                        request=_Req(_scope),
+                        db=db,
+                    )
+                finally:
+                    _limiter.enabled = _prev
             assert r["status"] == "stored"
 
     def test_required_routes_not_removed_from_server(self):

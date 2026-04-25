@@ -379,19 +379,35 @@ def _call_finish_game(
     player,
     db,
 ):
-    """Call finish_game() with all DB/storage dependencies mocked."""
+    """Call finish_game() with all DB/storage dependencies mocked.
+
+    Direct calls bypass the slowapi decorator's rate-limit counter
+    backend by toggling `limiter.enabled = False` for the duration of
+    the call — these tests exercise the handler logic, not the rate
+    limit (the rate limit is verified by test_security_game_finish_rate_limit.py
+    via AST inspection of the decorator)."""
     from llm.seca.events.router import finish_game, GameFinishRequest
+    from llm.seca.shared_limiter import limiter
+    from starlette.requests import Request
 
     fake_event = SimpleNamespace(id=99)
-
     req = GameFinishRequest(**req_kwargs)
+    fake_request = Request({
+        "type": "http", "method": "POST", "path": "/game/finish",
+        "headers": [], "client": ("127.0.0.1", 0),
+    })
 
-    with (
-        patch("llm.seca.events.router.EventStorage") as MockStorage,
-        patch("llm.seca.events.router.SkillUpdater"),
-    ):
-        MockStorage.return_value.store_game.return_value = fake_event
-        result = finish_game(req=req, player=player, request=None, db=db)
+    prev_enabled = limiter.enabled
+    limiter.enabled = False
+    try:
+        with (
+            patch("llm.seca.events.router.EventStorage") as MockStorage,
+            patch("llm.seca.events.router.SkillUpdater"),
+        ):
+            MockStorage.return_value.store_game.return_value = fake_event
+            result = finish_game(req=req, player=player, request=fake_request, db=db)
+    finally:
+        limiter.enabled = prev_enabled
 
     return result
 
