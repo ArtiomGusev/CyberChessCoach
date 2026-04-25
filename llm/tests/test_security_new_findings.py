@@ -19,6 +19,7 @@ Stable test IDs:
   SN_08   ChatRequest.past_mistakes individual items have a per-item length cap
   SN_09   ChatRequest.player_profile has a key-count / total-size cap
   SN_10   host_app.py has a body size limit middleware (Content-Length > 512 KB → 413)
+  SN_10c  host_app.py rejects POST/PUT/PATCH without Content-Length (chunked-encoding bypass)
 """
 
 from __future__ import annotations
@@ -635,7 +636,13 @@ class TestHostAppBodySizeLimit:
         )
 
     def test_sn10b_host_app_stub_413_on_large_body(self):
-        """SN_10b: host_app.py-style middleware must return 413 for Content-Length > 512 KB."""
+        """SN_10b: host_app.py-style middleware must return 413 for Content-Length > 512 KB.
+
+        The stub mirrors host_app.py's current ``_LimitBodySize`` shape
+        — including the SN_10c chunked-encoding rejection (mirrors the
+        server.py SVD_01 fix).  Both the oversized-body and the
+        missing-Content-Length-on-POST cases are exercised below.
+        """
         from fastapi import FastAPI, Request
         from fastapi.responses import JSONResponse
         from fastapi.testclient import TestClient
@@ -643,11 +650,18 @@ class TestHostAppBodySizeLimit:
 
         stub = FastAPI()
         _MAX_BODY = 512 * 1024
+        _BODY_METHODS = frozenset({"POST", "PUT", "PATCH"})
 
         class _LimitBodySize(BaseHTTPMiddleware):
             async def dispatch(self, request: Request, call_next):
                 cl = request.headers.get("content-length")
-                if cl:
+                if cl is None:
+                    if request.method in _BODY_METHODS:
+                        return JSONResponse(
+                            status_code=411,
+                            content={"error": "Content-Length header required"},
+                        )
+                else:
                     try:
                         if int(cl) > _MAX_BODY:
                             return JSONResponse(
@@ -655,7 +669,9 @@ class TestHostAppBodySizeLimit:
                                 content={"error": "Request body too large"},
                             )
                     except ValueError:
-                        return JSONResponse(status_code=400, content={"error": "Invalid Content-Length"})
+                        return JSONResponse(
+                            status_code=400, content={"error": "Invalid Content-Length"}
+                        )
                 return await call_next(request)
 
         stub.add_middleware(_LimitBodySize)
@@ -669,4 +685,20 @@ class TestHostAppBodySizeLimit:
         resp = client.get("/health", headers={"Content-Length": oversized})
         assert resp.status_code == 413, (
             f"Expected 413 for Content-Length={oversized}, got {resp.status_code}"
+        )
+
+    def test_sn10c_host_app_rejects_post_without_content_length(self):
+        """SN_10c: host_app.py must reject POST/PUT/PATCH with no Content-Length.
+
+        Mirrors the SVD_01 fix on server.py.  A body-size guard that
+        only inspects the Content-Length header is bypassed entirely by
+        chunked-transfer-encoded requests (or any HTTP/1.1 request that
+        omits the header).  Source-inspection check that host_app.py's
+        middleware enforces the contract.
+        """
+        source = _read("host_app.py")
+        assert "_BODY_METHODS" in source and "Content-Length header required" in source, (
+            "host_app.py's _LimitBodySize does not reject body-bearing methods "
+            "without a Content-Length header.  Same SVD_01-class bypass that "
+            "server.py closed."
         )

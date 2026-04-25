@@ -97,12 +97,27 @@ app = FastAPI(default_response_class=DefaultResponseClass, lifespan=lifespan)
 app.state.limiter = _limiter
 
 _MAX_BODY_BYTES = 512 * 1024
+_BODY_METHODS = frozenset({"POST", "PUT", "PATCH"})
 
 
 class _LimitBodySize(BaseHTTPMiddleware):
+    """Request-body size guard.
+
+    Mirrors server.py's middleware including the chunked-encoding bypass
+    fix (originally SVD_01 on server.py): a header-only size check lets
+    chunked-encoded or otherwise Content-Length-less POST/PUT/PATCH
+    bodies through unbounded.  Reject those with HTTP 411 so the limit
+    is always enforceable on body-bearing methods.
+    """
+
     async def dispatch(self, request: Request, call_next):
         cl = request.headers.get("content-length")
-        if cl:
+        if cl is None:
+            if request.method in _BODY_METHODS:
+                return JSONResponse(
+                    status_code=411, content={"error": "Content-Length header required"}
+                )
+        else:
             try:
                 if int(cl) > _MAX_BODY_BYTES:
                     return JSONResponse(
