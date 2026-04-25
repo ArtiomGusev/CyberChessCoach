@@ -1083,7 +1083,7 @@ def report_outcome(req: OutcomeRequest, request: Request, player=Depends(get_cur
     # return a clean 400 with a generic message that does not reveal whether
     # any specific id is or isn't present in the tracker.
     try:
-        tracker.record_outcome(**req.dict())
+        tracker.record_outcome(**req.model_dump())
     except ValueError:
         raise HTTPException(status_code=400, detail="invalid explanation_id")
 
