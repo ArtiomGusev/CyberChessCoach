@@ -1,3 +1,4 @@
+import functools
 import hashlib
 import hmac
 from datetime import datetime
@@ -9,12 +10,27 @@ from .tokens import create_access_token
 
 _MAX_SESSIONS = 10
 
-# Precomputed dummy hash used to equalise the wall-time cost of login() between
-# the "email exists" and "email does not exist" code paths.  Without this dummy
-# verification the miss path skips PBKDF2 entirely (~0.3 ms) while the hit path
-# pays the full PBKDF2-SHA256 600 000-iteration cost (~270 ms), creating a
-# 950x timing oracle that lets an attacker enumerate registered emails.
-_DUMMY_HASH_FOR_TIMING_SAFETY = hash_password("dummy_password_for_timing_safety_only")
+
+@functools.cache
+def _dummy_hash_for_timing_safety() -> str:
+    """Lazily-computed dummy hash for ``login()`` email-enumeration defence.
+
+    ``login()`` runs PBKDF2-SHA256 on the supplied password against the
+    stored hash for matched emails (~270 ms).  Unmatched emails would
+    skip that work entirely (~0.3 ms) and the wall-clock difference is a
+    950x timing oracle for enumerating registered addresses — see the
+    miss branch in ``login()``.  We close the oracle by running a dummy
+    ``verify_password`` against a precomputed hash on the miss path.
+
+    The hash itself was previously computed eagerly at module import,
+    paying ~270 ms of PBKDF2 cost on every Python process that touched
+    the auth tree (every backend test, every script that imports
+    ``llm.server``, every CLI tool).  ``@functools.cache`` defers the
+    cost to the first miss-path login while preserving the
+    "precomputed once" semantic — subsequent calls return the cached
+    value without re-hashing.
+    """
+    return hash_password("dummy_password_for_timing_safety_only")
 
 
 class AuthService:
@@ -52,7 +68,7 @@ class AuthService:
             # Run a dummy verification so a missing-email login takes the same
             # wall time as an existing-email-with-wrong-password login.  Without
             # this, login() is a textbook email-enumeration timing oracle.
-            verify_password(password, _DUMMY_HASH_FOR_TIMING_SAFETY)
+            verify_password(password, _dummy_hash_for_timing_safety())
             raise ValueError("Invalid credentials")
 
         if not verify_password(password, player.password_hash):
