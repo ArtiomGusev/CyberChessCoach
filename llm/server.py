@@ -994,9 +994,14 @@ def analyze(req: AnalyzeRequest, request: Request, _: None = Depends(verify_api_
 
 
 @app.get("/next-training/{player_id}")
-def next_training(player_id: str, _: str = Depends(verify_api_key)):
+def next_training(player_id: str, player=Depends(get_current_player)):
     if len(player_id) > 100:
         raise HTTPException(status_code=422, detail="player_id too long (max 100 chars)")
+    if player_id != str(player.id):
+        raise HTTPException(
+            status_code=403,
+            detail="Cannot access another player's training",
+        )
     skill = player_skill_memory.get(player_id, SkillState())
 
     # demo weaknesses (later from analyzer)

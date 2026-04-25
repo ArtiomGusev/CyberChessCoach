@@ -15,7 +15,11 @@ Covered concerns
 5. Format enum: format is one of the four documented values.
 6. Post-game integration: recommendation changes when weakness is "tactics" vs
    "endgame" vs "strategy" (choose_task routing verified end-to-end).
-7. AST guard: verify_api_key is present as a dependency on next_training().
+7. AST guard: get_current_player is the dependency on next_training().
+   (Updated from verify_api_key — see AUT-01 in test_security_authz.py.
+   The endpoint now authenticates the JWT-bound player and validates that
+   the path player_id matches; verify_api_key alone was insufficient
+   because the API key is shared across all clients.)
 8. AST guard: the route method is GET (not POST).
 9. Schema separation: neither exercise_type nor payload appear in the response
    (those belong to /curriculum/next — kept as a regression guard).
@@ -40,7 +44,7 @@ Pinned invariants
 16. ENDGAME_WEAKNESS_RETURNS_DRILL_FORMAT
 17. STRATEGY_WEAKNESS_RETURNS_EXPLANATION_FORMAT
 18. EMPTY_WEAKNESSES_RETURNS_GENERAL_PLAY
-19. AST_NEXT_TRAINING_HAS_VERIFY_API_KEY
+19. AST_NEXT_TRAINING_HAS_GET_CURRENT_PLAYER  (was AST_*_VERIFY_API_KEY pre-AUT-01)
 20. AST_NEXT_TRAINING_IS_GET_METHOD
 """
 
@@ -73,7 +77,15 @@ def _call_next_training(
     player_id: str = "test-player",
     task: TrainingTask | None = None,
 ):
-    """Call server.next_training() with a controlled scheduler."""
+    """Call server.next_training() with a controlled scheduler.
+
+    After AUT-01 the endpoint requires a JWT-derived `player` instead of an
+    API key, AND validates that the path player_id matches str(player.id).
+    For these schema/scheduler tests we pin the authenticated player to
+    have the same id as the path so we exercise the legitimate code path.
+    Cross-tenant rejection (path != player.id → 403) is covered separately
+    in test_security_authz.py::TestAut01NextTrainingCrossTenant.
+    """
     import llm.server as server_module
 
     if task is None:
@@ -93,7 +105,8 @@ def _call_next_training(
             return task
 
     monkeypatch.setattr(server_module, "scheduler", _CaptureScheduler())
-    result = server_module.next_training(player_id=player_id, _=None)
+    fake_player = SimpleNamespace(id=player_id, rating=1200.0, confidence=0.5)
+    result = server_module.next_training(player_id=player_id, player=fake_player)
     return result, recorded
 
 
@@ -320,14 +333,22 @@ def _depends_on(func_def, target: str) -> bool:
 class TestNextTrainingAstGuards:
     """AST inspection of server.py — authentication and HTTP method invariants."""
 
-    def test_next_training_has_verify_api_key_dependency(self):
-        """AST_NEXT_TRAINING_HAS_VERIFY_API_KEY"""
+    def test_next_training_has_get_current_player_dependency(self):
+        """AST_NEXT_TRAINING_HAS_GET_CURRENT_PLAYER
+
+        Updated from the original verify_api_key check after AUT-01: the
+        endpoint must authenticate the JWT-bound player so the cross-tenant
+        check (path player_id == str(player.id)) is enforceable.  The
+        previous verify_api_key dependency was insufficient because the
+        API key is shared across all clients and gave any caller access
+        to any player_id."""
         tree = _parse_server()
         func = _get_function(tree, "next_training")
         assert func is not None, "next_training() not found in server.py"
-        assert _depends_on(func, "verify_api_key"), (
-            "GET /next-training/{player_id} must have Depends(verify_api_key). "
-            "The endpoint returns player-specific training data and must be authenticated."
+        assert _depends_on(func, "get_current_player"), (
+            "GET /next-training/{player_id} must have Depends(get_current_player). "
+            "The endpoint returns player-specific training data; without a JWT-bound "
+            "player there is no identity to cross-check the path parameter against."
         )
 
     def test_next_training_decorator_is_get_method(self):

@@ -540,7 +540,11 @@ class TestApiContractStress:
         monkeypatch.setattr(server_module, "scheduler", SimpleNamespace(next_task=lambda *a: fake))
         required = {"topic", "difficulty", "format", "expected_gain"}
         for i in range(50):
-            result = server_module.next_training(player_id=f"player_{i}", _=None)
+            pid = f"player_{i}"
+            result = server_module.next_training(
+                player_id=pid,
+                player=SimpleNamespace(id=pid, rating=1200.0, confidence=0.5),
+            )
             missing = required - set(result.keys())
             assert not missing, f"API contract fields missing on call {i}: {missing}"
 
@@ -604,7 +608,10 @@ class TestApiContractStress:
         fake = TrainingTask(topic="endgame", difficulty=0.5, format="game", expected_gain=1.0)
         monkeypatch.setattr(server_module, "scheduler", SimpleNamespace(next_task=lambda *a: fake))
         for _ in range(20):
-            r = server_module.next_training(player_id="p1", _=None)
+            r = server_module.next_training(
+                player_id="p1",
+                player=SimpleNamespace(id="p1", rating=1200.0, confidence=0.5),
+            )
             assert "exercise_type" not in r
             assert "payload" not in r
 

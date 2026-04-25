@@ -1,107 +1,30 @@
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import Dict
-import uuid
+"""
+QUARANTINED — DO NOT IMPORT THIS MODULE'S `router`.
 
-# ------------------------------------------------------------------
-# In-memory store (replace with DB later)
-# ------------------------------------------------------------------
+This file used to expose three FastAPI routes under prefix /player:
+    POST /player/create
+    POST /player/update/{player_id}
+    GET  /player/state/{player_id}
 
-PLAYER_STORE: Dict[str, dict] = {}
+None of them performed any authentication or cross-tenant authorisation.
+update_player and get_player_state took a path parameter as the sole
+identifier — anyone reaching the endpoint could mutate or read any
+player's rating and tilt.
 
+The routes were never wired into the live application (server.py imports
+the safe top-level llm/player_api.py instead), but the file was kept
+around as a footgun: a single `app.include_router(...)` line in any
+future refactor would have exposed all three routes with no controls.
 
-# ------------------------------------------------------------------
-# Schemas
-# ------------------------------------------------------------------
+Tracked as AUT-02 in llm/tests/test_security_authz.py.
 
+This module is now quarantined.  The `router` symbol is `None` so any
+attempt to `app.include_router(router)` raises AttributeError at startup
+rather than silently re-publishing the unauthenticated routes.  If a
+properly-authenticated player API is ever needed, build it from scratch
+on top of get_current_player — do not resurrect this file.
+"""
 
-class PlayerCreateRequest(BaseModel):
-    name: str
-    initial_rating: int = 1200
-
-
-class PlayerUpdateRequest(BaseModel):
-    rating_delta: int
-    tilt: float | None = None
-
-
-class PlayerStateResponse(BaseModel):
-    player_id: str
-    name: str
-    rating: int
-    tilt: float
-
-
-# ------------------------------------------------------------------
-# Router
-# ------------------------------------------------------------------
-
-router = APIRouter(prefix="/player", tags=["player"])
-
-
-# ------------------------------------------------------------------
-# Create player
-# ------------------------------------------------------------------
-
-
-@router.post("/create", response_model=PlayerStateResponse)
-def create_player(req: PlayerCreateRequest):
-    player_id = str(uuid.uuid4())
-
-    PLAYER_STORE[player_id] = {
-        "name": req.name,
-        "rating": req.initial_rating,
-        "tilt": 0.0,
-    }
-
-    return PlayerStateResponse(
-        player_id=player_id,
-        name=req.name,
-        rating=req.initial_rating,
-        tilt=0.0,
-    )
-
-
-# ------------------------------------------------------------------
-# Update player
-# ------------------------------------------------------------------
-
-
-@router.post("/update/{player_id}", response_model=PlayerStateResponse)
-def update_player(player_id: str, req: PlayerUpdateRequest):
-    if player_id not in PLAYER_STORE:
-        raise HTTPException(status_code=404, detail="Player not found")
-
-    player = PLAYER_STORE[player_id]
-
-    player["rating"] += req.rating_delta
-
-    if req.tilt is not None:
-        player["tilt"] = max(0.0, min(1.0, req.tilt))
-
-    return PlayerStateResponse(
-        player_id=player_id,
-        name=player["name"],
-        rating=player["rating"],
-        tilt=player["tilt"],
-    )
-
-
-# ------------------------------------------------------------------
-# Get player state
-# ------------------------------------------------------------------
-
-
-@router.get("/state/{player_id}", response_model=PlayerStateResponse)
-def get_player_state(player_id: str):
-    if player_id not in PLAYER_STORE:
-        raise HTTPException(status_code=404, detail="Player not found")
-
-    player = PLAYER_STORE[player_id]
-
-    return PlayerStateResponse(
-        player_id=player_id,
-        name=player["name"],
-        rating=player["rating"],
-        tilt=player["tilt"],
-    )
+# Sentinel that fails fast if someone tries to wire this back into the app.
+router = None
+"""Intentionally None — see module docstring (AUT-02)."""

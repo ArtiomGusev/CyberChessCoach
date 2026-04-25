@@ -283,8 +283,13 @@ class TestNextTrainingContractSchema:
 
         monkeypatch.setattr(server_module, "scheduler", _FakeScheduler())
 
-        # Call handler directly (bypass auth dependency)
-        return server_module.next_training(player_id=player_id, _=None)
+        # Call handler directly.  After AUT-01 the dependency is
+        # get_current_player (JWT-derived) and the handler enforces
+        # path player_id == str(player.id).  Pin both to the same id
+        # so the legitimate code path is exercised.
+        from types import SimpleNamespace as _SN
+        fake_player = _SN(id=player_id, rating=1200.0, confidence=0.5)
+        return server_module.next_training(player_id=player_id, player=fake_player)
 
     def test_response_has_all_required_fields(self, monkeypatch):
         result = self._call_next_training(monkeypatch)
@@ -640,7 +645,10 @@ class TestNextTrainingSchemaConflict:
         monkeypatch.setattr(
             server_module, "scheduler", SimpleNamespace(next_task=lambda *a: fake_task)
         )
-        result = server_module.next_training(player_id="p1", _=None)
+        result = server_module.next_training(
+            player_id="p1",
+            player=SimpleNamespace(id="p1", rating=1200.0, confidence=0.5),
+        )
         assert "exercise_type" not in result
 
     def test_curriculum_next_schema_has_exercise_type_not_format(self):
@@ -678,7 +686,10 @@ class TestNextTrainingSchemaConflict:
         monkeypatch.setattr(
             server_module, "scheduler", SimpleNamespace(next_task=lambda *a: fake_task)
         )
-        result = server_module.next_training(player_id="p2", _=None)
+        result = server_module.next_training(
+            player_id="p2",
+            player=SimpleNamespace(id="p2", rating=1200.0, confidence=0.5),
+        )
         for field in ("topic", "difficulty", "format", "expected_gain"):
             assert field in result, (
                 f"Field '{field}' removed from /next-training response. "
