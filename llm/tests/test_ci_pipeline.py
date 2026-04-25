@@ -234,19 +234,18 @@ def test_security_workflow_uses_safe_checkout_and_codeql_v4():
     # See .github/scripts/filter_codeql_sarif.py for the rationale (one
     # accepted false positive: py/weak-cryptographic-hash on hashing.py).
     analyze_steps = [
-        s for s in codeql_python_job["steps"]
-        if s.get("uses") == "github/codeql-action/analyze@v4"
+        s for s in codeql_python_job["steps"] if s.get("uses") == "github/codeql-action/analyze@v4"
     ]
-    assert len(analyze_steps) == 1, (
-        "codeql-python must call github/codeql-action/analyze@v4 exactly once"
-    )
+    assert (
+        len(analyze_steps) == 1
+    ), "codeql-python must call github/codeql-action/analyze@v4 exactly once"
     analyze = analyze_steps[0]
-    assert analyze["with"]["upload"] == "never", (
-        "analyze must use upload: never so the filter step can run before SARIF upload"
-    )
-    assert analyze["with"]["output"] == "codeql-sarif", (
-        "analyze must write SARIF to the codeql-sarif directory the filter reads"
-    )
+    assert (
+        analyze["with"]["upload"] == "never"
+    ), "analyze must use upload: never so the filter step can run before SARIF upload"
+    assert (
+        analyze["with"]["output"] == "codeql-sarif"
+    ), "analyze must write SARIF to the codeql-sarif directory the filter reads"
 
     # Filter step runs after analyze, before upload.
     filter_step = _step_named(codeql_python_job, "Filter accepted false positives from SARIF")
@@ -548,20 +547,18 @@ def test_android_build_job_apk_step_uses_vars_not_secrets():
     push_apk = _step_named(android_build, "Build release APK (push)")
 
     for label, step in (("PR", pr_apk), ("push", push_apk)):
-        assert step["working-directory"] == "android", (
-            f"{label} APK build must run from android/"
-        )
-        assert step["run"] == "./gradlew assembleRelease --no-daemon", (
-            f"{label} APK build command changed unexpectedly"
-        )
+        assert step["working-directory"] == "android", f"{label} APK build must run from android/"
+        assert (
+            step["run"] == "./gradlew assembleRelease --no-daemon"
+        ), f"{label} APK build command changed unexpectedly"
         api_base_ref = step["env"]["COACH_API_BASE"]
         assert "vars.COACH_API_BASE" in api_base_ref, (
             f"{label}: COACH_API_BASE is visible in the APK; "
             f"use vars.COACH_API_BASE (not secrets.*)"
         )
-        assert "secrets.COACH_API_BASE" not in api_base_ref, (
-            f"{label}: COACH_API_BASE must come from vars, never secrets"
-        )
+        assert (
+            "secrets.COACH_API_BASE" not in api_base_ref
+        ), f"{label}: COACH_API_BASE must come from vars, never secrets"
 
     # Trigger gating: PR runs without the production key, push runs with it.
     assert pr_apk["if"] == "github.event_name == 'pull_request'"
