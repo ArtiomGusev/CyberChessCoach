@@ -318,8 +318,6 @@ class HttpGameApiClient(
         val json = JSONObject(text)
         return SecaStatusDto(
             safeModeEnabled = json.optBoolean("safe_mode", true),
-            banditEnabled   = json.optBoolean("bandit_enabled", false),
-            version         = json.optString("version", ""),
         )
     }
 

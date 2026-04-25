@@ -4,7 +4,8 @@ SECA status endpoint and SAFE_MODE constant tests.
 These tests verify three invariants critical for P4 auditability:
 1.  SAFE_MODE is permanently True in this release (no accidental disabling).
 2.  assert_safe() never raises while SAFE_MODE is True.
-3.  GET /seca/status returns the correct runtime flags without authentication.
+3.  GET /seca/status returns the correct runtime flag without authentication
+    AND does not leak the previously-exposed bandit_enabled / version fields.
 
 Test tiers
 ----------
@@ -14,14 +15,15 @@ Tier 2 — minimal FastAPI stub that mirrors the seca_status() handler logic,
 
 Invariants pinned
 -----------------
-  SAFE_MODE_CONST_TRUE    SAFE_MODE constant == True in safe_mode.py.
-  ASSERT_SAFE_NOOP        assert_safe() does not raise when SAFE_MODE is True.
-  STATUS_200              GET /seca/status returns HTTP 200.
-  STATUS_SAFE_MODE_TRUE   Response safe_mode field is True.
-  STATUS_BANDIT_FALSE     Response bandit_enabled field is False.
-  STATUS_HAS_VERSION      Response version field is a non-empty string.
-  STATUS_VERSION_1_0      Response version field equals "1.0".
-  STATUS_NO_AUTH          Endpoint is accessible without any API key.
+  SAFE_MODE_CONST_TRUE       SAFE_MODE constant == True in safe_mode.py.
+  ASSERT_SAFE_NOOP           assert_safe() does not raise when SAFE_MODE is True.
+  STATUS_200                 GET /seca/status returns HTTP 200.
+  STATUS_SAFE_MODE_TRUE      Response safe_mode field is True.
+  STATUS_NO_BANDIT_FIELD     Response does NOT include bandit_enabled
+                             (redundant with safe_mode; trimmed for info-leak).
+  STATUS_NO_VERSION_FIELD    Response does NOT include version
+                             (no client decision used it; trimmed for info-leak).
+  STATUS_NO_AUTH             Endpoint is accessible without any API key.
 """
 
 from __future__ import annotations
@@ -68,11 +70,7 @@ def _build_status_app() -> FastAPI:
 
     @stub.get("/seca/status")
     def seca_status():
-        return {
-            "safe_mode": SAFE_MODE,
-            "bandit_enabled": not SAFE_MODE,
-            "version": "1.0",
-        }
+        return {"safe_mode": SAFE_MODE}
 
     return stub
 
@@ -98,26 +96,32 @@ class TestSecaStatusEndpoint:
             f"safe_mode must be True, got {data.get('safe_mode')!r}"
         )
 
-    def test_status_bandit_enabled_false(self, status_client):
-        """STATUS_BANDIT_FALSE: bandit_enabled field is False."""
+    def test_status_no_bandit_field(self, status_client):
+        """STATUS_NO_BANDIT_FIELD: bandit_enabled must NOT be in the response.
+
+        Earlier releases returned ``{"safe_mode": True, "bandit_enabled": False, ...}``.
+        ``bandit_enabled`` is just ``not safe_mode`` — it added no information
+        a client could not derive, while explicitly disclosing RL-state to
+        unauthenticated callers.  The trim is asserted as a contract here so
+        a future careless restoration regresses loudly.
+        """
         data = status_client.get("/seca/status").json()
-        assert data.get("bandit_enabled") is False, (
-            f"bandit_enabled must be False, got {data.get('bandit_enabled')!r}"
+        assert "bandit_enabled" not in data, (
+            "bandit_enabled must not appear in /seca/status response — "
+            "it is redundant with safe_mode and was a small information leak."
         )
 
-    def test_status_has_version(self, status_client):
-        """STATUS_HAS_VERSION: version field is a non-empty string."""
-        data = status_client.get("/seca/status").json()
-        version = data.get("version")
-        assert isinstance(version, str) and version, (
-            f"version must be a non-empty string, got {version!r}"
-        )
+    def test_status_no_version_field(self, status_client):
+        """STATUS_NO_VERSION_FIELD: version must NOT be in the response.
 
-    def test_status_version_1_0(self, status_client):
-        """STATUS_VERSION_1_0: version field equals '1.0'."""
+        Earlier releases returned ``"version": "1.0"``.  No client decision
+        used the field; it added a fingerprintable surface with no
+        compensating use case.
+        """
         data = status_client.get("/seca/status").json()
-        assert data.get("version") == "1.0", (
-            f"version must be '1.0', got {data.get('version')!r}"
+        assert "version" not in data, (
+            "version must not appear in /seca/status response — "
+            "no client behaviour used it and it added a fingerprintable surface."
         )
 
     def test_status_no_auth_required(self, status_client):

@@ -84,7 +84,7 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             when (val r = gameApiClient.getSecaStatus()) {
                 is ApiResult.Success -> {
-                    Log.d("SECA", "seca/status: safe_mode=${r.data.safeModeEnabled} bandit_enabled=${r.data.banditEnabled} version=${r.data.version}")
+                    Log.d("SECA", "seca/status: safe_mode=${r.data.safeModeEnabled}")
                     if (!r.data.safeModeEnabled) {
                         Log.w("SECA", "WARNING: backend reports safe_mode=false — bandit training may be active")
                     }

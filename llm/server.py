@@ -765,19 +765,22 @@ def health():
 
 @app.get("/seca/status")
 def seca_status():
-    """Return SECA runtime safety flags.
+    """Return the SECA runtime safety flag.
 
-    Open endpoint (no auth): readable by Android at cold-start so the client
-    can confirm safe_mode is active before sending any coaching requests.
-    Always ``safe_mode: true`` in the current release; bandit training and
-    neural policy updates are hard-disabled via SAFE_MODE = True in
-    ``llm/seca/runtime/safe_mode.py``.
+    Open endpoint (no auth): readable by Android at cold-start so the
+    client can confirm ``safe_mode`` is active before sending coaching
+    requests.  Always ``safe_mode: true`` in the current release;
+    bandit training and neural policy updates are hard-disabled via
+    ``SAFE_MODE = True`` in ``llm/seca/runtime/safe_mode.py`` and
+    enforced at startup by ``llm/seca/safety/freeze.py``.
+
+    Response is intentionally minimal — the previous shape exposed
+    ``bandit_enabled`` (redundant; just ``not safe_mode``) and
+    ``version`` ("1.0", unused by any client decision), both of which
+    were small information-disclosure surfaces with no compensating
+    use case.
     """
-    return {
-        "safe_mode": SAFE_MODE,
-        "bandit_enabled": not SAFE_MODE,
-        "version": "1.0",
-    }
+    return {"safe_mode": SAFE_MODE}
 
 
 @app.get("/debug/engine")
