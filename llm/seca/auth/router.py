@@ -18,27 +18,50 @@ from .tokens import decode_token
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///data/seca.db")
 _is_sqlite = DATABASE_URL.startswith("sqlite")
 
+# create_engine itself does not open a connection — engine creation is
+# metadata-only.  Actual DDL / I/O happens later in init_schema(), which is
+# called from FastAPI lifespan and (for tests that bypass lifespan) from
+# the session-scoped autouse fixture in llm/conftest.py.
 if _is_sqlite:
-    os.makedirs("data", exist_ok=True)
     engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 else:
     engine = create_engine(DATABASE_URL)
 
 SessionLocal = sessionmaker(bind=engine)
 
-Base.metadata.create_all(bind=engine)
 
-# Add player_embedding column if missing (schema upgrade for SQLite instances
-# created before this column was added to the Player model).
-# On Postgres, create_all() generates the full schema, so no migration needed.
-if _is_sqlite:
-    with engine.connect() as conn:
-        rows = conn.execute(text("PRAGMA table_info(players)")).fetchall()
-        if "player_embedding" not in {r[1] for r in rows}:
-            conn.execute(
-                text("ALTER TABLE players ADD COLUMN player_embedding TEXT DEFAULT '[]'")
-            )
-            conn.commit()
+def init_schema() -> None:
+    """Create the SQLAlchemy schema and apply small SQLite-only migrations.
+
+    Idempotent — safe to call from FastAPI lifespan, the test conftest
+    fixture, or maintenance scripts.  Performs three ordered steps:
+
+    1.  For SQLite, ensure ``data/`` exists so the file-based DB can be
+        created on first connect.
+    2.  ``Base.metadata.create_all`` — adds any missing tables.
+    3.  ``ALTER TABLE players ADD COLUMN player_embedding`` — one-time
+        column addition for legacy SQLite instances created before the
+        column was added to the Player model.  Postgres deployments get
+        the column from create_all() and skip this step.
+
+    Must NOT run at module-import time: import-time DDL slows ``import
+    llm.seca.auth.router`` (used by every backend test for its Pydantic
+    schemas) and couples module loading to filesystem / DB I/O.
+    """
+    if _is_sqlite:
+        os.makedirs("data", exist_ok=True)
+
+    Base.metadata.create_all(bind=engine)
+
+    if _is_sqlite:
+        with engine.connect() as conn:
+            rows = conn.execute(text("PRAGMA table_info(players)")).fetchall()
+            if "player_embedding" not in {r[1] for r in rows}:
+                conn.execute(
+                    text("ALTER TABLE players ADD COLUMN player_embedding TEXT DEFAULT '[]'")
+                )
+                conn.commit()
+
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

@@ -25,7 +25,11 @@ try:
 except ImportError:
     # Supports top-level module execution (e.g. `uvicorn server:app`)
     from player_api import router as player_router
-from llm.seca.auth.router import router as auth_router, get_current_player
+from llm.seca.auth.router import (
+    router as auth_router,
+    get_current_player,
+    init_schema as init_auth_schema,
+)
 from llm.seca.events.router import router as game_router
 from llm.seca.curriculum.router import router as curriculum_router
 from llm.seca.inference.router import router as inference_router
@@ -95,6 +99,11 @@ async def lifespan(app: FastAPI):
     global world_model, async_predict_enabled, async_predict_plies, async_predict_movetime_ms
     try:
         init_db()
+        # SQLAlchemy schema + small SQLite-only migrations.  Moved out of
+        # auth/router.py module-import time so importing the router (e.g.
+        # to access Pydantic request models in tests) no longer pays the
+        # cost of opening the DB and running DDL.
+        init_auth_schema()
         world_model = SafeWorldModel()
         enforce(world_model)
         if os.name == "nt":
