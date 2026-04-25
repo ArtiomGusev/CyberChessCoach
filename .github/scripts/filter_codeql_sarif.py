@@ -2,14 +2,30 @@
 Filter CodeQL SARIF output before upload to GitHub Code Scanning.
 
 Removes individual alert instances we have explicitly accepted as false
-positives, while keeping the underlying queries enabled for every other file
-in the codebase.  Each entry in `_SUPPRESSIONS` documents which (rule, file,
-function) tuple is dropped and why.
+positives, while keeping the underlying queries enabled for every other
+file in the codebase.  Each entry in `_SUPPRESSIONS` documents which
+(rule, file) tuple is dropped and why.
 
 Run as:
     python filter_codeql_sarif.py <results-dir>
 
 The directory typically contains one *.sarif file per analysed language.
+
+Why match only (ruleId, file-path)?
+-----------------------------------
+A real CodeQL SARIF result for py/weak-cryptographic-hash carries the
+ruleId, a short message, and a physicalLocation pointing at the line.
+It does NOT carry the surrounding function name anywhere in the result
+object — that information is computed by the GitHub UI from the line
+number, not stored in the SARIF.  An older version of this script also
+required a function-name substring to match; that condition silently
+failed every run, so the alert was uploaded unchanged on every CodeQL
+scan even though the file said "filter applied".
+
+Each suppression entry must therefore narrowly identify a single ruleId
+in a single file.  If a file ever needs the same query suppressed in
+more than one place, refactor instead — bypass-by-config should be the
+last resort, not the first.
 """
 
 from __future__ import annotations
@@ -19,27 +35,35 @@ import os
 import sys
 from typing import Iterable
 
-# Tuples of (ruleId, path-substring, location-substring).
-# A SARIF result is dropped if it matches all three substrings.  Substrings,
-# not exact match, so the filter survives small SARIF format changes.
-_SUPPRESSIONS: tuple[tuple[str, str, str], ...] = (
-    (
-        "py/weak-cryptographic-hash",
-        "llm/seca/auth/hashing.py",
-        "_normalize_password_v1",
-    ),
+# Tuples of (ruleId, file-path-substring).  A SARIF result is dropped
+# if its ruleId matches AND any of its locations[].physicalLocation
+# .artifactLocation.uri contains the file-path-substring.
+_SUPPRESSIONS: tuple[tuple[str, str], ...] = (
+    # py/weak-cryptographic-hash on llm/seca/auth/hashing.py
+    # ───────────────────────────────────────────────────────
+    # The flagged call is hashlib.sha256(password.encode("utf-8")).digest()
+    # inside _normalize_password_v1.  This is the legacy v1 password-hash
+    # pre-normalisation step; the SHA-256 output is fed into PBKDF2-SHA256
+    # (600 000 iterations + per-hash random 16-byte salt) immediately
+    # afterwards.  The chain is secure; CodeQL's taint analysis cannot
+    # see past the first hash call, so it raises the alert in isolation.
+    # The function CANNOT be changed (any change breaks every existing
+    # v1 hash in the database).  The full rationale lives in the function
+    # docstring — anyone removing this suppression should read it first.
+    ("py/weak-cryptographic-hash", "llm/seca/auth/hashing.py"),
 )
 
 
-def _result_matches_suppression(result: dict, rule: str, path_sub: str, loc_sub: str) -> bool:
+def _result_matches_suppression(result: dict, rule: str, path_sub: str) -> bool:
     if result.get("ruleId") != rule:
         return False
-    serialized = json.dumps(result)
-    if path_sub not in serialized:
-        return False
-    if loc_sub not in serialized:
-        return False
-    return True
+    for loc in result.get("locations", []) or []:
+        physical = loc.get("physicalLocation", {}) or {}
+        artifact = physical.get("artifactLocation", {}) or {}
+        uri = artifact.get("uri") or ""
+        if path_sub in uri:
+            return True
+    return False
 
 
 def _filter_sarif_file(path: str) -> tuple[int, int]:
@@ -53,7 +77,8 @@ def _filter_sarif_file(path: str) -> tuple[int, int]:
         new_results = []
         for result in original:
             if any(
-                _result_matches_suppression(result, *s) for s in _SUPPRESSIONS
+                _result_matches_suppression(result, rule, path_sub)
+                for rule, path_sub in _SUPPRESSIONS
             ):
                 dropped += 1
                 continue
