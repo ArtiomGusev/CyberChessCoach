@@ -17,18 +17,30 @@ def _normalize_password(password: str) -> bytes:
 def _normalize_password_v1(password: str) -> bytes:
     """Legacy pre-processing step for hashes stored under the v1 scheme (pbkdf2-sha256).
 
-    SAST note (Bandit B324 / CWE-327): SHA-256 is flagged as a weak password-hashing
-    primitive, but this is a pre-processing step — not the full hashing chain.  The digest
-    is immediately fed into PBKDF2-SHA256 with 600 000 iterations and a per-hash random
-    16-byte salt.  PBKDF2 is the actual work-factor barrier against offline brute-force.
+    Security note (Bandit B324 / CWE-327 / CodeQL py/weak-cryptographic-hash):
+    SHA-256 is flagged as a weak password-hashing primitive when seen in isolation, but this
+    is NOT the full hashing chain.  The 32-byte digest is immediately used as the *key
+    material* for PBKDF2-SHA256 with 600 000 iterations and a per-hash random 16-byte salt
+    stored alongside every hash record.  PBKDF2 is the actual work-factor barrier against
+    offline brute-force; the SHA-256 step is only a fixed-length normalisation that feeds
+    into it.  The full chain — sha256(pw) → pbkdf2(digest, rand_salt, 600 000) — meets the
+    NIST SP 800-132 minimum recommendation for password storage.
 
-    This function MUST NOT be changed.  Altering the normalisation produces different
-    PBKDF2-derived keys for all existing v1 hashes in the database, silently breaking
-    authentication for those users.  The correct migration path is the opportunistic upgrade
-    in service.login(): every successful v1 login rewrites the stored hash to v2, which uses
-    _normalize_password().  No new v1 hashes are ever created; hash_password() always emits v2.
+    False-positive suppression rationale: CodeQL's py/weak-cryptographic-hash query identifies
+    the sha256 call because it sees raw password bytes entering a non-PBKDF2 hash function.
+    It does not track that the output is the *input* to PBKDF2, so it cannot determine that
+    the full chain is secure.  The suppression below is intentional and scoped to this line
+    only; the query remains active for all other files.
+
+    Immutability constraint: this function MUST NOT be changed.  Altering the normalisation
+    produces different PBKDF2-derived keys for all existing v1 hashes in the database,
+    silently breaking authentication for every user still on the legacy scheme.  The correct
+    migration path is the opportunistic upgrade in service.login(): every successful v1 login
+    rewrites the stored hash to v2, which uses _normalize_password() (PBKDF2-normalised).
+    No new v1 hashes are ever created; hash_password() always emits v2.
     """
-    return hashlib.sha256(password.encode("utf-8")).digest()  # nosec B324 — see docstring
+    # nosec B324 — see docstring; lgtm[py/weak-cryptographic-hash]
+    return hashlib.sha256(password.encode("utf-8")).digest()
 
 
 def hash_password(password: str) -> str:

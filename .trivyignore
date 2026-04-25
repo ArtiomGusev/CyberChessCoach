@@ -59,3 +59,12 @@ CVE-2026-5704 until:2027-07-01
 # config file. HIGH. Affects libsystemd0, libudev1 in python:3.13-slim.
 # The application does not use systemd-nspawn; accepted risk.
 CVE-2026-40226 until:2027-07-01
+
+# systemd 257.9-1~deb13u1: udev privilege escalation via malicious hardware
+# devices and unsanitized kernel output. MEDIUM. Affects libudev1.
+# Attack vector requires physical access to attach a crafted hardware device
+# to the host. The application is a containerised web backend deployed on
+# cloud VMs (Hetzner/Fly.io); it does not use udev, does not open device
+# nodes, and has no hardware enumeration code. Physical device access to
+# cloud infrastructure is outside the threat model. No fix in Debian 13.
+CVE-2026-40225 until:2027-07-01
