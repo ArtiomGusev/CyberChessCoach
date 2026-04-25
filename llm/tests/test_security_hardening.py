@@ -43,6 +43,10 @@ Stable test IDs (do NOT rename):
   SH_20b Session model expires_at has a non-null default
   SH_20c service.py get_player_by_session references expires_at
   SH_21  pytest in requirements-ci.txt is pinned at >= 8.1.0 (GHSA-w234-x5rp-h73c)
+  SH_22  v1 hashes verify correctly (PBKDF2 bottleneck maintained despite SHA-256 pre-step)
+  SH_23  v1 hashes always trigger needs_rehash() — auto-upgrade path is mandatory
+  SH_24  hash_password() never emits a v1-scheme hash — no new v1 hashes created
+  SH_25  service.py login contains opportunistic v1→v2 upgrade (source inspection)
 """
 
 from __future__ import annotations
@@ -774,4 +778,98 @@ class TestCIDependencySecurity:
             f"pytest=={pytest_version} in requirements-ci.txt is vulnerable to "
             "GHSA-w234-x5rp-h73c (tmpdir world-readable permissions, CVE-2024-3772). "
             "Upgrade pytest to >= 8.1.0 to fix this CVE."
+        )
+
+
+# ===========================================================================
+# SH_22 – SH_25 — v1 Hash Legacy Path (Bandit B324 SAST finding context)
+# ===========================================================================
+
+
+class TestV1HashLegacyPath:
+    """Regression tests for the v1 hashing scheme (pbkdf2-sha256).
+
+    SHA-256 is used as a normalization pre-step in _normalize_password_v1, not as the
+    sole password protection.  PBKDF2 with 600 000 iterations is applied on top.
+    These tests document the security properties that justify keeping the function
+    unchanged and pin the auto-upgrade path so it cannot be accidentally removed.
+    """
+
+    def _make_v1_hash(self, password: str) -> str:
+        import base64  # noqa: PLC0415
+        import hashlib  # noqa: PLC0415
+
+        from llm.seca.auth.hashing import _ITERATIONS, _SCHEME_V1, _normalize_password_v1  # noqa: PLC0415
+
+        normalized = _normalize_password_v1(password)
+        salt = os.urandom(16)
+        dk = hashlib.pbkdf2_hmac("sha256", normalized, salt, _ITERATIONS)
+        return f"${_SCHEME_V1}${_ITERATIONS}${base64.b64encode(salt).decode()}${base64.b64encode(dk).decode()}"
+
+    def test_sh22_v1_hash_verifies_correctly(self):
+        """SH_22: verify_password must accept the correct password for a v1-scheme hash.
+
+        PBKDF2 (600 000 iterations) is the real work factor — the SHA-256 pre-step does not
+        reduce cracking resistance meaningfully.  Changing _normalize_password_v1 would silently
+        break authentication for all existing v1 users; this test pins the contract.
+        """
+        from llm.seca.auth.hashing import verify_password  # noqa: PLC0415
+
+        pw = "legacy_user_password_v1_test!9"
+        v1_hash = self._make_v1_hash(pw)
+        assert verify_password(pw, v1_hash), (
+            "verify_password rejected the correct password for a v1-scheme hash. "
+            "Changing _normalize_password_v1 breaks authentication for existing v1 users."
+        )
+        assert not verify_password("wrong_password_xyz", v1_hash), (
+            "verify_password accepted an incorrect password for a v1-scheme hash."
+        )
+
+    def test_sh23_v1_hash_triggers_needs_rehash(self):
+        """SH_23: needs_rehash() must return True for any v1-scheme hash.
+
+        Every successful v1 login must trigger an opportunistic upgrade to v2.  If
+        needs_rehash() were to return False for v1 hashes, the migration path would stall
+        and v1 hashes would persist in the database indefinitely.
+        """
+        from llm.seca.auth.hashing import needs_rehash  # noqa: PLC0415
+
+        v1_hash = self._make_v1_hash("any_password_abc123!")
+        assert needs_rehash(v1_hash), (
+            "needs_rehash() returned False for a v1-scheme hash. "
+            "All v1 hashes must be scheduled for upgrade to v2 on next login."
+        )
+
+    def test_sh24_hash_password_never_emits_v1_scheme(self):
+        """SH_24: hash_password() must always produce a v2-scheme hash.
+
+        No new v1 hashes should ever be written to the database.  If hash_password() were
+        to emit a v1 hash, needs_rehash() would trigger on every login, causing an infinite
+        rehash loop, and the SAST finding would apply to newly created accounts.
+        """
+        from llm.seca.auth.hashing import _SCHEME, _SCHEME_V1, hash_password  # noqa: PLC0415
+
+        for pw in ("short1!A", "a" * 100, "unicode_pässwörð_123!"):
+            h = hash_password(pw)
+            scheme_field = h.split("$")[1] if h.startswith("$") else ""
+            assert scheme_field == _SCHEME, (
+                f"hash_password({pw!r}) emitted scheme {scheme_field!r} instead of {_SCHEME!r}: "
+                f"{h[:40]!r}. hash_password() must always create v2-scheme hashes."
+            )
+
+    def test_sh25_service_login_contains_opportunistic_upgrade(self):
+        """SH_25: service.py login() must contain the opportunistic v1→v2 upgrade.
+
+        Without this, v1 hashes would accumulate in the database indefinitely and the SAST
+        finding would remain permanently unmitigated.  This test pins the upgrade branch so
+        it cannot be removed without failing CI.
+        """
+        source = _read("seca/auth/service.py")
+        assert "needs_rehash" in source, (
+            "service.py does not call needs_rehash(). "
+            "The opportunistic v1→v2 upgrade path is missing from the login flow."
+        )
+        assert re.search(r"needs_rehash.*\n\s+.*hash_password|if needs_rehash", source), (
+            "service.py does not contain the 'if needs_rehash → hash_password' upgrade branch. "
+            "Every successful v1 login must rewrite the stored hash to v2."
         )

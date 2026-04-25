@@ -15,8 +15,20 @@ def _normalize_password(password: str) -> bytes:
 
 
 def _normalize_password_v1(password: str) -> bytes:
-    """Legacy normalisation path used by hashes stored before the v2 scheme."""
-    return hashlib.sha256(password.encode("utf-8")).digest()
+    """Legacy pre-processing step for hashes stored under the v1 scheme (pbkdf2-sha256).
+
+    SAST note (Bandit B324 / CWE-327): SHA-256 is flagged as a weak password-hashing
+    primitive, but this is a pre-processing step — not the full hashing chain.  The digest
+    is immediately fed into PBKDF2-SHA256 with 600 000 iterations and a per-hash random
+    16-byte salt.  PBKDF2 is the actual work-factor barrier against offline brute-force.
+
+    This function MUST NOT be changed.  Altering the normalisation produces different
+    PBKDF2-derived keys for all existing v1 hashes in the database, silently breaking
+    authentication for those users.  The correct migration path is the opportunistic upgrade
+    in service.login(): every successful v1 login rewrites the stored hash to v2, which uses
+    _normalize_password().  No new v1 hashes are ever created; hash_password() always emits v2.
+    """
+    return hashlib.sha256(password.encode("utf-8")).digest()  # nosec B324 — see docstring
 
 
 def hash_password(password: str) -> str:
