@@ -20,6 +20,8 @@ class AuthService:
     def register(self, email: str, password: str) -> Player:
         if len(password) < 8:
             raise ValueError("Password must be at least 8 characters")
+        if len(password) > 1000:
+            raise ValueError("Password too long (max 1000 chars)")
         if self.db.query(Player).filter_by(email=email).first():
             raise ValueError("Registration failed")
 
@@ -117,10 +119,14 @@ class AuthService:
     # Change password
     # ---------------------------
     def change_password(self, player: Player, current_password: str, new_password: str) -> None:
+        if len(current_password) > 1000:
+            raise ValueError("Password too long (max 1000 chars)")
         if not verify_password(current_password, player.password_hash):
             raise ValueError("Current password is incorrect")
         if len(new_password) < 8:
             raise ValueError("New password must be at least 8 characters")
+        if len(new_password) > 1000:
+            raise ValueError("Password too long (max 1000 chars)")
         player.password_hash = hash_password(new_password)
         # Revoke all sessions so stolen tokens can't be reused after a password change (H2)
         self.db.query(Session).filter(

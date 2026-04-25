@@ -29,6 +29,11 @@ Stable test IDs (do NOT rename):
   SVD_07b  FEN validator does not invoke chess.Board() for semantic checks
   SVD_07c  Semantically invalid but syntactically 6-part FEN passes validation
   SVD_08   StartGameRequest.player_id has no length validator
+  NEW_01   /auth/change-password has no rate-limit decorator
+  NEW_02   /game/start has no rate-limit decorator
+  NEW_03   /explain has no rate-limit decorator
+  NEW_04   seca/inference ExplainRequest.fen has no field validator
+  NEW_05   AnalyzeRequest.stockfish_json has no structural size limit
 """
 
 from __future__ import annotations
@@ -874,3 +879,247 @@ class TestStartGameRequestPlayerIdLength:
                 pass  # Fixed
             else:
                 pytest.skip(f"Import chain unavailable: {exc}")
+
+
+# ===========================================================================
+# NEW_01 — /auth/change-password: Missing Rate Limit
+# ===========================================================================
+
+
+class TestChangePasswordRateLimit:
+    """
+    /auth/change-password has no @limiter.limit decorator.
+
+    An authenticated attacker can call this endpoint at full network speed.
+    Before SVD-03 is fixed this enables CPU DoS (hashing very long passwords).
+    Even after SVD-03 is fixed, unlimited calls allow brute-forcing the current
+    password if a session token is stolen.  All other mutating auth endpoints
+    (/register, /login) carry explicit rate limits.
+
+    Fix: add @limiter.limit("5/minute") to change_password().
+    """
+
+    def test_new01_change_password_has_rate_limit(self):
+        """NEW_01: /auth/change-password must carry a @limiter.limit decorator."""
+        tree = _parse("seca/auth/router.py")
+        func = _find_func(tree, "change_password")
+        assert func is not None, "change_password not found in auth/router.py"
+
+        has_limiter = any(
+            isinstance(dec, ast.Call)
+            and isinstance(dec.func, ast.Attribute)
+            and dec.func.attr == "limit"
+            for dec in func.decorator_list
+        )
+        assert has_limiter, (
+            "NEW_01: /auth/change-password has no @limiter.limit decorator. "
+            "Without rate limiting, an authenticated attacker can call this endpoint "
+            "at full speed — enabling CPU DoS via long passwords and unlimited "
+            "password-guessing against stolen session tokens. "
+            "Add @limiter.limit('5/minute')."
+        )
+
+
+# ===========================================================================
+# NEW_02 — /game/start: Missing Rate Limit
+# ===========================================================================
+
+
+class TestGameStartRateLimit:
+    """
+    /game/start has no @limiter.limit decorator.
+
+    The endpoint writes one row to both the players table and the games table
+    per call.  A caller with the API key can create an unlimited number of rows,
+    filling the database and degrading read performance for all users.
+
+    Fix: add @limiter.limit("20/minute") to start_game().
+    """
+
+    def test_new02_game_start_has_rate_limit(self):
+        """NEW_02: /game/start must carry a @limiter.limit decorator."""
+        tree = _parse("server.py")
+        func = _find_func(tree, "start_game")
+        assert func is not None, "start_game not found in server.py"
+
+        has_limiter = any(
+            isinstance(dec, ast.Call)
+            and isinstance(dec.func, ast.Attribute)
+            and dec.func.attr == "limit"
+            for dec in func.decorator_list
+        )
+        assert has_limiter, (
+            "NEW_02: /game/start has no @limiter.limit decorator. "
+            "Any holder of the SECA_API_KEY can create unlimited rows in the players "
+            "and games tables, filling the database (DB DoS). "
+            "Add @limiter.limit('20/minute')."
+        )
+
+
+# ===========================================================================
+# NEW_03 — /explain: Missing Rate Limit
+# ===========================================================================
+
+
+class TestExplainRateLimit:
+    """
+    /explain (server.py) has no @limiter.limit decorator.
+
+    The endpoint runs FEN parsing and engine-signal extraction on every call.
+    A caller with the API key can submit requests at full speed, saturating CPU.
+
+    Fix: add @limiter.limit("30/minute") to explain().
+    """
+
+    def test_new03_explain_has_rate_limit(self):
+        """NEW_03: /explain must carry a @limiter.limit decorator."""
+        tree = _parse("server.py")
+
+        explain_funcs = [
+            n for n in ast.walk(tree)
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and n.name == "explain"
+        ]
+        assert explain_funcs, "explain() not found in server.py"
+
+        any_limited = any(
+            any(
+                isinstance(dec, ast.Call)
+                and isinstance(dec.func, ast.Attribute)
+                and dec.func.attr == "limit"
+                for dec in fn.decorator_list
+            )
+            for fn in explain_funcs
+        )
+        assert any_limited, (
+            "NEW_03: /explain has no @limiter.limit decorator. "
+            "The endpoint runs FEN parsing and engine-signal extraction synchronously. "
+            "A caller with the SECA_API_KEY can flood it at line speed, saturating CPU. "
+            "Add @limiter.limit('30/minute')."
+        )
+
+
+# ===========================================================================
+# NEW_04 — seca/inference ExplainRequest.fen: No Field Validator
+# ===========================================================================
+
+
+class TestInferenceExplainFenValidation:
+    """
+    seca/inference/router.py::ExplainRequest.fen has no @field_validator.
+
+    Any string (including a 10 MB string) is accepted and passed directly to
+    explain_position(fen), which feeds it to extract_engine_signal() and then
+    chess.Board().  chess.Board() is wrapped in try/except there, so there is no
+    500 risk, but no length cap means unbounded input reaches the chess library.
+
+    Fix: add a @field_validator("fen") mirroring _validate_fen_field() from
+    server.py — 6-part structure, ≤ 100 chars, chess.Board() parse check.
+    """
+
+    def test_new04_inference_explain_request_has_fen_validator(self):
+        """NEW_04: ExplainRequest in inference/router.py must have a @field_validator('fen')."""
+        tree = _parse("seca/inference/router.py")
+        cls = _find_class(tree, "ExplainRequest")
+        assert cls is not None, "ExplainRequest not found in seca/inference/router.py"
+        assert _has_field_validator(cls, "fen"), (
+            "NEW_04: ExplainRequest has no @field_validator('fen'). "
+            "The fen field accepts any string — including multi-megabyte inputs — "
+            "which are forwarded to the chess library with no length cap. "
+            "Add a @field_validator('fen') capping at 100 chars and validating semantics."
+        )
+
+    def test_new04b_inference_explain_request_rejects_invalid_fen(self):
+        """NEW_04b: ExplainRequest must reject semantically invalid FEN strings."""
+        os.environ.setdefault("SECA_API_KEY", "test")
+        os.environ.setdefault("SECA_ENV", "dev")
+
+        try:
+            from pydantic import ValidationError
+            from llm.seca.inference.router import ExplainRequest
+
+            with pytest.raises(ValidationError):
+                ExplainRequest(fen="X X X X X X")
+        except ImportError as exc:
+            pytest.skip(f"Import chain unavailable: {exc}")
+
+    def test_new04c_inference_explain_request_accepts_valid_fen(self):
+        """NEW_04c: ExplainRequest must accept a valid FEN string."""
+        os.environ.setdefault("SECA_API_KEY", "test")
+        os.environ.setdefault("SECA_ENV", "dev")
+
+        try:
+            from llm.seca.inference.router import ExplainRequest
+
+            req = ExplainRequest(fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+            assert req.fen is not None
+        except ImportError as exc:
+            pytest.skip(f"Import chain unavailable: {exc}")
+
+
+# ===========================================================================
+# NEW_05 — AnalyzeRequest.stockfish_json: No Structural Limit
+# ===========================================================================
+
+
+class TestAnalyzeRequestStockfishJsonLimit:
+    """
+    AnalyzeRequest.stockfish_json: dict | None has no key-count or depth limit.
+
+    A caller can send a dict with tens of thousands of keys or deeply nested
+    sub-dicts.  The body size limit (512 KB) provides partial protection, but a
+    compactly encoded JSON with many shallow keys can still be large enough to
+    cause significant parsing overhead.
+
+    Fix: add a @field_validator("stockfish_json") capping top-level keys at 50
+    and nested dict keys at 50 (consistent with other dict-typed fields in the API).
+    """
+
+    def test_new05_analyze_request_has_stockfish_json_validator(self):
+        """NEW_05: AnalyzeRequest must have a @field_validator('stockfish_json')."""
+        tree = _parse("server.py")
+        cls = _find_class(tree, "AnalyzeRequest")
+        assert cls is not None, "AnalyzeRequest not found in server.py"
+        assert _has_field_validator(cls, "stockfish_json"), (
+            "NEW_05: AnalyzeRequest has no @field_validator('stockfish_json'). "
+            "The field accepts dicts of arbitrary size. A compact JSON with thousands "
+            "of keys can pass the 512 KB body limit while still causing significant "
+            "parsing overhead. Add a validator capping to ≤50 keys at each level."
+        )
+
+    def test_new05b_analyze_request_rejects_oversized_stockfish_json(self):
+        """NEW_05b: AnalyzeRequest must reject stockfish_json with more than 50 top-level keys."""
+        os.environ.setdefault("SECA_API_KEY", "test")
+        os.environ.setdefault("SECA_ENV", "dev")
+
+        try:
+            from pydantic import ValidationError
+            from llm.server import AnalyzeRequest
+
+            with pytest.raises(ValidationError):
+                AnalyzeRequest(
+                    fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                    stockfish_json={str(i): i for i in range(100)},
+                )
+        except ImportError as exc:
+            pytest.skip(f"Import chain unavailable: {exc}")
+
+    def test_new05c_analyze_request_accepts_normal_stockfish_json(self):
+        """NEW_05c: AnalyzeRequest must accept a normally sized stockfish_json dict."""
+        os.environ.setdefault("SECA_API_KEY", "test")
+        os.environ.setdefault("SECA_ENV", "dev")
+
+        try:
+            from llm.server import AnalyzeRequest
+
+            req = AnalyzeRequest(
+                fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                stockfish_json={
+                    "evaluation": {"type": "cp", "value": 30},
+                    "phase": "middlegame",
+                    "errors": {"last_move_quality": "ok"},
+                },
+            )
+            assert req.stockfish_json is not None
+        except ImportError as exc:
+            pytest.skip(f"Import chain unavailable: {exc}")

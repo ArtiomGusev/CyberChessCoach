@@ -3,6 +3,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import shutil
 import chess
 import time
@@ -439,11 +440,16 @@ def _validate_fen_field(v: str) -> str:
     parts = stripped.split()
     if len(parts) != 6 or len(stripped) > 100:
         raise ValueError("invalid FEN")
+    try:
+        chess.Board(stripped)
+    except ValueError:
+        raise ValueError("invalid FEN")
     return v
 
 
 _MOVES_UCI_MAX_ENTRIES = 500
 _MOVES_UCI_MAX_ELEMENT_LEN = 5
+_UCI_RE = re.compile(r"^[a-h][1-8][a-h][1-8][qrbnQRBN]?$")
 
 
 class MoveRequest(BaseModel):
@@ -495,6 +501,17 @@ class AnalyzeRequest(BaseModel):
     def validate_fen(cls, v: str) -> str:
         return _validate_fen_field(v)
 
+    @field_validator("stockfish_json")
+    @classmethod
+    def validate_stockfish_json(cls, v: dict | None) -> dict | None:
+        if v is not None:
+            if len(v) > 50:
+                raise ValueError("stockfish_json too many keys (max 50)")
+            for val in v.values():
+                if isinstance(val, dict) and len(val) > 50:
+                    raise ValueError("stockfish_json nested dict too many keys (max 50)")
+        return v
+
     @field_validator("user_query")
     @classmethod
     def validate_user_query(cls, v: str | None) -> str | None:
@@ -516,9 +533,10 @@ class LiveMoveRequest(BaseModel):
     @field_validator("uci")
     @classmethod
     def validate_uci(cls, v: str) -> str:
-        # UCI moves are 4–5 chars: source square (2) + target square (2) + optional promotion (1)
-        if not (4 <= len(v) <= 5):
-            raise ValueError("uci move must be 4–5 characters")
+        if not re.fullmatch(r"[a-h][1-8][a-h][1-8][qrbnQRBN]?", v):
+            raise ValueError(
+                "uci move must be [a-h][1-8][a-h][1-8] with optional promotion [qrbnQRBN]"
+            )
         return v
 
     @field_validator("player_id")
@@ -531,6 +549,13 @@ class LiveMoveRequest(BaseModel):
 
 class StartGameRequest(BaseModel):
     player_id: str
+
+    @field_validator("player_id")
+    @classmethod
+    def validate_player_id(cls, v: str) -> str:
+        if len(v) > 100:
+            raise ValueError("player_id too long (max 100 chars)")
+        return v
 
 
 class OutcomeRequest(BaseModel):
@@ -989,7 +1014,8 @@ def next_training(player_id: str, _: str = Depends(verify_api_key)):
 
 
 @app.post("/game/start")
-def start_game(req: StartGameRequest, _: str = Depends(verify_api_key)):
+@limiter.limit("20/minute")
+def start_game(req: StartGameRequest, request: Request, _: str = Depends(verify_api_key)):
     game_id = create_game(req.player_id)
     return {"game_id": game_id}
 
@@ -1000,7 +1026,8 @@ def start_game(req: StartGameRequest, _: str = Depends(verify_api_key)):
 
 
 @app.post("/explain")
-def explain(req: AnalyzeRequest, _: str = Depends(verify_api_key)):
+@limiter.limit("30/minute")
+def explain(req: AnalyzeRequest, request: Request, _: str = Depends(verify_api_key)):
     engine_signal = extract_engine_signal(req.stockfish_json, fen=req.fen)
     explanation = safe_explainer.explain(engine_signal)
 

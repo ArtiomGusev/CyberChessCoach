@@ -93,11 +93,25 @@ class RegisterRequest(BaseModel):
             raise ValueError("Invalid email address")
         return v
 
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        if len(v) > 1000:
+            raise ValueError("password too long (max 1000 chars)")
+        return v
+
 
 class LoginRequest(BaseModel):
     email: str
     password: str
     device_info: str = ""
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        if len(v) > 1000:
+            raise ValueError("password too long (max 1000 chars)")
+        return v
 
     @field_validator("device_info")
     @classmethod
@@ -110,6 +124,13 @@ class LoginRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
+
+    @field_validator("current_password", "new_password")
+    @classmethod
+    def validate_password_length(cls, v: str) -> str:
+        if len(v) > 1000:
+            raise ValueError("password too long (max 1000 chars)")
+        return v
 
 
 # ---------------------------
@@ -179,8 +200,10 @@ def me(player=Depends(get_current_player)):
 
 
 @router.post("/change-password")
+@limiter.limit("5/minute")
 def change_password(
     req: ChangePasswordRequest,
+    request: Request,
     player=Depends(get_current_player),
     db: DBSession = Depends(get_db),
 ):
