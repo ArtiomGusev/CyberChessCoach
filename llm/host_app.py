@@ -126,6 +126,35 @@ class _LimitBodySize(BaseHTTPMiddleware):
 app.add_middleware(_LimitBodySize)
 
 
+# ---- Security response headers -------------------------------------------
+# Mirrors server.py — defense-in-depth headers applied to every response.
+# host_app.py is the engine-evaluation FastAPI sub-server; if it is ever
+# exposed beyond the internal network, browser clients still get a strict
+# default-deny posture.  See test_security_headers.py HDR-03.
+_CSP_HEADER = (
+    "default-src 'none'; "
+    "frame-ancestors 'none'; "
+    "base-uri 'none'; "
+    "form-action 'none'"
+)
+_PERMISSIONS_POLICY_HEADER = (
+    "accelerometer=(), camera=(), geolocation=(), gyroscope=(), "
+    "magnetometer=(), microphone=(), payment=(), usb=()"
+)
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = _CSP_HEADER
+    response.headers["Permissions-Policy"] = _PERMISSIONS_POLICY_HEADER
+    return response
+
+
 @app.exception_handler(RateLimitExceeded)
 async def _rate_limit_handler(request: Request, exc: RateLimitExceeded):
     return JSONResponse(status_code=429, content={"error": "Too many requests"})

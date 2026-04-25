@@ -216,6 +216,23 @@ app.add_middleware(_LimitBodySize)
 
 
 # ---- Security response headers -------------------------------------------
+# Defense-in-depth response headers.  This API serves JSON only — CSP and
+# Permissions-Policy are precautions in case any future error path or
+# misbehaving middleware emits HTML; with default-src 'none' no script,
+# frame, or sub-resource can execute even if the body is rendered, and the
+# Permissions-Policy block keeps every sensitive browser feature disabled.
+_CSP_HEADER = (
+    "default-src 'none'; "
+    "frame-ancestors 'none'; "
+    "base-uri 'none'; "
+    "form-action 'none'"
+)
+_PERMISSIONS_POLICY_HEADER = (
+    "accelerometer=(), camera=(), geolocation=(), gyroscope=(), "
+    "magnetometer=(), microphone=(), payment=(), usb=()"
+)
+
+
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
@@ -223,6 +240,8 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = _CSP_HEADER
+    response.headers["Permissions-Policy"] = _PERMISSIONS_POLICY_HEADER
     return response
 
 
@@ -1050,7 +1069,17 @@ def explain(req: AnalyzeRequest, request: Request, _: str = Depends(verify_api_k
 @app.post("/explanation_outcome")
 @limiter.limit("20/minute")
 def report_outcome(req: OutcomeRequest, request: Request, _: None = Depends(verify_api_key)):
-    tracker.record_outcome(**req.dict())
+    # record_outcome() raises ValueError("Unknown explanation_id") when the id
+    # is not already registered via record_explanation().  Nothing in the live
+    # request path currently registers ids, so every call landed here would
+    # otherwise propagate as 500 with a logged stack trace — a free way for
+    # any API-key holder to spam the log pipeline (TRK-01).  Catch it and
+    # return a clean 400 with a generic message that does not reveal whether
+    # any specific id is or isn't present in the tracker.
+    try:
+        tracker.record_outcome(**req.dict())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid explanation_id")
 
     score = tracker.compute_learning_score(req.explanation_id)
 
