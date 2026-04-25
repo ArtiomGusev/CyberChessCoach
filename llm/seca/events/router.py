@@ -114,6 +114,13 @@ class GameFinishRequest(BaseModel):
         for k, val in v.items():
             if not isinstance(k, str) or len(k) > 100:
                 raise ValueError("weakness key must be a string ≤ 100 chars")
+            # Reject C0 controls (0x00-0x1f) and DEL (0x7f).  Stored verbatim in
+            # weaknesses_json and joined into log lines elsewhere; without this
+            # check an attacker could plant a CRLF or null byte that surfaces
+            # in downstream log/audit-tooling consumers.
+            for ch in k:
+                if ord(ch) < 0x20 or ord(ch) == 0x7f:
+                    raise ValueError("weakness key contains control characters")
             if not isinstance(val, (int, float)):
                 raise ValueError("weakness values must be numeric")
         return v

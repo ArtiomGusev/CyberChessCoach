@@ -89,6 +89,11 @@ from pydantic import BaseModel, field_validator
 # This is intentionally stricter than the previous "contains '@'" check.
 _EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$")
 
+# Bytes 0x00–0x1f (C0 controls) and 0x7f (DEL).  These have no legitimate
+# place in any user-supplied identifier or device string and enable log
+# injection / XSS shapes if a downstream consumer ever displays the value.
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
+
 
 def _validate_email_strict(v: str) -> str:
     v = v.strip()
@@ -96,6 +101,12 @@ def _validate_email_strict(v: str) -> str:
         raise ValueError("Invalid email address")
     if not _EMAIL_RE.fullmatch(v):
         raise ValueError("Invalid email address")
+    return v
+
+
+def _reject_control_chars(field: str, v: str) -> str:
+    if _CONTROL_CHARS_RE.search(v):
+        raise ValueError(f"{field} contains control characters")
     return v
 
 
@@ -138,7 +149,7 @@ class LoginRequest(BaseModel):
     def validate_device_info(cls, v: str) -> str:
         if len(v) > 200:
             raise ValueError("device_info too long (max 200 chars)")
-        return v
+        return _reject_control_chars("device_info", v)
 
 
 class ChangePasswordRequest(BaseModel):
