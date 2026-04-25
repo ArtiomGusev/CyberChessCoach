@@ -24,5 +24,5 @@ def eval_cache_key(
     nodes: int | None = None,
 ) -> str:
     position_fen, _, _ = _position_input.normalize_position(fen=fen, moves=moves)
-    digest = hashlib.sha1(position_fen.encode("utf-8")).hexdigest()[:12]
+    digest = hashlib.sha256(position_fen.encode("utf-8")).hexdigest()[:12]
     return f"cc:eval:{digest}:{_limit_suffix(movetime_ms=movetime_ms, nodes=nodes)}"

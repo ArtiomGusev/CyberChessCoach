@@ -16,7 +16,7 @@ WEAK_SLOT_COUNT = INPUT_DIM - WEAK_START
 
 
 def _hash_key(key: str) -> int:
-    digest = hashlib.md5(key.encode("utf-8")).digest()
+    digest = hashlib.sha256(key.encode("utf-8")).digest()
     return int.from_bytes(digest[:4], "little") % WEAK_SLOT_COUNT
 
 

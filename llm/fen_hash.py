@@ -4,4 +4,4 @@ import hashlib
 
 
 def fen_hash(fen: str) -> str:
-    return hashlib.sha1(fen.encode("utf-8")).hexdigest()[:8]
+    return hashlib.sha256(fen.encode("utf-8")).hexdigest()[:16]
