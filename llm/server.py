@@ -186,10 +186,21 @@ app.add_middleware(
 _MAX_BODY_BYTES = 512 * 1024
 
 
+_BODY_METHODS = frozenset({"POST", "PUT", "PATCH"})
+
+
 class _LimitBodySize(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         cl = request.headers.get("content-length")
-        if cl:
+        if cl is None:
+            # Chunked-encoded or header-less POST/PUT/PATCH bodies bypass a
+            # header-only size check entirely.  Require Content-Length for all
+            # body-carrying methods so the limit is always enforceable.
+            if request.method in _BODY_METHODS:
+                return JSONResponse(
+                    status_code=411, content={"error": "Content-Length header required"}
+                )
+        else:
             try:
                 if int(cl) > _MAX_BODY_BYTES:
                     return JSONResponse(
@@ -431,6 +442,10 @@ def _validate_fen_field(v: str) -> str:
     return v
 
 
+_MOVES_UCI_MAX_ENTRIES = 500
+_MOVES_UCI_MAX_ELEMENT_LEN = 5
+
+
 class MoveRequest(BaseModel):
     fen: str
     moves_uci: list[str] | None = None
@@ -441,6 +456,19 @@ class MoveRequest(BaseModel):
     @classmethod
     def validate_fen(cls, v: str) -> str:
         return _validate_fen_field(v)
+
+    @field_validator("moves_uci")
+    @classmethod
+    def validate_moves_uci(cls, v: list[str] | None) -> list[str] | None:
+        if v is not None:
+            if len(v) > _MOVES_UCI_MAX_ENTRIES:
+                raise ValueError(f"moves_uci too many entries (max {_MOVES_UCI_MAX_ENTRIES})")
+            for move in v:
+                if len(move) > _MOVES_UCI_MAX_ELEMENT_LEN:
+                    raise ValueError(
+                        f"moves_uci element too long (max {_MOVES_UCI_MAX_ELEMENT_LEN} chars)"
+                    )
+        return v
 
     @field_validator("mode")
     @classmethod
@@ -614,6 +642,11 @@ class ChatRequest(BaseModel):
             total = sum(len(str(k)) + len(str(val)) for k, val in v.items())
             if total > 2000:
                 raise ValueError("player_profile too large (max 2000 chars total)")
+            for k, val in v.items():
+                if isinstance(k, str):
+                    sanitize_user_query(k)
+                if isinstance(val, str):
+                    sanitize_user_query(val)
         return v
     move_count: int | None = None
 
@@ -638,6 +671,7 @@ class ChatRequest(BaseModel):
             for item in v:
                 if len(item) > 500:
                     raise ValueError("past_mistakes item too long (max 500 chars)")
+                sanitize_user_query(item)
         return v
 
     @field_validator("move_count")
