@@ -3,6 +3,7 @@ import json
 import logging
 import re
 
+import chess
 import chess.pgn
 
 _PGN_HEADER_RE = re.compile(r'^\s*\[\s*\w+\s+"[^"]*"\s*\]', re.MULTILINE)
@@ -42,6 +43,10 @@ class CoachFeedbackRequest(BaseModel):
             return v
         parts = stripped.split()
         if len(parts) != 6 or len(stripped) > 100:
+            raise ValueError("invalid FEN")
+        try:
+            chess.Board(stripped)
+        except ValueError:
             raise ValueError("invalid FEN")
         return v
 

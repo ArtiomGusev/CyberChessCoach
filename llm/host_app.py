@@ -12,7 +12,8 @@ from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+import chess
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 from starlette.middleware.base import BaseHTTPMiddleware
 
 # Setup logging
@@ -147,6 +148,22 @@ opening_book = OpeningBook()
 engine_service = EliteEngineService(engine_eval, opening_book=opening_book)
 
 
+def _validate_engine_fen(v: str | None) -> str | None:
+    if v is None:
+        return v
+    stripped = v.strip()
+    if stripped.lower() == "startpos":
+        return v
+    parts = stripped.split()
+    if len(parts) != 6 or len(stripped) > 100:
+        raise ValueError("invalid FEN")
+    try:
+        chess.Board(stripped)
+    except ValueError:
+        raise ValueError("invalid FEN")
+    return v
+
+
 class EngineEvalRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -157,6 +174,35 @@ class EngineEvalRequest(BaseModel):
         validation_alias=AliasChoices("movetime_ms", "movetime"),
     )
     nodes: int | None = None
+
+    @field_validator("fen")
+    @classmethod
+    def validate_fen(cls, v: str | None) -> str | None:
+        return _validate_engine_fen(v)
+
+    @field_validator("moves")
+    @classmethod
+    def validate_moves(cls, v: List[str]) -> List[str]:
+        if len(v) > 500:
+            raise ValueError("moves too many entries (max 500)")
+        for move in v:
+            if len(move) > 5:
+                raise ValueError("move element too long (max 5 chars)")
+        return v
+
+    @field_validator("movetime_ms")
+    @classmethod
+    def validate_movetime_ms(cls, v: int | None) -> int | None:
+        if v is not None and not (1 <= v <= 60_000):
+            raise ValueError("movetime_ms must be 1–60000")
+        return v
+
+    @field_validator("nodes")
+    @classmethod
+    def validate_nodes(cls, v: int | None) -> int | None:
+        if v is not None and not (1 <= v <= 10_000_000):
+            raise ValueError("nodes must be 1–10000000")
+        return v
 
     @property
     def movetime(self) -> int | None:
@@ -349,6 +395,10 @@ def debug_miss_metrics(_: None = Depends(verify_api_key)):
 @app.get("/engine/predictions")
 @_limiter.limit("30/minute")
 async def engine_predictions(request: Request, fen: str):
+    try:
+        _validate_engine_fen(fen)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="invalid FEN")
     normalized_fen = normalize_fen(fen) or fen
     return {
         "fen": normalized_fen,
