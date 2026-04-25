@@ -1,1 +1,0 @@
-"""Research evaluation utilities."""
