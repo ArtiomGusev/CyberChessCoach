@@ -53,15 +53,40 @@ def _raise(reason: str) -> None:
 
 
 class FreezeBrainAllowlistTest(unittest.TestCase):
-    """Layer 1: only ALLOWED_BRAIN_MODULES may load under brain/*."""
+    """Layer 1: only ALLOWED_BRAIN_MODULES may load under brain/*.
+
+    Other tests in the wider suite (notably test_bug_regressions) import
+    dormant brain modules like brain.bandit.contextual_bandit on purpose to
+    exercise their internal classes.  Once imported, those modules stay in
+    sys.modules and would cause every subsequent _scan_loaded_modules()
+    call to crash.  setUp/tearDown therefore *temporarily* remove any
+    non-allowlisted brain.* entry from sys.modules so each freeze test
+    sees a clean, production-shaped runtime — and restores them afterward
+    so we do not affect later tests in the run.
+    """
 
     def setUp(self):
-        self._snapshot = set(sys.modules.keys())
+        # Snapshot pre-test sys.modules so additions made during the test
+        # can be discarded.
+        self._initial_keys = set(sys.modules.keys())
+        # Save and temporarily remove non-allowlisted brain.* entries that
+        # earlier suite tests may have imported.
+        self._stashed: dict[str, types.ModuleType] = {}
+        for name in list(sys.modules.keys()):
+            if (
+                name.startswith("llm.seca.brain.")
+                and name not in freeze.ALLOWED_BRAIN_MODULES
+            ):
+                self._stashed[name] = sys.modules.pop(name)
 
     def tearDown(self):
+        # Discard any module added during the test
         for name in list(sys.modules.keys()):
-            if name not in self._snapshot:
+            if name not in self._initial_keys and name not in self._stashed:
                 del sys.modules[name]
+        # Restore originally-stashed modules
+        for name, mod in self._stashed.items():
+            sys.modules[name] = mod
 
     def _inject_module(self, name: str) -> None:
         """Insert a bare module object at *name* in sys.modules.  No source
@@ -119,18 +144,35 @@ class FreezeBrainAllowlistTest(unittest.TestCase):
 
 
 class FreezeKeywordScanTest(unittest.TestCase):
-    """Layer 2: forbidden source keywords anywhere in seca/* must crash."""
+    """Layer 2: forbidden source keywords anywhere in seca/* must crash.
+
+    Same hermetic-runtime requirement as FreezeBrainAllowlistTest: prior
+    suite tests may have left non-allowlisted brain.* modules in
+    sys.modules; those would crash the scan with the wrong reason before
+    our fixture's keyword-bearing module is ever inspected.  setUp/
+    tearDown stash and restore them so each test sees a production-shaped
+    starting state.
+    """
 
     def setUp(self):
-        self._snapshot = set(sys.modules.keys())
+        self._initial_keys = set(sys.modules.keys())
+        self._stashed: dict[str, types.ModuleType] = {}
+        for name in list(sys.modules.keys()):
+            if (
+                name.startswith("llm.seca.brain.")
+                and name not in freeze.ALLOWED_BRAIN_MODULES
+            ):
+                self._stashed[name] = sys.modules.pop(name)
         # Use a temp directory so the fixture file is removed on teardown
         self._tmp = tempfile.TemporaryDirectory()
         self._tmp_path = pathlib.Path(self._tmp.name)
 
     def tearDown(self):
         for name in list(sys.modules.keys()):
-            if name not in self._snapshot:
+            if name not in self._initial_keys and name not in self._stashed:
                 del sys.modules[name]
+        for name, mod in self._stashed.items():
+            sys.modules[name] = mod
         self._tmp.cleanup()
 
     def _load_fixture(self, fake_module_name: str, source: str) -> None:
