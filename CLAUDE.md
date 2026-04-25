@@ -1,11 +1,5 @@
 # CLAUDE.md
 
-@.claude/context/architecture.md
-@.claude/context/pipeline.md
-@.claude/context/engine.md
-@.claude/context/seca.md
-@.claude/context/api.md
-
 ## Project Rules
 
 1. Engine output is the chess source of truth.
@@ -15,7 +9,7 @@
 5. Never weaken tests or validators to make them pass.
 6. Never push before all required validation passes.
 7. Prefer minimal, localized, layer-correct changes.
-8. The architecture defined in `ARCHITECTURE.md` and `docs/ARCHITECTURE.md` must not be violated.
+8. The architecture defined in `docs/ARCHITECTURE.md` must not be violated.
 9. Commits must describe changes in detail.
 
 ## Required Reviews
@@ -28,7 +22,7 @@
 
 ## Required Workflow
 
-1. Read this file and the relevant `.claude/context/*.md` handbooks before editing.
+1. Read this file and the referenced `ARCHITECTURE.md` / `TESTING.md` before editing.
 2. Use Explore or equivalent read-only inspection first to find the relevant code paths.
 3. Summarize the affected modules and propose a minimal plan before making changes.
 4. Modify only the necessary files in the correct layer.
@@ -57,21 +51,12 @@
 - `engine/`: native engine code and engine-side experiments
 - `docs/`: architecture, testing, operations, and release references
 - `.claude/agents/`: project subagents
-- `.claude/context/`: imported repo handbooks
 - `.claude/hooks/`: deterministic governance hooks
 
 ## References
 
-- `ARCHITECTURE.md`
 - `docs/ARCHITECTURE.md`
-- `TESTING.md`
 - `docs/TESTING.md`
-- `docs/CLAUDE_SETUP_GUARDRAILS.md`
-- `.claude/context/architecture.md`
-- `.claude/context/pipeline.md`
-- `.claude/context/engine.md`
-- `.claude/context/seca.md`
-- `.claude/context/api.md`
 
 ## Developer Setup
 

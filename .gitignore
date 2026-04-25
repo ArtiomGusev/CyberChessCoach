@@ -8,9 +8,12 @@ __pycache__/
 *.pyc
 venv/
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 .coverage
 tmp_logs/
 dump.rdb
+k6-summary*.json
+hs_err_pid*.log
 
 # ========= ANDROID =========
 android/.gradle/

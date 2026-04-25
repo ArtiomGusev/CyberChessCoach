@@ -17,12 +17,10 @@ fi
 # ── 2. ARCHITECTURE RULES ────────────────────────
 echo ""
 echo "[ 2/8 ] Reading architecture rules..."
-if [ -f "docs/architecture.md" ]; then
-  cat docs/architecture.md
-elif [ -f "ARCHITECTURE.md" ]; then
-  cat ARCHITECTURE.md
+if [ -f "docs/ARCHITECTURE.md" ]; then
+  cat docs/ARCHITECTURE.md
 else
-  echo "WARNING: No architecture doc found at docs/architecture.md"
+  echo "WARNING: No architecture doc found at docs/ARCHITECTURE.md"
 fi
 
 # ── 3. THE TASK ──────────────────────────────────
