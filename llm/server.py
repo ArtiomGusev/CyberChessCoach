@@ -179,12 +179,35 @@ app = FastAPI(title="SECA Chess Coach API", lifespan=lifespan)
 app.state.limiter = limiter
 
 # ---- CORS ----------------------------------------------------------------
+# Dev contributors hitting the API from a browser, the Android emulator, or
+# Vite/webpack dev servers on the same machine should not need to set
+# CORS_ALLOWED_ORIGINS by hand.  In dev we default to the common local
+# development origins.  In prod the env var must be set explicitly — fail
+# loud at startup, mirroring the SECA_API_KEY / SECRET_KEY pattern, so a
+# misconfigured deployment never silently blocks every browser request.
+DEV_CORS_DEFAULTS = [
+    "http://localhost:8000",   # bare-metal API on dev host
+    "http://127.0.0.1:8000",   # ditto, IPv4 form
+    "http://10.0.2.2:8000",    # Android emulator → host loopback
+    "http://localhost:3000",   # common Vite/Next/CRA dev server
+    "http://localhost:5173",   # Vite default
+]
+
 _cors_origins = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
 if not _cors_origins:
-    logger.warning(
-        "CORS_ALLOWED_ORIGINS is not set — all cross-origin requests will be blocked. "
-        "Set CORS_ALLOWED_ORIGINS to a comma-separated list of allowed origins."
+    if IS_PROD:
+        raise RuntimeError(
+            "CORS_ALLOWED_ORIGINS env var is required in production "
+            "(SECA_ENV=prod).  Set a comma-separated list of allowed origins, "
+            "e.g. https://app.example.com"
+        )
+    _cors_origins = list(DEV_CORS_DEFAULTS)
+    logger.info(
+        "CORS_ALLOWED_ORIGINS unset; using dev defaults (%d origins).  "
+        "Set the env var to override.",
+        len(_cors_origins),
     )
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
