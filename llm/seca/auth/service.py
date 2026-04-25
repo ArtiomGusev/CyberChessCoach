@@ -9,6 +9,13 @@ from .tokens import create_access_token
 
 _MAX_SESSIONS = 10
 
+# Precomputed dummy hash used to equalise the wall-time cost of login() between
+# the "email exists" and "email does not exist" code paths.  Without this dummy
+# verification the miss path skips PBKDF2 entirely (~0.3 ms) while the hit path
+# pays the full PBKDF2-SHA256 600 000-iteration cost (~270 ms), creating a
+# 950x timing oracle that lets an attacker enumerate registered emails.
+_DUMMY_HASH_FOR_TIMING_SAFETY = hash_password("dummy_password_for_timing_safety_only")
+
 
 class AuthService:
     def __init__(self, db: DBSession):
@@ -42,6 +49,10 @@ class AuthService:
         player = self.db.query(Player).filter(Player.email == email).first()
 
         if player is None:
+            # Run a dummy verification so a missing-email login takes the same
+            # wall time as an existing-email-with-wrong-password login.  Without
+            # this, login() is a textbook email-enumeration timing oracle.
+            verify_password(password, _DUMMY_HASH_FOR_TIMING_SAFETY)
             raise ValueError("Invalid credentials")
 
         if not verify_password(password, player.password_hash):

@@ -78,7 +78,25 @@ def get_current_player(
 # ---------------------------
 # Schemas
 # ---------------------------
+import re
+
 from pydantic import BaseModel, field_validator
+
+# RFC-shape email check.  Rejects:
+#   - control characters and whitespace anywhere in the address
+#   - missing local part, missing domain, missing TLD
+#   - multiple '@', angle brackets, and other XSS / log-injection shapes
+# This is intentionally stricter than the previous "contains '@'" check.
+_EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$")
+
+
+def _validate_email_strict(v: str) -> str:
+    v = v.strip()
+    if len(v) < 3 or len(v) > 320:
+        raise ValueError("Invalid email address")
+    if not _EMAIL_RE.fullmatch(v):
+        raise ValueError("Invalid email address")
+    return v
 
 
 class RegisterRequest(BaseModel):
@@ -88,10 +106,7 @@ class RegisterRequest(BaseModel):
     @field_validator("email")
     @classmethod
     def validate_email(cls, v: str) -> str:
-        v = v.strip()
-        if len(v) < 3 or "@" not in v or len(v) > 320:
-            raise ValueError("Invalid email address")
-        return v
+        return _validate_email_strict(v)
 
     @field_validator("password")
     @classmethod
@@ -105,6 +120,11 @@ class LoginRequest(BaseModel):
     email: str
     password: str
     device_info: str = ""
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        return _validate_email_strict(v)
 
     @field_validator("password")
     @classmethod
