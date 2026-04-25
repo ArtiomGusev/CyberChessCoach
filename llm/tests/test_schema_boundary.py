@@ -68,19 +68,20 @@ class SchemaBoundaryTest(unittest.TestCase):
         fails, fresh-SQLite deployments will silently ship with the
         first-runner's incomplete schema (whichever path of init_db /
         init_auth_schema runs first wins).
+
+        Implementation note: ``llm/conftest.py:_backend_schema_init`` is
+        a session-scoped autouse fixture that calls
+        ``auth/router.init_schema()`` before any test runs, which
+        cascades into the side-effect imports (``from
+        llm.seca.brain.models import *`` etc.) that populate Base.
+        Trust ``Base.metadata`` as-is rather than re-importing the model
+        modules here — re-importing through ``llm.seca.X.models`` after
+        the codebase has already loaded ``seca.X.models`` via the
+        try/except fallback in ``seca/db.py`` creates a second module
+        object and trips SQLAlchemy's "Table already defined" guard
+        when the duplicate ``class TrainingDecision(Base)`` runs.
         """
-        # Importing the auth router via init_schema's module ensures every
-        # SQLAlchemy model registered against Base is loaded.  We avoid
-        # importing llm.server here because that pulls in the engine pool
-        # path.
         from llm.seca.auth.models import Base
-        # Side-effect imports for the other model packages — same set the
-        # auth router uses.
-        from llm.seca.auth import models as _auth_models  # noqa: F401
-        from llm.seca.events import models as _events_models  # noqa: F401
-        from llm.seca.brain import models as _brain_models  # noqa: F401
-        from llm.seca.brain.training import models as _brain_training_models  # noqa: F401
-        from llm.seca.analytics import models as _analytics_models  # noqa: F401
 
         sqlalchemy_tables = set(Base.metadata.tables.keys())
         raw_tables = _raw_table_names(_read_schema_sql())
