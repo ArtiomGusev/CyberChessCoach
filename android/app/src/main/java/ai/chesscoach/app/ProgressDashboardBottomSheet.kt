@@ -207,10 +207,13 @@ class ProgressDashboardBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun buildRecommendationRow(rec: ProgressRecommendation): View {
+        // Atrium two-tone signal — mirrors WeaknessBarChartView.priorityColor
+        // so high-severity recommendations read amber (warning role) and
+        // low-severity read cyan (improving / player-side).
         val priorityColor = when (rec.priority) {
-            "high"   -> Color.parseColor("#FF4444")
-            "medium" -> Color.parseColor("#FF8800")
-            else     -> Color.parseColor("#00BB55")
+            "high"   -> Color.parseColor("#FFC069") // atrium_accent_amber
+            "medium" -> Color.parseColor("#CCFFC069") // amber @ 80%
+            else     -> Color.parseColor("#4FD9E5") // atrium_accent_cyan
         }
 
         val categoryLabel = rec.category

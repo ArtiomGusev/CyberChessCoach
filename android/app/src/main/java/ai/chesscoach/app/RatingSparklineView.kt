@@ -23,8 +23,9 @@ class RatingSparklineView @JvmOverloads constructor(
     defStyleAttr: Int = 0,
 ) : View(context, attrs, defStyleAttr) {
 
+    // Atrium accent_cyan — restraint: neon only for signal.
     private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#00FFFF")
+        color = Color.parseColor("#4FD9E5")
         strokeWidth = 3f
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
@@ -32,7 +33,7 @@ class RatingSparklineView @JvmOverloads constructor(
     }
 
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#00FFFF")
+        color = Color.parseColor("#4FD9E5")
         style = Paint.Style.FILL
     }
 

@@ -6,7 +6,7 @@
         android:allowBackup="false"
         android:label="CyberChessCoach"
         android:networkSecurityConfig="@xml/network_security_config"
-        android:theme="@style/Theme.Material3.DayNight.NoActionBar">
+        android:theme="@style/Theme.Cereveon.Atrium">
 
         <activity
             android:name=".LoginActivity"

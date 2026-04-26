@@ -61,33 +61,35 @@ class ChessBoardView @JvmOverloads constructor(
     )
     private val history = mutableListOf<MoveRecord>()
 
-    /* ================= PAINT ================= */
-    private val lightSquare = Paint().apply { color = Color.rgb(30, 30, 35) } // Slightly bluish dark
-    private val darkSquare = Paint().apply { color = Color.BLACK }
-    private val selectPaint = Paint().apply { color = Color.CYAN; alpha = 120 }
-    
-    private val highlightPaint = Paint().apply { 
-        color = Color.CYAN 
-        alpha = 80 
-    }
-    
+    /* ================= PAINT — Cereveon · Atrium palette ================= */
+    // Tokens mirrored from res/values/colors.xml so this Canvas view matches
+    // the rest of the Atrium re-skin without going through Resources at every
+    // paint pass.  Keep these literals in sync with atrium_board_*, atrium_piece_*,
+    // atrium_accent_cyan, atrium_accent_amber if any palette tweak ships later.
+    private val lightSquare = Paint().apply { color = Color.parseColor("#302C24") }    // atrium_board_light (warm wood)
+    private val darkSquare  = Paint().apply { color = Color.parseColor("#1A1712") }    // atrium_board_dark
+    private val selectPaint = Paint().apply { color = Color.parseColor("#4FD9E5"); alpha = 120 }   // accent_cyan @ ~47%
+    private val highlightPaint = Paint().apply { color = Color.parseColor("#4FD9E5"); alpha = 80 } // last-move tint
+
+    // Pieces — ivory on cyan rim for white, warm obsidian on amber rim for
+    // black.  The amber rim makes black pieces legible on the dark board
+    // squares, per the handoff piece-rendering note.
     private val piecePaintWhite = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#00FFFF") // Neon Cyan
+        color = Color.parseColor("#F4EFE1")                                 // atrium_piece_white (ivory)
         textAlign = Paint.Align.CENTER
-        setShadowLayer(15f, 0f, 0f, Color.parseColor("#00FFFF"))
+        setShadowLayer(8f, 0f, 0f, Color.parseColor("#4FD9E5"))             // soft cyan halo
     }
 
     private val piecePaintBlack = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#708090") // Slate Grey
+        color = Color.parseColor("#1A1108")                                 // atrium_piece_black (warm obsidian)
         textAlign = Paint.Align.CENTER
-        setShadowLayer(12f, 0f, 0f, Color.parseColor("#4A90E2")) // Electric Blue glow
+        setShadowLayer(6f, 0f, 0f, Color.parseColor("#FFC069"))             // amber rim glow
     }
 
     private val coordinatePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#00FFFF") // Full Neon Cyan
-        alpha = 180 
+        color = Color.parseColor("#6B7080")                                 // atrium_dim
+        alpha = 200
         textSize = 24f
-        setShadowLayer(5f, 0f, 0f, Color.parseColor("#00FFFF")) 
     }
 
     private val arrowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {

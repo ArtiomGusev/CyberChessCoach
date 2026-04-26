@@ -27,14 +27,16 @@ class WeaknessBarChartView @JvmOverloads constructor(
 
     private var entries: List<Entry> = emptyList()
 
+    // Atrium muted ink for label / value text (mono labels are tiny;
+    // muted contrast preserves the "official document" calm).
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#AAAAAA")
+        color = Color.parseColor("#9AA0B4") // atrium_muted
         textSize = 36f
         typeface = android.graphics.Typeface.MONOSPACE
     }
 
     private val valuePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#AAAAAA")
+        color = Color.parseColor("#9AA0B4") // atrium_muted
         textSize = 32f
         typeface = android.graphics.Typeface.MONOSPACE
     }
@@ -43,8 +45,9 @@ class WeaknessBarChartView @JvmOverloads constructor(
         style = Paint.Style.FILL
     }
 
+    // Atrium hairline (8% white) — same primitive used for dividers.
     private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#1AFFFFFF")
+        color = Color.parseColor("#14FFFFFF")
         style = Paint.Style.FILL
     }
 
@@ -115,14 +118,18 @@ class WeaknessBarChartView @JvmOverloads constructor(
         }
     }
 
+    // Atrium two-tone signal: amber for high-severity weaknesses
+    // (mirrors opponent / warning role), cyan for low-severity
+    // (player-side / improving).  Medium reads as a muted amber so
+    // the strip never feels alarming — Atrium is calm about telemetry.
     private fun priorityColor(priority: String, value: Float): Int = when (priority) {
-        "high"   -> Color.parseColor("#FF4444")
-        "medium" -> Color.parseColor("#FF8800")
-        "low"    -> Color.parseColor("#00BB55")
+        "high"   -> Color.parseColor("#FFC069") // atrium_accent_amber
+        "medium" -> Color.parseColor("#CCFFC069") // amber @ 80%
+        "low"    -> Color.parseColor("#4FD9E5") // atrium_accent_cyan
         else     -> when {
-            value > 0.12f -> Color.parseColor("#FF4444")
-            value > 0.06f -> Color.parseColor("#FF8800")
-            else          -> Color.parseColor("#00BB55")
+            value > 0.12f -> Color.parseColor("#FFC069")
+            value > 0.06f -> Color.parseColor("#CCFFC069")
+            else          -> Color.parseColor("#4FD9E5")
         }
     }
 }
