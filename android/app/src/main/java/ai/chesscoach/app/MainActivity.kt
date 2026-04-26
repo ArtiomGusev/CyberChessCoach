@@ -129,19 +129,28 @@ class MainActivity : AppCompatActivity() {
             Log.d("AI_TEST", "Engine loaded. Ready to play.")
         }
 
+        // Atrium chapter header — initialise once, then refresh after
+        // every applied move so the kicker reads "MOVE N" instead of
+        // the static "Chapter · Move".  The header title stays
+        // generic ("Position") until a coach-supplied theme lands;
+        // the design's "The Pin" / "The Squeeze" copy comes from the
+        // server-side coach analysis layer that has not been wired
+        // through to the client yet.
+        updateChapterHeader()
+
         // 3️⃣ Wire move callback
         chessBoard.onMovePlayed = { fr, fc, tr, tc ->
             if (ChessNative.isLibraryLoaded) {
                 viewModel.onHumanMove(
                     fr, fc, tr, tc,
-                    applyHumanMove = { 
-                        chessBoard.applyMove(fr, fc, tr, tc) 
+                    applyHumanMove = {
+                        chessBoard.applyMove(fr, fc, tr, tc).also { updateChapterHeader() }
                     },
                     exportFEN = {
                         chessBoard.exportFEN()
                     },
                     applyAIMove = { afr, afc, atr, atc ->
-                        chessBoard.applyAIMove(afr, afc, atr, atc)
+                        chessBoard.applyAIMove(afr, afc, atr, atc).also { updateChapterHeader() }
                     }
                 )
             } else {
@@ -160,6 +169,7 @@ class MainActivity : AppCompatActivity() {
             scoreRow.visibility = View.GONE
             txtEngineScore.text = ""
             txtMistakeCategory.text = ""
+            updateChapterHeader()
             drawerLayout.closeDrawer(GravityCompat.END)
             startNewGameSession()
         }
@@ -587,6 +597,24 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         return (score / moveClassifications.size).toFloat()
+    }
+
+    /**
+     * Refresh the Atrium chapter header at the top of the in-game
+     * coaching screen.
+     *
+     * Kicker reads "Move N" once at least one half-move has been
+     * played, "Opening" before that.  Title stays a generic
+     * "Position" until the coach analysis layer supplies a theme
+     * (the design's "The Pin" / "The Squeeze" / etc.) — that hook
+     * is handled by the server-side coach pipeline that has not been
+     * wired through to the client yet.
+     */
+    private fun updateChapterHeader() {
+        val header = findViewById<AtriumChapterHeaderView>(R.id.atriumChapterHeader) ?: return
+        val moves = chessBoard.moveCount
+        header.kicker = if (moves > 0) "Move $moves" else "Opening"
+        header.title = "Position"
     }
 
     private fun showCoachingResult(
