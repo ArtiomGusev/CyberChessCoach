@@ -389,8 +389,27 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Start initial game session
-        startNewGameSession()
+        // Resume vs. new-game branch.  HomeActivity sets EXTRA_RESUME
+        // when the user taps the Resume card; we then load the saved
+        // position into the board + ViewModel and skip
+        // startNewGameSession() (which would bump the game number and
+        // wipe the snapshot).  When the prefs don't actually have a
+        // resumable position we fall through to the new-game path so
+        // a stale extra (e.g. from a back-navigation) doesn't strand
+        // the user on an empty board.
+        val resumed = if (intent?.getBooleanExtra(EXTRA_RESUME, false) == true) {
+            tryRestoreInProgressGame()
+        } else false
+
+        if (!resumed) {
+            startNewGameSession()
+        } else {
+            // Already in-progress server-side from before the resume —
+            // refresh the chapter header so it reads "Move N" instead
+            // of "Opening", and leave the game number / snapshot
+            // intact so the next move advances them naturally.
+            updateChapterHeader()
+        }
 
         // Wire real Stockfish evaluation: after each AI move, ChessViewModel calls
         // POST /engine/eval and optionally POST /live/move, then emits the result here.
@@ -461,6 +480,31 @@ class MainActivity : AppCompatActivity() {
         const val PREF_LAST_GAME_MOVE_COUNT   = "last_game_move_count"
         const val PREF_LAST_GAME_TIMESTAMP    = "last_game_timestamp"
         const val PREF_LAST_GAME_IN_PROGRESS  = "last_game_in_progress"
+
+        // Resume payload — populated alongside the snapshot above so
+        // the EXTRA_RESUME branch in onCreate can actually restore the
+        // position rather than just relaunching with a fresh session.
+        const val PREF_LAST_GAME_FEN          = "last_game_fen"
+        const val PREF_LAST_GAME_UCI_HISTORY  = "last_game_uci_history"
+
+        // Set by HomeActivity on the Resume card tap; read in onCreate
+        // to skip startNewGameSession() and apply the saved FEN /
+        // UCI list instead.
+        const val EXTRA_RESUME              = "resume"
+
+        /**
+         * Parse the comma-separated UCI list persisted by
+         * [persistInProgressSnapshot] back into the list shape
+         * [ChessViewModel.restoreMoveHistory] expects.  Filters out
+         * empty tokens defensively (a stale "" prefs value used to
+         * yield a 1-element list containing "").
+         */
+        fun parseUciHistory(stored: String?): List<String> =
+            stored
+                ?.split(',')
+                ?.map { it.trim() }
+                ?.filter { it.isNotEmpty() }
+                ?: emptyList()
 
         // Onboarding-time calibration persisted by OnboardingActivity.
         // We re-declare the names here as constants because the
@@ -672,6 +716,38 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * HomeActivity Resume tap → reload the saved board state + UCI
+     * history into [chessBoard] and [viewModel], so the user picks up
+     * the position they left.
+     *
+     * Returns true on successful restore, false if the snapshot is
+     * missing / blank / inconsistent (e.g. the user uninstalled and
+     * reinstalled, or the prefs got corrupted).  A false return tells
+     * the caller to fall through to the standard new-game path so the
+     * user never lands on an empty board.
+     *
+     * Server-side note: we do NOT issue a new /game/start when
+     * resuming.  The pre-resume server session may have timed out
+     * (the snapshot has a 6h TTL — see HomeActivity), in which case
+     * the next /game/finish will create a fresh row.  This is fine
+     * for the local "keep playing" UX; perfect server-side resumption
+     * is out of scope here.
+     */
+    private fun tryRestoreInProgressGame(): Boolean {
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        if (!prefs.getBoolean(PREF_LAST_GAME_IN_PROGRESS, false)) return false
+        val fen = prefs.getString(PREF_LAST_GAME_FEN, null)?.takeIf { it.isNotBlank() }
+            ?: return false
+        val uciList = parseUciHistory(prefs.getString(PREF_LAST_GAME_UCI_HISTORY, null))
+        if (uciList.isEmpty()) return false  // no real progress to resume
+
+        chessBoard.setFEN(fen)
+        viewModel.restoreMoveHistory(uciList)
+        Log.d("RESUME", "Restored ${uciList.size}-move position from snapshot")
+        return true
+    }
+
+    /**
      * Persistence hooks for [HomeActivity]'s Resume card.  We persist
      * the bare minimum needed to render a meaningful "you have an
      * unfinished game" tile: which game we're on, how many half-moves
@@ -691,20 +767,33 @@ class MainActivity : AppCompatActivity() {
             .putInt(PREF_LAST_GAME_MOVE_COUNT, 0)
             .putLong(PREF_LAST_GAME_TIMESTAMP, System.currentTimeMillis())
             .putBoolean(PREF_LAST_GAME_IN_PROGRESS, true)
+            // Clear any prior position snapshot so the next Resume tap
+            // can't restore a position from the *previous* game.
+            .remove(PREF_LAST_GAME_FEN)
+            .remove(PREF_LAST_GAME_UCI_HISTORY)
             .apply()
     }
 
     private fun persistInProgressSnapshot() {
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
-            .putInt(PREF_LAST_GAME_MOVE_COUNT, chessBoard.moveCount)
+            .putInt(PREF_LAST_GAME_MOVE_COUNT, viewModel.moveCount)
             .putLong(PREF_LAST_GAME_TIMESTAMP, System.currentTimeMillis())
             .putBoolean(PREF_LAST_GAME_IN_PROGRESS, true)
+            // Resume payload — board FEN + UCI list — used by the
+            // EXTRA_RESUME branch in onCreate to actually restore the
+            // position.  Without these the Resume card would only be
+            // a "you have an unfinished game" indicator that starts a
+            // new game on tap.
+            .putString(PREF_LAST_GAME_FEN, chessBoard.exportFEN())
+            .putString(PREF_LAST_GAME_UCI_HISTORY, viewModel.exportUciHistory())
             .apply()
     }
 
     private fun clearInProgressSnapshot() {
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
             .putBoolean(PREF_LAST_GAME_IN_PROGRESS, false)
+            .remove(PREF_LAST_GAME_FEN)
+            .remove(PREF_LAST_GAME_UCI_HISTORY)
             .apply()
     }
 
@@ -735,7 +824,18 @@ class MainActivity : AppCompatActivity() {
      */
     private fun updateChapterHeader() {
         val header = findViewById<AtriumChapterHeaderView>(R.id.atriumChapterHeader) ?: return
-        val moves = chessBoard.moveCount
+        // Take the max of the two move-count sources:
+        //   - chessBoard.moveCount tracks the visual undo stack
+        //     (chessBoard.history); after btnUndo / undoBoth pops
+        //     entries, this is the post-undo count.
+        //   - viewModel.moveCount tracks the UCI list used for PGN
+        //     export.  After a HomeActivity Resume tap restores the
+        //     position via setFEN, the board's internal history is
+        //     empty (no piece-by-piece replay) but viewModel was
+        //     populated by restoreMoveHistory, so without the max
+        //     the kicker would read "Opening" right after restore.
+        // The max gives us the right answer on both edges.
+        val moves = maxOf(chessBoard.moveCount, viewModel.moveCount)
         header.kicker = if (moves > 0) "Move $moves" else "Opening"
         header.title = "Position"
     }

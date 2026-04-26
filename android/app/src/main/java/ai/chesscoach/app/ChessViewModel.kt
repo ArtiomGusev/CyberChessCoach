@@ -47,6 +47,15 @@ class ChessViewModel(
     val moveCount: Int get() = moveHistory.size
 
     /**
+     * Comma-separated UCI move list — used by [MainActivity]'s Resume
+     * snapshot to persist the full move history without paying the
+     * cost of JSON serialisation for what is always a small list of
+     * 4–5-character tokens.  Empty string when no moves have been
+     * played; [restoreMoveHistory] accepts the inverse.
+     */
+    fun exportUciHistory(): String = moveHistory.joinToString(",")
+
+    /**
      * Returns the game moves as a well-formed PGN string including the four
      * mandatory headers required by the backend [GameFinishRequest] validator.
      *
@@ -296,5 +305,29 @@ $moves"""
 
     fun reset() {
         invalidateState()
+    }
+
+    /**
+     * Restore the client-side move history after a HomeActivity Resume
+     * tap.  Used by [MainActivity] when the saved snapshot contains a
+     * non-empty UCI list — the board's position is restored via
+     * [ChessBoardView.setFEN], and this call resyncs the ViewModel so:
+     *
+     *   - [exportPGN] at the next /game/finish includes the pre-resume
+     *     moves (otherwise the PGN would be a stub starting from the
+     *     resumed position, which the backend rejects as a tactical
+     *     anomaly when the game ends in 2 moves)
+     *   - [moveCount] reflects the true half-move number, so the
+     *     Atrium chapter header doesn't read "Move 1" after restoring
+     *     a 14-move game
+     *
+     * The native engine is stateless ([ChessNative.getBestMove] is pure
+     * FEN → move), so no JNI sync is required.  AI turn is inferred
+     * from list parity: even count → HUMAN to move next, odd → AI.
+     */
+    fun restoreMoveHistory(uciList: List<String>) {
+        invalidateState()
+        moveHistory.addAll(uciList)
+        turn = if (uciList.size % 2 == 0) Turn.HUMAN else Turn.AI
     }
 }

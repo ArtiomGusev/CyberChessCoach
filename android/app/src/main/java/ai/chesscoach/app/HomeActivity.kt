@@ -53,10 +53,12 @@ import kotlin.math.roundToInt
  * read those keys in [maybeShowResumeCard] and render the card iff
  * a game is in progress with at least one half-move played.
  *
- * The "Resume" tap currently just relaunches MainActivity (which
- * starts a fresh session) — true position restore on tap is a
- * separate feature and would require ChessBoardView to accept a FEN
- * / PGN load on construction.
+ * The Resume tap launches MainActivity with [MainActivity.EXTRA_RESUME]
+ * set; MainActivity.tryRestoreInProgressGame loads the saved FEN +
+ * UCI history into ChessBoardView / ChessViewModel so the user picks
+ * up the position they left.  Server-side session resumption is out
+ * of scope — the next /game/finish creates a fresh row if the prior
+ * server session has timed out.
  */
 class HomeActivity : AppCompatActivity() {
 
@@ -186,11 +188,14 @@ class HomeActivity : AppCompatActivity() {
         resumeSub.text   = formatResumeSub(playerRating, timestamp)
         resumeBlock.visibility = View.VISIBLE
         findViewById<View>(R.id.homeResumeCard).setOnClickListener {
-            // No state restore yet — relaunch MainActivity, which kicks
-            // off a fresh session.  Once ChessBoardView accepts a FEN
-            // load on construction, swap this for an EXTRA_RESUME flag
-            // MainActivity reads to skip startNewGameSession().
-            launchMain(sheet = null)
+            // EXTRA_RESUME tells MainActivity.onCreate to skip
+            // startNewGameSession() and apply the saved FEN / UCI
+            // list from PREF_LAST_GAME_FEN / PREF_LAST_GAME_UCI_HISTORY
+            // — see MainActivity.tryRestoreInProgressGame().
+            startActivity(
+                Intent(this, MainActivity::class.java)
+                    .putExtra(MainActivity.EXTRA_RESUME, true),
+            )
         }
     }
 
