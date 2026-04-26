@@ -73,6 +73,16 @@ class GameFinishRequest(BaseModel):
     accuracy: float  # 0..1
     weaknesses: dict
     player_id: str | None = None
+    # game_id ties this finish call back to the row created by the
+    # corresponding /game/start request, so the `games` table row gets
+    # its `result` / `finished_at` columns populated instead of sitting
+    # in NULL purgatory forever.  Optional so older clients that don't
+    # track the start-game response still work.  The Android Resume
+    # flow reuses the same game_id across both the original session
+    # and the resumed-with-the-same-position one, which is the whole
+    # point — without this, every Resume would orphan the original
+    # /game/start row.
+    game_id: str | None = None
 
     @field_validator("pgn")
     @classmethod
@@ -126,6 +136,27 @@ class GameFinishRequest(BaseModel):
                 raise ValueError("weakness values must be numeric")
         return v
 
+    @field_validator("game_id")
+    @classmethod
+    def validate_game_id(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        # Accept up to 64 chars (UUIDs are 36; auto-{uuid} keys are 41).
+        # Anything longer is either malformed or an attempted overflow.
+        if len(v) > 64:
+            raise ValueError("game_id must be ≤ 64 chars")
+        # The repo layer treats game_id as a SQL parameter (bound, not
+        # interpolated), but reject control chars defensively for the
+        # same reason we reject them in weakness keys — they end up in
+        # log lines consumers may parse line-by-line.
+        for ch in v:
+            if ord(ch) < 0x20 or ord(ch) == 0x7f:
+                raise ValueError("game_id contains control characters")
+        return v
+
 
 @router.post("/finish")
 @limiter.limit("10/minute")
@@ -150,6 +181,22 @@ def finish_game(
         accuracy=req.accuracy,
         weaknesses=req.weaknesses,
     )
+
+    # If the client tracked the game_id from /game/start, mark the
+    # corresponding `games` row complete.  Best-effort: a missing /
+    # stale game_id (the row was already finalised, deleted by a
+    # cleanup job, or never created because /game/start failed) must
+    # not fail the whole finish call — the GameEvent + skill update
+    # already happened above and they're the load-bearing writes.
+    if req.game_id:
+        try:
+            from llm.seca.storage.repo import finish_game as _repo_finish_game
+            _repo_finish_game(req.game_id, req.result)
+        except Exception:
+            logger.exception(
+                "repo.finish_game failed for game_id=%s; GameEvent already stored",
+                req.game_id,
+            )
 
     # ---- skill update ----
     try:

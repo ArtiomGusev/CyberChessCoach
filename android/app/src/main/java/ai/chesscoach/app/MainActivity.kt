@@ -55,6 +55,17 @@ class MainActivity : AppCompatActivity() {
      */
     private var lastGameFinishResponse: GameFinishResponse? = null
 
+    /**
+     * Game id captured from the most recent /game/start success.
+     * Forwarded on /game/finish so the backend marks the matching
+     * `games` row complete (result + finished_at columns) instead of
+     * leaving it orphaned in NULL purgatory.  Survives across the
+     * Resume restore path: [tryRestoreInProgressGame] re-loads it from
+     * [PREF_LAST_GAME_SERVER_ID] so a resumed game finishes against
+     * the original row.
+     */
+    private var currentServerGameId: String? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -371,7 +382,16 @@ class MainActivity : AppCompatActivity() {
             // doesn't show a stale Resume card on the next visit.
             clearInProgressSnapshot()
             lifecycleScope.launch {
-                when (val r = gameApiClient.finishGame(GameFinishRequest(pgn, resultStr, accuracy, weaknesses, currentPlayerId))) {
+                when (val r = gameApiClient.finishGame(
+                    GameFinishRequest(
+                        pgn = pgn,
+                        result = resultStr,
+                        accuracy = accuracy,
+                        weaknesses = weaknesses,
+                        playerId = currentPlayerId,
+                        gameId = currentServerGameId,
+                    ),
+                )) {
                     is ApiResult.Success -> {
                         lastGameFinishResponse = r.data
                         showCoachingResult(r.data, finalResult, finalMoveCount)
@@ -486,6 +506,11 @@ class MainActivity : AppCompatActivity() {
         // position rather than just relaunching with a fresh session.
         const val PREF_LAST_GAME_FEN          = "last_game_fen"
         const val PREF_LAST_GAME_UCI_HISTORY  = "last_game_uci_history"
+
+        // Server-side game id from the last /game/start response.
+        // Reused on Resume so the eventual /game/finish closes the same
+        // `games` row instead of orphaning it.
+        const val PREF_LAST_GAME_SERVER_ID    = "last_game_server_id"
 
         // Set by HomeActivity on the Resume card tap; read in onCreate
         // to skip startNewGameSession() and apply the saved FEN /
@@ -705,9 +730,16 @@ class MainActivity : AppCompatActivity() {
 
     private fun startNewGameSession() {
         bumpGameNumber()
+        currentServerGameId = null
         lifecycleScope.launch {
             when (val r = gameApiClient.startGame(currentPlayerId)) {
-                is ApiResult.Success -> Log.d("GAME", "Session started: ${r.data.gameId}")
+                is ApiResult.Success -> {
+                    currentServerGameId = r.data.gameId
+                    getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                        .putString(PREF_LAST_GAME_SERVER_ID, r.data.gameId)
+                        .apply()
+                    Log.d("GAME", "Session started: ${r.data.gameId}")
+                }
                 is ApiResult.HttpError -> Log.w("GAME", "startGame HTTP ${r.code}")
                 is ApiResult.NetworkError -> Log.w("GAME", "startGame network error", r.cause)
                 ApiResult.Timeout -> Log.w("GAME", "startGame timed out")
@@ -743,7 +775,18 @@ class MainActivity : AppCompatActivity() {
 
         chessBoard.setFEN(fen)
         viewModel.restoreMoveHistory(uciList)
-        Log.d("RESUME", "Restored ${uciList.size}-move position from snapshot")
+        // Reuse the original /game/start id so the next /game/finish
+        // closes the same `games` row server-side instead of orphaning
+        // it.  Null is fine here — older snapshots won't have it; the
+        // finish call will simply omit the field and the backend will
+        // skip the repo.finish_game write (still creates the GameEvent).
+        currentServerGameId = prefs.getString(PREF_LAST_GAME_SERVER_ID, null)
+            ?.takeIf { it.isNotBlank() }
+        Log.d(
+            "RESUME",
+            "Restored ${uciList.size}-move position from snapshot " +
+                "(serverGameId=${currentServerGameId ?: "<none>"})",
+        )
         return true
     }
 
@@ -768,9 +811,12 @@ class MainActivity : AppCompatActivity() {
             .putLong(PREF_LAST_GAME_TIMESTAMP, System.currentTimeMillis())
             .putBoolean(PREF_LAST_GAME_IN_PROGRESS, true)
             // Clear any prior position snapshot so the next Resume tap
-            // can't restore a position from the *previous* game.
+            // can't restore a position from the *previous* game.  The
+            // server game id is also cleared — startNewGameSession will
+            // write the new one once /game/start returns.
             .remove(PREF_LAST_GAME_FEN)
             .remove(PREF_LAST_GAME_UCI_HISTORY)
+            .remove(PREF_LAST_GAME_SERVER_ID)
             .apply()
     }
 
@@ -794,7 +840,9 @@ class MainActivity : AppCompatActivity() {
             .putBoolean(PREF_LAST_GAME_IN_PROGRESS, false)
             .remove(PREF_LAST_GAME_FEN)
             .remove(PREF_LAST_GAME_UCI_HISTORY)
+            .remove(PREF_LAST_GAME_SERVER_ID)
             .apply()
+        currentServerGameId = null
     }
 
     private fun computeAccuracy(): Float {

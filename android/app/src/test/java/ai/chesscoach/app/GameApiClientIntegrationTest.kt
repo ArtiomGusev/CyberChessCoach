@@ -8,6 +8,7 @@ import okhttp3.mockwebserver.MockWebServer
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -252,6 +253,46 @@ class GameApiClientIntegrationTest {
         val body = JSONObject(server.takeRequest(10, TimeUnit.SECONDS)!!.body.readUtf8())
         val weaknesses = body.getJSONObject("weaknesses")
         assertEquals(0.6, weaknesses.getDouble("endgame"), 0.001)
+    }
+
+    @Test
+    fun `INT_FINISH_BODY_GAME_ID - game_id forwarded when non-null`() = runBlocking {
+        // Resume restore reuses the original /game/start id so the
+        // backend can mark the same `games` row complete instead of
+        // orphaning it.
+        server.enqueue(MockResponse().setResponseCode(200).setBody(GAME_FINISH_OK))
+        client().finishGame(finishReq().copy(gameId = "game-abc-123"))
+        val body = JSONObject(server.takeRequest(10, TimeUnit.SECONDS)!!.body.readUtf8())
+        assertEquals("game-abc-123", body.getString("game_id"))
+    }
+
+    @Test
+    fun `INT_FINISH_BODY_GAME_ID_OMITTED - game_id absent when null`() = runBlocking {
+        // Backwards-compat: a finish call from a session that never
+        // captured a server-side id (e.g. /game/start failed) must
+        // still send a well-formed body that the backend treats as
+        // "no resume link" rather than rejecting on a missing field.
+        server.enqueue(MockResponse().setResponseCode(200).setBody(GAME_FINISH_OK))
+        client().finishGame(finishReq())  // gameId defaults to null
+        val body = JSONObject(server.takeRequest(10, TimeUnit.SECONDS)!!.body.readUtf8())
+        assertFalse(
+            "body must NOT contain game_id when caller passed null",
+            body.has("game_id"),
+        )
+    }
+
+    @Test
+    fun `INT_FINISH_BODY_GAME_ID_BLANK_OMITTED - blank game_id treated as null`() = runBlocking {
+        // Defensive: a stale-but-blank prefs entry must produce the
+        // same wire shape as a true null.  Without this, a "" id would
+        // serialise as game_id:"" and fail the backend's blank check.
+        server.enqueue(MockResponse().setResponseCode(200).setBody(GAME_FINISH_OK))
+        client().finishGame(finishReq().copy(gameId = "   "))
+        val body = JSONObject(server.takeRequest(10, TimeUnit.SECONDS)!!.body.readUtf8())
+        assertFalse(
+            "body must NOT contain game_id when caller passed blank",
+            body.has("game_id"),
+        )
     }
 
     @Test

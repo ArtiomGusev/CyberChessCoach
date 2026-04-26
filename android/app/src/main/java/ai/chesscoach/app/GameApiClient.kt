@@ -135,6 +135,13 @@ class HttpGameApiClient(
                             .put("accuracy", req.accuracy)
                             .put("weaknesses", weaknessesJson)
                             .apply { req.playerId?.let { put("player_id", it) } }
+                            // game_id ties this finish back to the
+                            // original /game/start row server-side;
+                            // omitted-when-null keeps the wire shape
+                            // compatible with the pre-resume contract.
+                            .apply {
+                                req.gameId?.takeIf { it.isNotBlank() }?.let { put("game_id", it) }
+                            }
                             .toString()
 
                     conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }

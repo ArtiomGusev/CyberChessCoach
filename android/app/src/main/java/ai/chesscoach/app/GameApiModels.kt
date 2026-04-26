@@ -163,6 +163,18 @@ data class GameFinishRequest(
     val accuracy: Float, // 0..1
     val weaknesses: Map<String, Float> = emptyMap(),
     val playerId: String? = null,
+    /**
+     * Optional game_id captured from the corresponding /game/start
+     * response.  When forwarded, the backend marks the matching `games`
+     * row complete (result + finished_at columns) instead of leaving it
+     * orphaned in NULL purgatory.  Null is accepted by the server for
+     * backwards-compat with older clients that didn't track the id.
+     *
+     * The Resume flow reuses the same id across the original session
+     * and the resumed-with-the-same-position one — that's how a
+     * resumed game finishes against exactly one games row server-side.
+     */
+    val gameId: String? = null,
 )
 
 data class CoachActionDto(
