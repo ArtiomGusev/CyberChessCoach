@@ -315,12 +315,17 @@ class MainActivity : AppCompatActivity() {
                 }
             val accuracy = computeAccuracy()
             val weaknesses = computeWeaknesses(moveClassifications)
+            // Atrium hero card needs the result enum + move count — capture
+            // them BEFORE moveClassifications is cleared / a new game starts,
+            // so the summary sheet sees the values from the just-finished game.
+            val finalResult = result
+            val finalMoveCount = chessBoard.moveCount
             moveClassifications.clear()
             lifecycleScope.launch {
                 when (val r = gameApiClient.finishGame(GameFinishRequest(pgn, resultStr, accuracy, weaknesses, currentPlayerId))) {
                     is ApiResult.Success -> {
                         lastGameFinishResponse = r.data
-                        showCoachingResult(r.data)
+                        showCoachingResult(r.data, finalResult, finalMoveCount)
                     }
                     is ApiResult.HttpError -> {
                         if (r.code == 401) {
@@ -584,14 +589,20 @@ class MainActivity : AppCompatActivity() {
         return (score / moveClassifications.size).toFloat()
     }
 
-    private fun showCoachingResult(response: GameFinishResponse) {
+    private fun showCoachingResult(
+        response: GameFinishResponse,
+        result: GameResult? = null,
+        moveCount: Int = 0,
+    ) {
         coachText.text = response.coachContent.title
 
         // Update rating header immediately so it's visible when the drawer is open
         txtRatingHeader.text = "Rating: %.0f".format(response.newRating)
 
         if (supportFragmentManager.isStateSaved) return
-        val sheet = GameSummaryBottomSheet.newInstance(response, currentPlayerId)
+        val sheet = GameSummaryBottomSheet.newInstance(
+            response, currentPlayerId, result, moveCount,
+        )
         sheet.gameApiClient = gameApiClient
         sheet.show(supportFragmentManager, "GameSummaryBottomSheet")
     }

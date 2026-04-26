@@ -36,6 +36,11 @@ class GameSummaryBottomSheet : BottomSheetDialogFragment() {
         private const val ARG_PLAYER_ID       = "player_id"
         private const val ARG_PAYLOAD_JSON    = "payload_json"
         private const val ARG_LEARNING_STATUS = "learning_status"
+        // Atrium hero card — populated by the activity from local
+        // game-state, not from the /game/finish response (which does
+        // not currently carry result / move-count fields).
+        private const val ARG_RESULT          = "result"
+        private const val ARG_MOVE_COUNT      = "move_count"
 
         const val PREFS_NAME  = MainActivity.PREFS_NAME
         const val PREF_RATING = MainActivity.PREF_RATING
@@ -43,6 +48,8 @@ class GameSummaryBottomSheet : BottomSheetDialogFragment() {
         fun newInstance(
             response: GameFinishResponse,
             playerId: String,
+            result: GameResult? = null,
+            moveCount: Int = 0,
         ): GameSummaryBottomSheet = GameSummaryBottomSheet().apply {
             // Serialise payload map to JSON string for bundle transport
             val payloadJson = JSONObject().apply {
@@ -57,8 +64,43 @@ class GameSummaryBottomSheet : BottomSheetDialogFragment() {
                 putString(ARG_PLAYER_ID,   playerId)
                 putString(ARG_PAYLOAD_JSON, payloadJson)
                 response.learningStatus?.let { putString(ARG_LEARNING_STATUS, it) }
+                result?.let { putString(ARG_RESULT, it.name) }
+                if (moveCount > 0) putInt(ARG_MOVE_COUNT, moveCount)
             }
         }
+
+        /**
+         * Atrium hero result label — italic display text shown with a
+         * cyan halo on the game-end summary card.
+         *
+         * Maps the game-engine [GameResult] to the design's W/L/D copy:
+         *   WHITE_WINS → "Won · 1–0"
+         *   BLACK_WINS → "Lost · 0–1"
+         *   DRAW       → "Drew · ½–½"
+         *
+         * The half-symbol uses the canonical Unicode U+00BD; both
+         * scoresheet halves separated by an en-dash, per the handoff.
+         */
+        fun formatHeroResult(result: GameResult?): String = when (result) {
+            GameResult.WHITE_WINS -> "Won · 1–0"
+            GameResult.BLACK_WINS -> "Lost · 0–1"
+            GameResult.DRAW       -> "Drew · ½–½"
+            null                  -> "—"
+        }
+
+        /**
+         * Atrium hero subline — mono-cyan caps row beneath the result
+         * label.  Currently shows just the move count; once the
+         * /game/finish response carries duration and termination
+         * reason we'll extend to "{N} MOVES · {duration} · {reason}"
+         * to match the handoff design ("38 MOVES · 27:41 · OPPONENT
+         * RESIGNED").
+         *
+         * Returns null when [moveCount] <= 0 so the activity can hide
+         * the row instead of rendering "0 MOVES".
+         */
+        fun formatHeroSubline(moveCount: Int): String? =
+            if (moveCount > 0) "$moveCount Moves" else null
 
         // ── Pure helper functions — testable without Android framework ────────
 
@@ -146,12 +188,28 @@ class GameSummaryBottomSheet : BottomSheetDialogFragment() {
         val playerId        = args.getString(ARG_PLAYER_ID, "demo")
         val payloadJsonStr  = args.getString(ARG_PAYLOAD_JSON, "{}")
         val learningStatus  = args.getString(ARG_LEARNING_STATUS)
+        val resultName      = args.getString(ARG_RESULT)
+        val resultEnum: GameResult? = resultName?.let { runCatching { GameResult.valueOf(it) }.getOrNull() }
+        val moveCount       = args.getInt(ARG_MOVE_COUNT, 0)
 
         // ── Bind views ────────────────────────────────────────────────────────
         view.findViewById<TextView>(R.id.txtNewRating).text      = formatRating(rating)
         view.findViewById<TextView>(R.id.txtActionBadge).text    = actionBadgeLabel(actionType)
         view.findViewById<TextView>(R.id.txtCoachTitle).text     = title.ifBlank { "Game Over" }
         view.findViewById<TextView>(R.id.txtCoachDescription).text = description
+
+        // Atrium hero card — italic result label with cyan halo +
+        // optional mono subline.  Activity passes resultEnum + moveCount
+        // via the bundle; both fall back gracefully when the host
+        // doesn't supply them (placeholder "—" / hidden subline).
+        view.findViewById<TextView>(R.id.heroResult).text = formatHeroResult(resultEnum)
+        val heroSub = view.findViewById<TextView>(R.id.heroSubline)
+        formatHeroSubline(moveCount)?.let {
+            heroSub.text = it
+            heroSub.visibility = View.VISIBLE
+        } ?: run {
+            heroSub.visibility = View.GONE
+        }
 
         val progressBar = view.findViewById<ProgressBar>(R.id.progressConfidence)
         progressBar.progress = confidenceProgress(confidence)
