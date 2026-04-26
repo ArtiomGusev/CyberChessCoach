@@ -110,12 +110,13 @@ class OnboardingActivity : AppCompatActivity() {
             .putFloat(PREF_PLAYER_RATING_ESTIMATE, rating)
             .putFloat(PREF_PLAYER_CONFIDENCE, confidence)
             // Mirror the rating into the existing PREF_RATING key so
-            // MainActivity's drawer header picks it up immediately
-            // without waiting for the next /auth/me sync.
+            // MainActivity's drawer header (and the Home screen's "I —
+            // New game" sub) pick it up immediately without waiting
+            // for the next /auth/me sync.
             .putFloat(MainActivity.PREF_RATING, rating)
             .apply()
 
-        startActivity(Intent(this, MainActivity::class.java)
+        startActivity(Intent(this, HomeActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
         finish()
     }

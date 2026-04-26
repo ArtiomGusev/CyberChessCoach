@@ -19,14 +19,14 @@ import kotlinx.coroutines.launch
  *  2. [AuthApiClient.login] / [AuthApiClient.register] is called; on success
  *     the JWT is stored in [AuthRepository] (backed by [EncryptedSharedPreferences]).
  *  3. Routing:
- *     - Login success → [MainActivity] (or onboarding if first registration
- *       was abandoned before the calibration screen was completed).
+ *     - Login success → [HomeActivity] (or [OnboardingActivity] if a prior
+ *       registration was abandoned before the calibration step completed).
  *     - Registration success → [OnboardingActivity] for skill calibration
- *       (handoff #2), then on Continue → [MainActivity].
+ *       (handoff #2), then on Continue → [HomeActivity].
  *
  * Token expiry: [AuthRepository.isLoggedIn] checks the `exp` claim; if the
- * stored token is already expired when the app starts, [MainActivity] redirects
- * back here automatically.
+ * stored token is already expired when the app starts, [MainActivity] /
+ * [HomeActivity] redirect back here automatically.
  */
 class LoginActivity : AppCompatActivity() {
 
@@ -166,19 +166,19 @@ class LoginActivity : AppCompatActivity() {
      * Decide where an authenticated user lands.  Newly-registered users that
      * abandoned the calibration flow (or any future case where onboarding is
      * incomplete) get routed through [OnboardingActivity] first; everyone else
-     * goes straight to [MainActivity].
+     * goes to [HomeActivity], the post-auth landing.
      */
     private fun launchPostAuth() {
         if (OnboardingActivity.isCompleted(this)) {
-            launchMain()
+            launchHome()
         } else {
             launchOnboarding()
         }
     }
 
-    private fun launchMain() {
+    private fun launchHome() {
         startActivity(
-            Intent(this, MainActivity::class.java)
+            Intent(this, HomeActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
         )
         finish()

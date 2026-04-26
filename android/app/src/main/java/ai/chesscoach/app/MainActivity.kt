@@ -392,6 +392,19 @@ class MainActivity : AppCompatActivity() {
             coachText.text = update.explanation
                 ?: "Solid move — tap for deeper analysis"
         }
+
+        // HomeActivity routes "Lessons" / "Past games" / "Coach" / "You"
+        // taps here with EXTRA_OPEN_SHEET so the existing sheet wiring
+        // is the single source of truth for those flows.  All four
+        // re-use the same buttons / openChat() the drawer uses; the
+        // performClick() path also closes the (already-closed) drawer
+        // harmlessly.
+        when (intent?.getStringExtra(EXTRA_OPEN_SHEET)) {
+            OPEN_SHEET_TRAINING -> btnTraining.performClick()
+            OPEN_SHEET_HISTORY  -> btnGameHistory.performClick()
+            OPEN_SHEET_PROFILE  -> btnProgressDashboard.performClick()
+            OPEN_SHEET_CHAT     -> openChat()
+        }
     }
 
     companion object {
@@ -401,6 +414,16 @@ class MainActivity : AppCompatActivity() {
         const val PREF_CURRICULUM_TOPIC = "curriculum_topic"
         const val PREF_CURRICULUM_DIFFICULTY = "curriculum_difficulty"
         const val PREF_CURRICULUM_EXERCISE_TYPE = "curriculum_exercise_type"
+
+        // Intent extras used by HomeActivity to ask MainActivity to
+        // open a specific bottom sheet on startup.  String constants
+        // (rather than an enum) keep the Intent contract trivially
+        // serialisable and let HomeActivity pass null for "no sheet".
+        const val EXTRA_OPEN_SHEET     = "open_sheet"
+        const val OPEN_SHEET_TRAINING  = "training"
+        const val OPEN_SHEET_HISTORY   = "history"
+        const val OPEN_SHEET_PROFILE   = "profile"
+        const val OPEN_SHEET_CHAT      = "chat"
 
         /**
          * Format top [maxTags] skill-vector entries as weakness tag labels.

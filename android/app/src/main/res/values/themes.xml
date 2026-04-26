@@ -264,4 +264,127 @@
         <item name="android:layout_marginTop">@dimen/atrium_space_8</item>
     </style>
 
+    <!-- ─── Home / Library rows ─────────────────────────────────────── -->
+
+    <!--
+        Atrium home library row — Roman numeral · italic title · italic
+        muted sub · ›.  Used for the I–IV rows on activity_home.xml.
+
+        parent="" — same dot-naming caveat as Atrium.Divider /
+        Atrium.SettingsRow above.
+    -->
+    <style name="Atrium.HomeLibraryRow" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:paddingTop">@dimen/atrium_space_12</item>
+        <item name="android:paddingBottom">@dimen/atrium_space_12</item>
+        <item name="android:background">?attr/selectableItemBackground</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
+
+    <!-- 28dp italic Cormorant numeral, accent cyan, slightly muted. -->
+    <style name="Atrium.HomeLibraryRow.Numeral">
+        <item name="android:layout_width">28dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:gravity">center</item>
+        <item name="android:fontFamily">@font/cormorant_garamond</item>
+        <item name="android:textStyle">italic</item>
+        <item name="android:textSize">22sp</item>
+        <item name="android:textColor">@color/atrium_accent_cyan</item>
+        <item name="android:alpha">0.8</item>
+    </style>
+
+    <!-- Vertical block holding the title + sub. -->
+    <style name="Atrium.HomeLibraryRow.TitleBlock">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:layout_marginStart">@dimen/atrium_space_12</item>
+        <item name="android:orientation">vertical</item>
+    </style>
+
+    <!-- Italic Cormorant title, 18sp ink. -->
+    <style name="Atrium.HomeLibraryRow.Title">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:fontFamily">@font/cormorant_garamond</item>
+        <item name="android:textStyle">italic</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:textColor">@color/atrium_ink</item>
+        <item name="android:lineSpacingMultiplier">1.1</item>
+    </style>
+
+    <!-- Italic Inter sub, 12sp muted, 2dp top margin. -->
+    <style name="Atrium.HomeLibraryRow.Sub">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">2dp</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:textStyle">italic</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/atrium_muted</item>
+    </style>
+
+    <!-- ›-shaped trailing chevron — same as settings, slightly dimmer. -->
+    <style name="Atrium.HomeLibraryRow.Chevron">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:fontFamily">@font/cormorant_garamond</item>
+        <item name="android:textStyle">italic</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:textColor">@color/atrium_dim</item>
+        <item name="android:text">›</item>
+    </style>
+
+    <!-- Hairline divider between library rows. -->
+    <style name="Atrium.HomeLibraryRow.Divider" parent="Atrium.Divider" />
+
+    <!-- ─── Home tab bar ─────────────────────────────────────────────── -->
+
+    <!--
+        Atrium home tab — text-only italic label, optional cyan dot for
+        active state.  Tab bar is rendered as a static visual surface;
+        full tab navigation as a true root is a separate effort.
+
+        parent="" — same dot-naming caveat.
+    -->
+    <style name="Atrium.HomeTab" parent="">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:gravity">center</item>
+        <item name="android:background">?attr/selectableItemBackground</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+        <item name="android:paddingTop">@dimen/atrium_space_4</item>
+        <item name="android:paddingBottom">@dimen/atrium_space_4</item>
+    </style>
+
+    <!-- Inactive label — italic Cormorant 14sp muted. -->
+    <style name="Atrium.HomeTab.Label">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:fontFamily">@font/cormorant_garamond</item>
+        <item name="android:textStyle">italic</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">@color/atrium_muted</item>
+    </style>
+
+    <!-- Active label — same as inactive but accent cyan. -->
+    <style name="Atrium.HomeTab.Label.Active" parent="Atrium.HomeTab.Label">
+        <item name="android:textColor">@color/atrium_accent_cyan</item>
+    </style>
+
+    <!-- Active-state dot below the label. -->
+    <style name="Atrium.HomeTab.Dot">
+        <item name="android:layout_width">4dp</item>
+        <item name="android:layout_height">4dp</item>
+        <item name="android:layout_marginTop">@dimen/atrium_space_4</item>
+        <item name="android:background">@drawable/atrium_home_tab_dot</item>
+    </style>
+
 </resources>
