@@ -15,10 +15,14 @@ import kotlinx.coroutines.launch
  * Login screen that authenticates the user against the coach backend.
  *
  * Flow:
- *  1. User enters email + password and taps Sign In.
- *  2. [AuthApiClient.login] is called; on success the JWT is stored in
- *     [AuthRepository] (backed by [EncryptedSharedPreferences]).
- *  3. [MainActivity] is launched with CLEAR_TASK so the back-stack is clean.
+ *  1. User enters email + password and taps Sign In or Create Account.
+ *  2. [AuthApiClient.login] / [AuthApiClient.register] is called; on success
+ *     the JWT is stored in [AuthRepository] (backed by [EncryptedSharedPreferences]).
+ *  3. Routing:
+ *     - Login success → [MainActivity] (or onboarding if first registration
+ *       was abandoned before the calibration screen was completed).
+ *     - Registration success → [OnboardingActivity] for skill calibration
+ *       (handoff #2), then on Continue → [MainActivity].
  *
  * Token expiry: [AuthRepository.isLoggedIn] checks the `exp` claim; if the
  * stored token is already expired when the app starts, [MainActivity] redirects
@@ -47,7 +51,7 @@ class LoginActivity : AppCompatActivity() {
         // If already logged in, go straight to the game — avoid showing the
         // login form when the user re-opens the app with a valid session.
         if (authRepository.isLoggedIn()) {
-            launchMain()
+            launchPostAuth()
             return
         }
 
@@ -98,7 +102,7 @@ class LoginActivity : AppCompatActivity() {
             when (val result = authApiClient.login(email, password)) {
                 is ApiResult.Success -> {
                     authRepository.saveToken(result.data.accessToken)
-                    launchMain()
+                    launchPostAuth()
                 }
 
                 is ApiResult.HttpError -> {
@@ -130,7 +134,7 @@ class LoginActivity : AppCompatActivity() {
             when (val result = authApiClient.register(email, password)) {
                 is ApiResult.Success -> {
                     authRepository.saveToken(result.data.accessToken)
-                    launchMain()
+                    launchOnboarding()
                 }
 
                 is ApiResult.HttpError -> {
@@ -158,9 +162,31 @@ class LoginActivity : AppCompatActivity() {
         tvError.visibility = View.VISIBLE
     }
 
+    /**
+     * Decide where an authenticated user lands.  Newly-registered users that
+     * abandoned the calibration flow (or any future case where onboarding is
+     * incomplete) get routed through [OnboardingActivity] first; everyone else
+     * goes straight to [MainActivity].
+     */
+    private fun launchPostAuth() {
+        if (OnboardingActivity.isCompleted(this)) {
+            launchMain()
+        } else {
+            launchOnboarding()
+        }
+    }
+
     private fun launchMain() {
         startActivity(
             Intent(this, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
+        )
+        finish()
+    }
+
+    private fun launchOnboarding() {
+        startActivity(
+            Intent(this, OnboardingActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
         )
         finish()

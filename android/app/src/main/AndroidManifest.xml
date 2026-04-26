@@ -19,6 +19,10 @@
         </activity>
 
         <activity
+            android:name=".OnboardingActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".MainActivity"
             android:windowSoftInputMode="stateAlwaysHidden|adjustResize"
             android:exported="false" />
