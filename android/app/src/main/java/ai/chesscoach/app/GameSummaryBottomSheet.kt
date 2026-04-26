@@ -62,12 +62,23 @@ class GameSummaryBottomSheet : BottomSheetDialogFragment() {
 
         // ── Pure helper functions — testable without Android framework ────────
 
-        /** Format a rating float as "Rating: 1 200" (no decimal). */
-        fun formatRating(rating: Float): String = "Rating: %.0f".format(rating)
+        /**
+         * Format a rating float as a bare integer string ("1200").
+         *
+         * Atrium's metric strip already labels the cell with a "RATING"
+         * kicker; the value cell shows just the number.  Drawer/header
+         * call sites that want the "Rating: X" form construct it
+         * inline (see MainActivity.txtRatingHeader).
+         */
+        fun formatRating(rating: Float): String = "%.0f".format(rating)
 
-        /** Format confidence 0.0–1.0 as "Confidence: 72%". */
+        /**
+         * Format confidence 0.0–1.0 as a bare percentage ("72%").
+         * The Atrium ACCURACY cell carries its own "ACCURACY" kicker
+         * underneath, so the value need not include the label.
+         */
         fun formatConfidence(confidence: Float): String =
-            "Confidence: %.0f%%".format(confidence * 100f)
+            "%.0f%%".format(confidence * 100f)
 
         /** Convert confidence 0.0–1.0 to ProgressBar integer (0–100). */
         fun confidenceProgress(confidence: Float): Int =

@@ -66,13 +66,15 @@ class GameSummaryBottomSheetTest {
 
     @Test
     fun `formatRating rounds to integer`() {
-        assertEquals("Rating: 1200", GameSummaryBottomSheet.formatRating(1200f))
-        assertEquals("Rating: 1350", GameSummaryBottomSheet.formatRating(1349.6f))
+        // Atrium re-skin: bare value, no "Rating:" prefix — the cell
+        // kicker carries the label.  See GameSummaryBottomSheet docstring.
+        assertEquals("1200", GameSummaryBottomSheet.formatRating(1200f))
+        assertEquals("1350", GameSummaryBottomSheet.formatRating(1349.6f))
     }
 
     @Test
     fun `formatRating handles zero`() {
-        assertEquals("Rating: 0", GameSummaryBottomSheet.formatRating(0f))
+        assertEquals("0", GameSummaryBottomSheet.formatRating(0f))
     }
 
     // ------------------------------------------------------------------
@@ -81,9 +83,10 @@ class GameSummaryBottomSheetTest {
 
     @Test
     fun `formatConfidence converts fraction to percent string`() {
-        assertEquals("Confidence: 72%", GameSummaryBottomSheet.formatConfidence(0.72f))
-        assertEquals("Confidence: 100%", GameSummaryBottomSheet.formatConfidence(1.0f))
-        assertEquals("Confidence: 0%", GameSummaryBottomSheet.formatConfidence(0.0f))
+        // Atrium re-skin: bare percentage, no "Confidence:" prefix.
+        assertEquals("72%", GameSummaryBottomSheet.formatConfidence(0.72f))
+        assertEquals("100%", GameSummaryBottomSheet.formatConfidence(1.0f))
+        assertEquals("0%", GameSummaryBottomSheet.formatConfidence(0.0f))
     }
 
     @Test
