@@ -216,8 +216,13 @@ class GameSummaryBottomSheetTest {
             title = "Work on tactics",
             description = "You missed a fork on move 12.",
         )
-        assertEquals("Rating: 1350",    GameSummaryBottomSheet.formatRating(resp.newRating))
-        assertEquals("Confidence: 85%", GameSummaryBottomSheet.formatConfidence(resp.confidence))
+        // Atrium re-skin (192d7408): bare values — the metric-strip
+        // cells carry their own "RATING" / "ACCURACY" kickers, so the
+        // formatters no longer prefix.  Two single-call tests above
+        // were updated in the same commit; this end-to-end test was
+        // missed and only surfaced when ./gradlew test ran.
+        assertEquals("1350", GameSummaryBottomSheet.formatRating(resp.newRating))
+        assertEquals("85%",  GameSummaryBottomSheet.formatConfidence(resp.confidence))
         assertEquals(85,                GameSummaryBottomSheet.confidenceProgress(resp.confidence))
         assertEquals("DRILL",           GameSummaryBottomSheet.actionBadgeLabel(resp.coachAction.type))
         assertEquals("Work on tactics", resp.coachContent.title)
