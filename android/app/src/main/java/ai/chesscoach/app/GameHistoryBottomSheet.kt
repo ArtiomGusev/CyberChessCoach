@@ -86,17 +86,22 @@ class GameHistoryBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun buildGameRow(game: GameHistoryItem): TextView {
+        // Atrium two-tone signal — cyan for player wins, amber for
+        // losses (warning role), atrium_muted for draws.  Replaces
+        // the previous traffic-light Color.GREEN / RED / YELLOW which
+        // never matched the rest of the dashboard.
+        val ctx = requireContext()
         val resultLabel = game.result.uppercase()
         val resultColor = when (game.result.lowercase()) {
-            "win"  -> Color.GREEN
-            "loss" -> Color.RED
-            else   -> Color.YELLOW
+            "win"  -> androidx.core.content.ContextCompat.getColor(ctx, R.color.atrium_accent_cyan)
+            "loss" -> androidx.core.content.ContextCompat.getColor(ctx, R.color.atrium_accent_amber)
+            else   -> androidx.core.content.ContextCompat.getColor(ctx, R.color.atrium_muted)
         }
         val accuracy = "${(game.accuracy * 100).toInt()}% acc"
         val rating = game.ratingAfter?.let { "  ·  %.0f pts".format(it) } ?: ""
         val date = formatDate(game.createdAt)
 
-        return TextView(requireContext()).apply {
+        return TextView(ctx).apply {
             text = "$resultLabel  ·  $accuracy$rating\n$date"
             setTextColor(resultColor)
             textSize = 13f
@@ -109,7 +114,13 @@ class GameHistoryBottomSheet : BottomSheetDialogFragment() {
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 1
         )
-        setBackgroundColor(Color.parseColor("#1AFFFFFF"))
+        // atrium_hairline (8% white) — same primitive used by the
+        // Atrium.Divider style across the rest of the app.
+        setBackgroundColor(
+            androidx.core.content.ContextCompat.getColor(
+                requireContext(), R.color.atrium_hairline,
+            )
+        )
     }
 
     private fun formatDate(iso: String): String = try {
