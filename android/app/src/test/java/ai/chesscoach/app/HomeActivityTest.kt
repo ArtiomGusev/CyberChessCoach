@@ -112,7 +112,60 @@ class HomeActivityTest {
         }
     }
 
+    // ── Resume card helpers ──────────────────────────────────────────
+
+    @Test
+    fun `formatResumeTitle pads the game number to 3 digits`() {
+        assertEquals("Game 001 · move 0", HomeActivity.formatResumeTitle(1, 0))
+        assertEquals("Game 047 · move 14", HomeActivity.formatResumeTitle(47, 14))
+        assertEquals("Game 999 · move 42", HomeActivity.formatResumeTitle(999, 42))
+    }
+
+    @Test
+    fun `formatResumeTitle clamps the game number floor at 1`() {
+        // Defensive: a 0 / negative game number (corrupt or fresh-install
+        // edge) shouldn't render as "Game 000" or "Game -005".
+        assertEquals("Game 001 · move 5", HomeActivity.formatResumeTitle(0, 5))
+        assertEquals("Game 001 · move 5", HomeActivity.formatResumeTitle(-3, 5))
+    }
+
+    @Test
+    fun `formatResumeSub biases the opponent rating 40 below the player`() {
+        withUtc {
+            val noon = parseUtcDateTime("2026-04-21T12:34:00Z")
+            assertEquals("vs. ~1680 · 12:34", HomeActivity.formatResumeSub(1720f, noon))
+            assertEquals("vs. ~1460 · 12:34", HomeActivity.formatResumeSub(1500f, noon))
+        }
+    }
+
+    @Test
+    fun `formatResumeSub floors the opponent rating at 800`() {
+        withUtc {
+            val noon = parseUtcDateTime("2026-04-21T12:34:00Z")
+            // Player rating below 840 would otherwise drop the opponent
+            // below the slider's 800 floor; clamp keeps the engine in
+            // its valid range.
+            assertEquals("vs. ~800 · 12:34", HomeActivity.formatResumeSub(820f, noon))
+            assertEquals("vs. ~800 · 12:34", HomeActivity.formatResumeSub(800f, noon))
+        }
+    }
+
+    @Test
+    fun `formatResumeSub falls back to adaptive when no rating is cached`() {
+        withUtc {
+            val noon = parseUtcDateTime("2026-04-21T12:34:00Z")
+            assertEquals("vs. adaptive · 12:34", HomeActivity.formatResumeSub(null, noon))
+        }
+    }
+
     // ── helpers ──────────────────────────────────────────────────────
+
+    private fun parseUtcDateTime(iso: String): Long {
+        val fmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }
+        return fmt.parse(iso)!!.time
+    }
 
     private fun parseUtcDate(iso: String): Long {
         val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {

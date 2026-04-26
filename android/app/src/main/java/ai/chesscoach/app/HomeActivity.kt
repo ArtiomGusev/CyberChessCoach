@@ -2,6 +2,7 @@ package ai.chesscoach.app
 
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Bundle
 import android.view.View
 import android.widget.LinearLayout
@@ -13,6 +14,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
+import kotlin.math.roundToInt
 
 /**
  * Cereveon · Atrium · Home / Library (handoff screen #5).
@@ -45,10 +47,16 @@ import kotlin.math.max
  *
  * Resume card
  * -----------
- * Hidden for now.  When MainActivity grows a "current game in progress"
- * persistence hook (or the backend exposes an unfinished-game query),
- * the [updateResumeCard] helper can be wired to populate it; the layout
- * already includes the card markup behind a `gone` visibility flag.
+ * MainActivity persists a lightweight snapshot
+ * ([MainActivity.PREF_LAST_GAME_*]) after every move, clears it on
+ * game-over, and bumps the game number on every new session.  We
+ * read those keys in [maybeShowResumeCard] and render the card iff
+ * a game is in progress with at least one half-move played.
+ *
+ * The "Resume" tap currently just relaunches MainActivity (which
+ * starts a fresh session) — true position restore on tap is a
+ * separate feature and would require ChessBoardView to accept a FEN
+ * / PGN load on construction.
  */
 class HomeActivity : AppCompatActivity() {
 
@@ -96,10 +104,7 @@ class HomeActivity : AppCompatActivity() {
             }
         dateKicker.text = formatDateKicker(System.currentTimeMillis(), firstSeen)
 
-        // Resume card stays hidden until a downstream hook calls
-        // updateResumeCard(); the markup is inflated regardless so the
-        // wiring is a one-liner when the data lands.
-        resumeBlock.visibility = View.GONE
+        maybeShowResumeCard(prefs)
 
         // ── Library rows ─────────────────────────────────────────────
         findViewById<LinearLayout>(R.id.homeRowNewGame).setOnClickListener {
@@ -155,25 +160,52 @@ class HomeActivity : AppCompatActivity() {
     }
 
     /**
-     * Wired but currently unused: when a "last game in progress" hook
-     * lands (either MainActivity persisting `last_game_id` + move count
-     * to prefs, or the backend exposing an unfinished-game query), call
-     * this to populate and reveal the Resume card.
+     * Read MainActivity's in-progress snapshot from [prefs] and either
+     * populate + reveal the Resume card or hide it entirely.  Hidden
+     * when (a) the in-progress flag is false, (b) move count is 0, or
+     * (c) the snapshot is older than [RESUME_TTL_MILLIS] (a stale
+     * snapshot from days ago shouldn't claim there's an active game).
      */
-    @Suppress("unused")
-    fun updateResumeCard(title: String?, sub: String?) {
-        if (title.isNullOrBlank()) {
+    private fun maybeShowResumeCard(prefs: SharedPreferences) {
+        val inProgress = prefs.getBoolean(MainActivity.PREF_LAST_GAME_IN_PROGRESS, false)
+        val moveCount = prefs.getInt(MainActivity.PREF_LAST_GAME_MOVE_COUNT, 0)
+        val timestamp = prefs.getLong(MainActivity.PREF_LAST_GAME_TIMESTAMP, 0L)
+        val gameNumber = prefs.getInt(MainActivity.PREF_LAST_GAME_NUMBER, 0)
+        val now = System.currentTimeMillis()
+
+        if (!inProgress || moveCount <= 0 || timestamp <= 0L ||
+            (now - timestamp) > RESUME_TTL_MILLIS
+        ) {
             resumeBlock.visibility = View.GONE
             return
         }
-        resumeTitle.text = title
-        resumeSub.text = sub.orEmpty()
+
+        val playerRating = prefs.getFloat(MainActivity.PREF_RATING, -1f)
+            .takeIf { it >= 0f }
+        resumeTitle.text = formatResumeTitle(gameNumber, moveCount)
+        resumeSub.text   = formatResumeSub(playerRating, timestamp)
         resumeBlock.visibility = View.VISIBLE
+        findViewById<View>(R.id.homeResumeCard).setOnClickListener {
+            // No state restore yet — relaunch MainActivity, which kicks
+            // off a fresh session.  Once ChessBoardView accepts a FEN
+            // load on construction, swap this for an EXTRA_RESUME flag
+            // MainActivity reads to skip startNewGameSession().
+            launchMain(sheet = null)
+        }
     }
 
     companion object {
         const val PREFS_NAME = MainActivity.PREFS_NAME
         const val PREF_HOME_FIRST_SEEN_AT = "home_first_seen_at"
+
+        /**
+         * A Resume snapshot older than this gets treated as stale
+         * (e.g. the user backgrounded mid-game and didn't return for
+         * days; the AI side and server session have long since timed
+         * out).  6h matches the rough "session" semantics the rest of
+         * the app uses.
+         */
+        const val RESUME_TTL_MILLIS = 6L * 60L * 60L * 1000L
 
         /**
          * Compute up-to-2-letter initials from a player identifier.
@@ -210,6 +242,31 @@ class HomeActivity : AppCompatActivity() {
             val deltaDays = TimeUnit.MILLISECONDS.toDays(nowMillis - firstSeenAtMillis)
             val dayN = max(1L, deltaDays + 1L)
             return "$weekday · Day ${"%03d".format(dayN)}"
+        }
+
+        /**
+         * "Game NNN · move M" — three-digit game number to match the
+         * design ("Game 047 · move 14").  [gameNumber] is the value
+         * MainActivity bumps in startNewGameSession; [moveCount] is
+         * half-moves played so far.
+         */
+        fun formatResumeTitle(gameNumber: Int, moveCount: Int): String =
+            "Game ${"%03d".format(max(1, gameNumber))} · move $moveCount"
+
+        /**
+         * "vs. ~XXXX · HH:mm" — opponent rating biased ~40 below the
+         * player's (matches the Onboarding handoff intent).  When no
+         * cached rating is available we fall back to "vs. adaptive".
+         * Time renders in the device's local timezone since the kicker
+         * itself is a wall-clock display.
+         */
+        fun formatResumeSub(playerRating: Float?, timestampMillis: Long): String {
+            val opponent = playerRating
+                ?.let { (it - 40f).coerceAtLeast(800f).roundToInt() }
+                ?.let { "vs. ~$it" }
+                ?: "vs. adaptive"
+            val time = SimpleDateFormat("HH:mm", Locale.US).format(Date(timestampMillis))
+            return "$opponent · $time"
         }
     }
 }

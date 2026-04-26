@@ -144,13 +144,19 @@ class MainActivity : AppCompatActivity() {
                 viewModel.onHumanMove(
                     fr, fc, tr, tc,
                     applyHumanMove = {
-                        chessBoard.applyMove(fr, fc, tr, tc).also { updateChapterHeader() }
+                        chessBoard.applyMove(fr, fc, tr, tc).also {
+                            updateChapterHeader()
+                            persistInProgressSnapshot()
+                        }
                     },
                     exportFEN = {
                         chessBoard.exportFEN()
                     },
                     applyAIMove = { afr, afc, atr, atc ->
-                        chessBoard.applyAIMove(afr, afc, atr, atc).also { updateChapterHeader() }
+                        chessBoard.applyAIMove(afr, afc, atr, atc).also {
+                            updateChapterHeader()
+                            persistInProgressSnapshot()
+                        }
                     }
                 )
             } else {
@@ -331,6 +337,9 @@ class MainActivity : AppCompatActivity() {
             val finalResult = result
             val finalMoveCount = chessBoard.moveCount
             moveClassifications.clear()
+            // Game's done — clear the in-progress flag so HomeActivity
+            // doesn't show a stale Resume card on the next visit.
+            clearInProgressSnapshot()
             lifecycleScope.launch {
                 when (val r = gameApiClient.finishGame(GameFinishRequest(pgn, resultStr, accuracy, weaknesses, currentPlayerId))) {
                     is ApiResult.Success -> {
@@ -414,6 +423,14 @@ class MainActivity : AppCompatActivity() {
         const val PREF_CURRICULUM_TOPIC = "curriculum_topic"
         const val PREF_CURRICULUM_DIFFICULTY = "curriculum_difficulty"
         const val PREF_CURRICULUM_EXERCISE_TYPE = "curriculum_exercise_type"
+
+        // In-progress snapshot keys — read by HomeActivity to populate
+        // the Resume card.  See bumpGameNumber / persistInProgressSnapshot
+        // / clearInProgressSnapshot below for the lifecycle.
+        const val PREF_LAST_GAME_NUMBER       = "last_game_number"
+        const val PREF_LAST_GAME_MOVE_COUNT   = "last_game_move_count"
+        const val PREF_LAST_GAME_TIMESTAMP    = "last_game_timestamp"
+        const val PREF_LAST_GAME_IN_PROGRESS  = "last_game_in_progress"
 
         // Intent extras used by HomeActivity to ask MainActivity to
         // open a specific bottom sheet on startup.  String constants
@@ -598,6 +615,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startNewGameSession() {
+        bumpGameNumber()
         lifecycleScope.launch {
             when (val r = gameApiClient.startGame(currentPlayerId)) {
                 is ApiResult.Success -> Log.d("GAME", "Session started: ${r.data.gameId}")
@@ -606,6 +624,43 @@ class MainActivity : AppCompatActivity() {
                 ApiResult.Timeout -> Log.w("GAME", "startGame timed out")
             }
         }
+    }
+
+    /**
+     * Persistence hooks for [HomeActivity]'s Resume card.  We persist
+     * the bare minimum needed to render a meaningful "you have an
+     * unfinished game" tile: which game we're on, how many half-moves
+     * have been played, the wall-clock of the last update, and an
+     * in-progress flag the Home screen reads to decide whether to show
+     * the card at all.
+     *
+     * No board state is persisted yet — true position restore on
+     * Resume tap is a separate feature.  For now the Resume card just
+     * relaunches MainActivity, which kicks off a fresh session.
+     */
+    private fun bumpGameNumber() {
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val current = prefs.getInt(PREF_LAST_GAME_NUMBER, 0)
+        prefs.edit()
+            .putInt(PREF_LAST_GAME_NUMBER, current + 1)
+            .putInt(PREF_LAST_GAME_MOVE_COUNT, 0)
+            .putLong(PREF_LAST_GAME_TIMESTAMP, System.currentTimeMillis())
+            .putBoolean(PREF_LAST_GAME_IN_PROGRESS, true)
+            .apply()
+    }
+
+    private fun persistInProgressSnapshot() {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+            .putInt(PREF_LAST_GAME_MOVE_COUNT, chessBoard.moveCount)
+            .putLong(PREF_LAST_GAME_TIMESTAMP, System.currentTimeMillis())
+            .putBoolean(PREF_LAST_GAME_IN_PROGRESS, true)
+            .apply()
+    }
+
+    private fun clearInProgressSnapshot() {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+            .putBoolean(PREF_LAST_GAME_IN_PROGRESS, false)
+            .apply()
     }
 
     private fun computeAccuracy(): Float {
