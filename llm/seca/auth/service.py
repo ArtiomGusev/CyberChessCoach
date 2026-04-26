@@ -1,7 +1,7 @@
 import functools
 import hashlib
 import hmac
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy.orm import Session as DBSession
 
 from .models import Player, Session
@@ -9,6 +9,18 @@ from .hashing import hash_password, needs_rehash, verify_password
 from .tokens import create_access_token
 
 _MAX_SESSIONS = 10
+
+# Sliding-session window — how far forward we push session.expires_at
+# on each successful authenticated request.  Matches the model's
+# default 7-day window so a continuously-active user keeps the same
+# effective expiry shape they got at login.
+_SESSION_EXTEND = timedelta(days=7)
+
+# Don't bump expires_at on EVERY request — for an active user that's
+# a needless DB write per API call.  Only slide when the session has
+# less than this much time remaining; for a 7-day window this means
+# we write at most once every 24h instead of once per call.
+_SESSION_SLIDE_THRESHOLD = timedelta(days=1)
 
 
 @functools.cache
@@ -133,12 +145,23 @@ class AuthService:
             return None
 
         # Fail-closed: treat missing expiry as expired (M1)
-        if session.expires_at is None or session.expires_at < datetime.utcnow():
+        now = datetime.utcnow()
+        if session.expires_at is None or session.expires_at < now:
             return None
 
         token_hash = hashlib.sha256(token.encode()).hexdigest()
         if not hmac.compare_digest(token_hash, session.token_hash or ""):
             return None
+
+        # Sliding-session window: extend expires_at when the session is
+        # within _SESSION_SLIDE_THRESHOLD of expiring.  Threshold-gated
+        # so we don't write on every API call for an active user.
+        # Skipped entirely on validation failure above so an attacker
+        # probing with a stolen-then-revoked token can't keep a dead
+        # session alive.
+        if (session.expires_at - now) < _SESSION_SLIDE_THRESHOLD:
+            session.expires_at = now + _SESSION_EXTEND
+            self.db.commit()
 
         return session.player
 
