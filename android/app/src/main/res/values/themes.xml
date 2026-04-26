@@ -20,7 +20,6 @@
     <style name="Theme.Cereveon.Atrium" parent="Theme.Material3.Dark.NoActionBar">
         <!-- Surfaces -->
         <item name="android:windowBackground">@drawable/bg_atrium_gradient</item>
-        <item name="colorBackground">@color/atrium_bg_base</item>
         <item name="android:colorBackground">@color/atrium_bg_base</item>
         <item name="colorSurface">@color/atrium_bg_surface</item>
         <item name="colorSurfaceVariant">@color/atrium_bg_surface</item>
@@ -173,9 +172,16 @@
         <item name="android:textSize">20sp</item>
     </style>
 
-    <!-- Hairline divider used between sections.  Use as
-         <View style="@style/Atrium.Divider"/> with layout_height=1dp. -->
-    <style name="Atrium.Divider">
+    <!--
+        Hairline divider used between sections.  Use as
+        <View style="@style/Atrium.Divider"/> with layout_height=1dp.
+
+        parent="" disables Android's dot-naming implicit parent lookup,
+        which would otherwise have AAPT search for a style named
+        "Atrium" — there isn't one (we only define Atrium.Display,
+        Atrium.Body, etc.) and the build fails at resource link time.
+    -->
+    <style name="Atrium.Divider" parent="">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">@dimen/atrium_hairline_thickness</item>
         <item name="android:background">@color/atrium_hairline</item>
@@ -188,8 +194,10 @@
         Used for "Coach voice" and "Board style" rows.  Dot is a 12dp
         View whose background drawable swaps between
         atrium_radio_selected / atrium_radio_unselected via Kotlin.
+
+        parent="" — same reason as Atrium.Divider above.
     -->
-    <style name="Atrium.SettingsRow">
+    <style name="Atrium.SettingsRow" parent="">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">@dimen/atrium_tap_target</item>
         <item name="android:orientation">horizontal</item>
