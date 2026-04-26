@@ -7,7 +7,6 @@ import android.os.Bundle
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -28,7 +27,7 @@ import kotlin.math.roundToInt
  * ---------------
  *   I   — New game     → MainActivity (no extras; existing flow takes over)
  *   II  — Lessons      → MainActivity + EXTRA_OPEN_SHEET=training
- *   III — Openings     → no-op (AtriumOpenings is not built yet — Toast)
+ *   III — Openings     → OpeningsActivity (static scaffold; no backend yet)
  *   IV  — Past games   → MainActivity + EXTRA_OPEN_SHEET=history
  *
  * Bottom tab bar
@@ -116,9 +115,7 @@ class HomeActivity : AppCompatActivity() {
             launchMain(sheet = MainActivity.OPEN_SHEET_TRAINING)
         }
         findViewById<LinearLayout>(R.id.homeRowOpenings).setOnClickListener {
-            // No AtriumOpenings screen yet; a Toast is honest about it
-            // (a chevron row that does nothing on tap is a worse signal).
-            Toast.makeText(this, "Openings — coming soon", Toast.LENGTH_SHORT).show()
+            startActivity(Intent(this, OpeningsActivity::class.java))
         }
         findViewById<LinearLayout>(R.id.homeRowPastGames).setOnClickListener {
             launchMain(sheet = MainActivity.OPEN_SHEET_HISTORY)

@@ -100,6 +100,27 @@ class AtriumLayoutInflationTest {
         inflate(R.layout.activity_main)
     }
 
+    @Test
+    fun activity_openings_inflates() {
+        val v = inflate(R.layout.activity_openings)
+        assertNotNull(v.findViewById<View>(R.id.openingsHeader))
+        assertNotNull(v.findViewById<View>(R.id.openingsStats))
+        assertNotNull(v.findViewById<View>(R.id.openingsCardContainer))
+        assertNotNull(v.findViewById<View>(R.id.btnOpeningsDrill))
+        assertNotNull(v.findViewById<View>(R.id.btnOpeningsAdd))
+    }
+
+    @Test
+    fun item_opening_card_inflates() {
+        val v = inflate(R.layout.item_opening_card)
+        assertNotNull(v.findViewById<View>(R.id.openingEco))
+        assertNotNull(v.findViewById<View>(R.id.openingName))
+        assertNotNull(v.findViewById<View>(R.id.openingLine))
+        assertNotNull(v.findViewById<View>(R.id.openingMasteryFill))
+        assertNotNull(v.findViewById<View>(R.id.openingMasteryPct))
+        assertNotNull(v.findViewById<View>(R.id.openingActiveBadge))
+    }
+
     // ── Bottom sheets ────────────────────────────────────────────────
 
     @Test

@@ -387,4 +387,28 @@
         <item name="android:background">@drawable/atrium_home_tab_dot</item>
     </style>
 
+    <!-- ─── Openings stat strip ─────────────────────────────────────── -->
+
+    <!-- 22sp italic Cormorant value used inside each metric cell. -->
+    <style name="Atrium.OpeningsStat.Value" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">@dimen/atrium_space_4</item>
+        <item name="android:fontFamily">@font/cormorant_garamond</item>
+        <item name="android:textStyle">italic</item>
+        <item name="android:textSize">22sp</item>
+        <item name="android:textColor">@color/atrium_ink</item>
+    </style>
+
+    <!-- Italic Inter sub label below each value (e.g. "memorized"). -->
+    <style name="Atrium.OpeningsStat.Sub" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">2dp</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:textStyle">italic</item>
+        <item name="android:textSize">10sp</item>
+        <item name="android:textColor">@color/atrium_muted</item>
+    </style>
+
 </resources>
