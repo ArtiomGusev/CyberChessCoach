@@ -1,24 +1,39 @@
 package ai.chesscoach.app
 
-import android.graphics.Color
-import android.view.Gravity
+import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Button
-import android.widget.LinearLayout
+import android.widget.ImageButton
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 
 data class ChatMessage(
     val role: String,
-    val text: String
+    val text: String,
 )
 
-class ChatAdapter : RecyclerView.Adapter<ChatAdapter.VH>() {
+/**
+ * Atrium chat adapter — inflates `item_chat_coach.xml` for assistant
+ * messages and `item_chat_user.xml` for everything else.
+ *
+ * Per the Atrium handoff, voices are separated by typography rather
+ * than by bubble background:
+ *   - Coach: left-aligned, mono cyan COACH kicker, italic Cormorant
+ *     body 16sp, 1px gradient gutter on the leading edge.
+ *   - User:  right-aligned, mono dim YOU kicker, Inter italic 14sp
+ *     muted, no fill.
+ *
+ * Feedback (👍 / 👎) is preserved on coach messages — the layout uses
+ * star drawables tinted to cyan / amber / dim depending on tap state.
+ * The onFeedback callback shape is unchanged so ChatBottomSheet's
+ * existing wiring keeps working.
+ */
+class ChatAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     private val messages = mutableListOf<ChatMessage>()
 
-    /** Called when the user taps 👍 or 👎 on an assistant message. */
+    /** Called when the user taps the helpful / not-helpful icon on a coach message. */
     var onFeedback: ((position: Int, isHelpful: Boolean) -> Unit)? = null
 
     fun addMessage(msg: ChatMessage) {
@@ -39,110 +54,60 @@ class ChatAdapter : RecyclerView.Adapter<ChatAdapter.VH>() {
         notifyItemRangeRemoved(0, count)
     }
 
-    override fun getItemViewType(position: Int): Int =
-        if (messages[position].role == "assistant") TYPE_ASSISTANT else TYPE_DEFAULT
-
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
-        val ctx = parent.context
-        return if (viewType == TYPE_ASSISTANT) {
-            val root = LinearLayout(ctx).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                )
-            }
-            val tv = TextView(ctx).apply {
-                setPadding(24, 16, 24, 8)
-                textSize = 15f
-                setBackgroundColor(Color.parseColor("#221122"))
-                setTextColor(Color.GREEN)
-                gravity = Gravity.START
-                layoutParams = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                )
-            }
-            val thumbRow = LinearLayout(ctx).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.END
-                setPadding(24, 0, 24, 8)
-                setBackgroundColor(Color.parseColor("#221122"))
-                layoutParams = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                )
-            }
-            val thumbUp = Button(ctx).apply {
-                text = "👍"
-                textSize = 16f
-                setBackgroundColor(Color.TRANSPARENT)
-                setPadding(12, 0, 12, 0)
-            }
-            val thumbDown = Button(ctx).apply {
-                text = "👎"
-                textSize = 16f
-                setBackgroundColor(Color.TRANSPARENT)
-                setPadding(12, 0, 12, 0)
-            }
-            thumbRow.addView(thumbUp)
-            thumbRow.addView(thumbDown)
-            root.addView(tv)
-            root.addView(thumbRow)
-            VH(root, tv, thumbUp, thumbDown)
-        } else {
-            val tv = TextView(ctx).apply {
-                setPadding(24, 16, 24, 16)
-                textSize = 15f
-            }
-            VH(tv, tv, null, null)
-        }
-    }
-
-    override fun onBindViewHolder(holder: VH, position: Int) {
-        val msg = messages[position]
-        holder.text.text = msg.text
-
-        when (msg.role) {
-            "user" -> {
-                holder.text.setBackgroundColor(Color.parseColor("#112244"))
-                holder.text.setTextColor(Color.CYAN)
-                holder.text.gravity = Gravity.END
-            }
-            "assistant" -> {
-                // Reset tint on recycle so previously-rated items don't bleed into new ones
-                holder.thumbUp?.setTextColor(Color.LTGRAY)
-                holder.thumbDown?.setTextColor(Color.LTGRAY)
-                holder.thumbUp?.setOnClickListener {
-                    onFeedback?.invoke(holder.bindingAdapterPosition, true)
-                    holder.thumbUp.setTextColor(Color.GREEN)
-                    holder.thumbDown?.setTextColor(Color.DKGRAY)
-                }
-                holder.thumbDown?.setOnClickListener {
-                    onFeedback?.invoke(holder.bindingAdapterPosition, false)
-                    holder.thumbDown.setTextColor(Color.RED)
-                    holder.thumbUp?.setTextColor(Color.DKGRAY)
-                }
-            }
-            else -> {
-                holder.text.setBackgroundColor(Color.BLACK)
-                holder.text.setTextColor(Color.LTGRAY)
-                holder.text.gravity = Gravity.CENTER
-            }
-        }
-    }
-
     override fun getItemCount() = messages.size
 
-    class VH(
-        itemView: View,
-        val text: TextView,
-        val thumbUp: Button?,
-        val thumbDown: Button?,
-    ) : RecyclerView.ViewHolder(itemView)
+    override fun getItemViewType(position: Int): Int =
+        if (messages[position].role == "assistant") TYPE_COACH else TYPE_USER
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+        val inflater = LayoutInflater.from(parent.context)
+        return if (viewType == TYPE_COACH) {
+            CoachVH(inflater.inflate(R.layout.item_chat_coach, parent, false))
+        } else {
+            UserVH(inflater.inflate(R.layout.item_chat_user, parent, false))
+        }
+    }
+
+    override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+        val msg = messages[position]
+        when (holder) {
+            is CoachVH -> {
+                holder.body.text = msg.text
+                // Reset feedback tint on rebind so a recycled view from
+                // a previously rated row doesn't carry the colour over.
+                val ctx = holder.itemView.context
+                val dim = ContextCompat.getColor(ctx, R.color.atrium_dim)
+                holder.up.setColorFilter(dim)
+                holder.down.setColorFilter(dim)
+                holder.up.setOnClickListener {
+                    onFeedback?.invoke(holder.bindingAdapterPosition, true)
+                    holder.up.setColorFilter(ContextCompat.getColor(ctx, R.color.atrium_accent_cyan))
+                    holder.down.setColorFilter(dim)
+                }
+                holder.down.setOnClickListener {
+                    onFeedback?.invoke(holder.bindingAdapterPosition, false)
+                    holder.down.setColorFilter(ContextCompat.getColor(ctx, R.color.atrium_accent_amber))
+                    holder.up.setColorFilter(dim)
+                }
+            }
+            is UserVH -> {
+                holder.body.text = msg.text
+            }
+        }
+    }
+
+    private class CoachVH(view: View) : RecyclerView.ViewHolder(view) {
+        val body: TextView = view.findViewById(R.id.coachBody)
+        val up: ImageButton = view.findViewById(R.id.btnFeedbackUp)
+        val down: ImageButton = view.findViewById(R.id.btnFeedbackDown)
+    }
+
+    private class UserVH(view: View) : RecyclerView.ViewHolder(view) {
+        val body: TextView = view.findViewById(R.id.userBody)
+    }
 
     companion object {
-        private const val TYPE_ASSISTANT = 1
-        private const val TYPE_DEFAULT = 0
+        private const val TYPE_COACH = 1
+        private const val TYPE_USER = 0
     }
 }

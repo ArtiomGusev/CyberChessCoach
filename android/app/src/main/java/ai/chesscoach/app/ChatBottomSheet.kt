@@ -45,6 +45,12 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
     private lateinit var miniBoard: ChessBoardView
     private lateinit var engineContextHeader: LinearLayout
     private lateinit var txtEngineContext: TextView
+    /**
+     * Atrium typing-dots indicator.  Visible while the chat stream is
+     * waiting for the first chunk; hidden as soon as text starts
+     * accumulating or the request finishes / errors.
+     */
+    private lateinit var typingDots: AtriumTypingDotsView
 
     // ---------------------------------------------------------------------------
     // State
@@ -199,6 +205,7 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
         miniBoard = view.findViewById(R.id.miniBoard)
         engineContextHeader = view.findViewById(R.id.engineContextHeader)
         txtEngineContext = view.findViewById(R.id.txtEngineContext)
+        typingDots = view.findViewById(R.id.typingDots)
 
         // Mini board — non-interactive position preview
         miniBoard.isInteractive = false
@@ -345,6 +352,10 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
     private fun sendToBackend(@Suppress("UNUSED_PARAMETER") query: String) {
         isStreaming = true
         sendBtn.isEnabled = false
+        // Atrium: 3 cyan staggered-pulse dots while we wait for the
+        // first chunk.  Hidden as soon as text begins accumulating so
+        // it doesn't compete with the streamed prose.
+        typingDots.visibility = View.VISIBLE
 
         viewLifecycleOwner.lifecycleScope.launch {
             val messages =
@@ -372,6 +383,9 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
                         accumulated += chunk.text
                         chatAdapter.updateLastMessage(accumulated)
                         scrollToBottom()
+                        if (typingDots.visibility == View.VISIBLE) {
+                            typingDots.visibility = View.GONE
+                        }
                     }
                     is StreamChunk.Done -> {
                         chunk.engineSignal?.let { updateEngineContextHeader(it) }
@@ -389,6 +403,7 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
 
             isStreaming = false
             sendBtn.isEnabled = true
+            typingDots.visibility = View.GONE
         }
     }
 }
