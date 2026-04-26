@@ -91,6 +91,12 @@ class MainActivity : AppCompatActivity() {
             )
         authApiClient = HttpAuthApiClient(baseUrl = BuildConfig.COACH_API_BASE)
 
+        // If a previous /game/finish failed offline (timeout / 5xx /
+        // network), the payload was persisted; try again now that we
+        // (probably) have connectivity.  Fire-and-forget — see the
+        // method's kdoc for the keep-vs-drop policy.
+        retryPendingFinishOnColdStart()
+
         // Verify SECA safe_mode at cold-start — fire-and-forget, no UI update.
         lifecycleScope.launch {
             when (val r = gameApiClient.getSecaStatus()) {
@@ -381,17 +387,16 @@ class MainActivity : AppCompatActivity() {
             // Game's done — clear the in-progress flag so HomeActivity
             // doesn't show a stale Resume card on the next visit.
             clearInProgressSnapshot()
+            val finishReq = GameFinishRequest(
+                pgn = pgn,
+                result = resultStr,
+                accuracy = accuracy,
+                weaknesses = weaknesses,
+                playerId = currentPlayerId,
+                gameId = currentServerGameId,
+            )
             lifecycleScope.launch {
-                when (val r = gameApiClient.finishGame(
-                    GameFinishRequest(
-                        pgn = pgn,
-                        result = resultStr,
-                        accuracy = accuracy,
-                        weaknesses = weaknesses,
-                        playerId = currentPlayerId,
-                        gameId = currentServerGameId,
-                    ),
-                )) {
+                when (val r = gameApiClient.finishGame(finishReq)) {
                     is ApiResult.Success -> {
                         lastGameFinishResponse = r.data
                         showCoachingResult(r.data, finalResult, finalMoveCount)
@@ -399,12 +404,27 @@ class MainActivity : AppCompatActivity() {
                     is ApiResult.HttpError -> {
                         if (r.code == 401) {
                             handleSessionExpired()
+                        } else if (PendingGameFinish.isTransient(r)) {
+                            // 5xx — server-side incident.  Persist + retry
+                            // on next cold-start instead of dropping the
+                            // game's PGN + analysis on the floor.
+                            persistPendingFinish(finishReq)
+                            Log.w("GAME", "finishGame HTTP ${r.code} — saved for retry")
                         } else {
-                            Log.w("GAME", "finishGame HTTP ${r.code}")
+                            // 4xx (other than 401) — server actively
+                            // rejected the payload, retry would just
+                            // fail again.  Log and drop.
+                            Log.w("GAME", "finishGame HTTP ${r.code} — dropping (non-retryable)")
                         }
                     }
-                    is ApiResult.NetworkError -> Log.w("GAME", "finishGame network error", r.cause)
-                    ApiResult.Timeout -> Log.w("GAME", "finishGame timed out")
+                    is ApiResult.NetworkError -> {
+                        persistPendingFinish(finishReq)
+                        Log.w("GAME", "finishGame network error — saved for retry", r.cause)
+                    }
+                    ApiResult.Timeout -> {
+                        persistPendingFinish(finishReq)
+                        Log.w("GAME", "finishGame timed out — saved for retry")
+                    }
                 }
             }
         }
@@ -843,6 +863,83 @@ class MainActivity : AppCompatActivity() {
             .remove(PREF_LAST_GAME_SERVER_ID)
             .apply()
         currentServerGameId = null
+    }
+
+    /**
+     * Persist the failed /game/finish payload so the next cold-start
+     * can retry it.  Called from the transient-error branches in
+     * onGameOver (timeout, network, 5xx) — without this hook those
+     * branches used to drop the entire PGN + classification analysis
+     * silently, which is the kind of data loss users notice.
+     *
+     * Slot is one-deep; a second pending payload overwrites the first.
+     * See PendingGameFinish kdoc for the rationale.
+     */
+    private fun persistPendingFinish(req: GameFinishRequest) {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+            .putString(PendingGameFinish.PREF_PENDING_FINISH_PAYLOAD, PendingGameFinish.toJson(req))
+            .apply()
+        runOnUiThread {
+            Toast.makeText(
+                this,
+                "Saved offline — we'll sync your game next time",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
+
+    /**
+     * Try to send any pending /game/finish payload from a previous
+     * session that failed offline.  Called once from onCreate.  The
+     * call is fire-and-forget on the activity's lifecycleScope:
+     *   - Success: clear the slot + brief toast confirming sync
+     *   - Still-transient failure: leave the slot for the next try
+     *   - Non-transient failure (4xx other than 401): clear the slot
+     *     since the call would just fail again
+     *
+     * Skipped silently when there's nothing pending or the stored
+     * blob is malformed (PendingGameFinish.fromJson returns null —
+     * see its kdoc for the failure modes it tolerates).
+     */
+    private fun retryPendingFinishOnColdStart() {
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val raw = prefs.getString(PendingGameFinish.PREF_PENDING_FINISH_PAYLOAD, null)
+            ?: return
+        val req = PendingGameFinish.fromJson(raw)
+        if (req == null) {
+            // Corrupted blob — drop it so we don't keep tripping over it.
+            prefs.edit().remove(PendingGameFinish.PREF_PENDING_FINISH_PAYLOAD).apply()
+            Log.w("GAME", "Dropping malformed pending finish payload")
+            return
+        }
+        lifecycleScope.launch {
+            when (val r = gameApiClient.finishGame(req)) {
+                is ApiResult.Success -> {
+                    prefs.edit().remove(PendingGameFinish.PREF_PENDING_FINISH_PAYLOAD).apply()
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Synced your offline game",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    Log.d("GAME", "Pending finish synced successfully")
+                }
+                is ApiResult.HttpError -> {
+                    if (r.code == 401) {
+                        // Token expired between save and retry — keep
+                        // the payload, redirect to login; the next
+                        // successful auth + cold-start will try again.
+                        handleSessionExpired()
+                    } else if (PendingGameFinish.isTransient(r)) {
+                        Log.d("GAME", "Pending finish still transient (HTTP ${r.code}); keeping for next try")
+                    } else {
+                        prefs.edit().remove(PendingGameFinish.PREF_PENDING_FINISH_PAYLOAD).apply()
+                        Log.w("GAME", "Pending finish HTTP ${r.code} non-retryable; dropping")
+                    }
+                }
+                is ApiResult.NetworkError -> Log.d("GAME", "Pending finish network error; keeping", r.cause)
+                ApiResult.Timeout         -> Log.d("GAME", "Pending finish timed out; keeping")
+            }
+        }
     }
 
     private fun computeAccuracy(): Float {
