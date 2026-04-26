@@ -174,6 +174,14 @@ class MainActivity : AppCompatActivity() {
             openChat()
         }
 
+        // Atrium action bar — primary "Ask the coach" + 44dp "?" both
+        // route into the same chat flow as the drawer's btnChat.  Wired
+        // here as findViewById so the activity's lateinit field set
+        // does not need to grow; tests that don't exercise these IDs
+        // are unaffected.
+        findViewById<Button>(R.id.btnAskCoach)?.setOnClickListener { openChat() }
+        findViewById<Button>(R.id.btnHelp)?.setOnClickListener { openChat() }
+
         btnGameHistory.setOnClickListener {
             drawerLayout.closeDrawer(GravityCompat.END)
             val sheet = GameHistoryBottomSheet()
