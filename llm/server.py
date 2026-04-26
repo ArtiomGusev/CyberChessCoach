@@ -277,6 +277,36 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 
+# Allow-list of methods clients may legitimately request via the
+# X-HTTP-Method-Override header.  Only PATCH today; DELETE / PUT could
+# follow if a future client ever needs them.  Anything outside this set
+# is silently ignored so an attacker can't elevate a POST to e.g. an
+# arbitrary method that bypasses CSRF protections elsewhere.
+_METHOD_OVERRIDE_ALLOWED = frozenset({"PATCH"})
+
+
+@app.middleware("http")
+async def http_method_override(request: Request, call_next):
+    """Promote POST → PATCH (or other allow-listed methods) when the
+    client sets ``X-HTTP-Method-Override``.
+
+    The Android client's HTTP layer uses ``java.net.HttpURLConnection``
+    which on JDK 17 (and earlier) does not allow PATCH as a request
+    method.  Rather than ship a reflection hack on the client or pull
+    in OkHttp at runtime just for this one endpoint, we accept POST +
+    header at the edge.  Production Android may also use real PATCH —
+    this middleware is a no-op when the header is absent.
+
+    Restricted to the allow-list above so the override cannot be used
+    to escape the documented HTTP method semantics of any other route.
+    """
+    if request.method == "POST":
+        override = request.headers.get("x-http-method-override", "").upper()
+        if override in _METHOD_OVERRIDE_ALLOWED:
+            request.scope["method"] = override
+    return await call_next(request)
+
+
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     return JSONResponse(status_code=429, content={"error": "Too many requests"})

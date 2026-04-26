@@ -3,14 +3,17 @@ package ai.chesscoach.app
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.slider.Slider
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 /**
  * Cereveon · Atrium · Onboarding · Skill calibration (handoff #2).
@@ -27,9 +30,12 @@ import kotlin.math.roundToInt
  *   player_rating_estimate: Float  — slider value, e.g. 1720f
  *   player_confidence: Float       — sure=0.85, guessing=0.5, rusty=0.25
  *
- * The values are local-only for now.  When /auth/me grows a PATCH
- * endpoint to update rating + confidence, MainActivity (or a new
- * sync helper) can read these prefs and forward them to the server.
+ * Server sync: [persistAndContinue] also fires a best-effort PATCH
+ * /auth/me with the new values so the backend's adaptation layer sees
+ * the calibration before the first game.  If the call fails (offline,
+ * server down) the values stay in SharedPreferences and MainActivity's
+ * cold-start sync reconciles by re-PATCHing — see
+ * MainActivity.PREF_PLAYER_RATING_ESTIMATE / RATING_RECONCILE_EPSILON.
  */
 class OnboardingActivity : AppCompatActivity() {
 
@@ -116,9 +122,38 @@ class OnboardingActivity : AppCompatActivity() {
             .putFloat(MainActivity.PREF_RATING, rating)
             .apply()
 
+        // Best-effort PATCH /auth/me so the server's adaptation layer
+        // sees the calibration before the first game.  If the network
+        // call fails (offline, server down) the values stay in
+        // SharedPreferences and MainActivity's cold-start sync
+        // reconciles by comparing the cached PREF_PLAYER_RATING_ESTIMATE
+        // against the server-returned rating and re-PATCHing.
+        firePatchAuthMe(rating, confidence)
+
         startActivity(Intent(this, HomeActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
         finish()
+    }
+
+    private fun firePatchAuthMe(rating: Float, confidence: Float) {
+        val token = AuthRepository(EncryptedTokenStorage(this)).getToken() ?: return
+        val client: AuthApiClient = HttpAuthApiClient(baseUrl = BuildConfig.COACH_API_BASE)
+        // Fire on the activity's lifecycleScope rather than
+        // GlobalScope: if the user backgrounds the app immediately
+        // after Continue, the launch is cancelled and we don't leak
+        // a coroutine.  Recovery path in MainActivity will retry on
+        // the next cold-start.
+        lifecycleScope.launch {
+            when (val r = client.updateMe(token, rating = rating, confidence = confidence)) {
+                is ApiResult.Success -> Log.d(
+                    "ONBOARDING",
+                    "PATCH /auth/me OK (rating=${r.data.rating}, confidence=${r.data.confidence})",
+                )
+                is ApiResult.HttpError -> Log.w("ONBOARDING", "PATCH /auth/me HTTP ${r.code}")
+                is ApiResult.NetworkError -> Log.w("ONBOARDING", "PATCH /auth/me network error", r.cause)
+                ApiResult.Timeout -> Log.w("ONBOARDING", "PATCH /auth/me timed out")
+            }
+        }
     }
 
     companion object {

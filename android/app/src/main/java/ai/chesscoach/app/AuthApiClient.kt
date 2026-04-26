@@ -80,6 +80,37 @@ interface AuthApiClient {
         newPassword: String,
         token: String,
     ): ApiResult<Unit> = ApiResult.HttpError(501)
+
+    /**
+     * PATCH /auth/me — partial profile update.
+     *
+     * Forwards the calibration estimate produced by the Onboarding
+     * screen so the server's adaptation layer can dispatch the first
+     * opponent at the right level instead of waiting for rating drift
+     * to converge.
+     *
+     * At least one of [rating] / [confidence] must be non-null, otherwise
+     * the backend returns 400.  Both null is allowed at the call site
+     * (callers can compose the request from optional fields without
+     * pre-filtering); the backend is the source of truth for the bound
+     * checks (rating in (0, 4000], confidence in [0, 1]).
+     *
+     * Default implementation returns [ApiResult.HttpError(501)] so test
+     * fakes that only override login/logout do not need to implement
+     * this method.
+     *
+     * @return [ApiResult.Success] with the *post-update* [MeResponse]
+     *         on HTTP 200 — same shape as [me] so the client can
+     *         replace its cache from this single round-trip.
+     *         [ApiResult.HttpError(400)] on out-of-bounds values or
+     *         empty payload; [ApiResult.HttpError(401)] on invalid
+     *         token; transport variants otherwise.
+     */
+    suspend fun updateMe(
+        token: String,
+        rating: Float? = null,
+        confidence: Float? = null,
+    ): ApiResult<MeResponse> = ApiResult.HttpError(501)
 }
 
 /**
@@ -178,6 +209,55 @@ class HttpAuthApiClient(
             conn.setRequestProperty("Authorization", "Bearer $token")
             conn.connectTimeout = connectTimeoutMs
             conn.readTimeout = readTimeoutMs
+
+            val code = conn.responseCode
+            if (code == HttpURLConnection.HTTP_OK) {
+                val raw = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
+                ApiResult.Success(parseMeResponse(raw))
+            } else {
+                ApiResult.HttpError(code)
+            }
+        } catch (_: SocketTimeoutException) {
+            ApiResult.Timeout
+        } catch (e: Exception) {
+            ApiResult.NetworkError(e)
+        }
+    }
+
+    override suspend fun updateMe(
+        token: String,
+        rating: Float?,
+        confidence: Float?,
+    ): ApiResult<MeResponse> = withContext(Dispatchers.IO) {
+        try {
+            // Build a body with only the non-null fields.  Sending {}
+            // (both null) produces a 400 from the backend — preserved
+            // so a malformed call surfaces immediately rather than
+            // appearing as a no-op success.
+            val body = JSONObject().apply {
+                if (rating != null) put("rating", rating.toDouble())
+                if (confidence != null) put("confidence", confidence.toDouble())
+            }.toString()
+
+            val url = URL("$baseUrl$ME_PATH")
+            val conn = url.openConnection() as HttpURLConnection
+            // POST + X-HTTP-Method-Override: PATCH — the JDK's
+            // HttpURLConnection rejects PATCH as a request method on
+            // JDK 17 (the host JVM tests target), but Android's
+            // OkHttp-backed implementation accepts it.  Going via the
+            // override header keeps a single code path that works on
+            // both runtimes; the backend strips the header in the
+            // http_method_override middleware in server.py and routes
+            // it as a real PATCH /auth/me.
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("X-HTTP-Method-Override", "PATCH")
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.setRequestProperty("Authorization", "Bearer $token")
+            conn.doOutput = true
+            conn.connectTimeout = connectTimeoutMs
+            conn.readTimeout = readTimeoutMs
+
+            conn.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(body) }
 
             val code = conn.responseCode
             if (code == HttpURLConnection.HTTP_OK) {

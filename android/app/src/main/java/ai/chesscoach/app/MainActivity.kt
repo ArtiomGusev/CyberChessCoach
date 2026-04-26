@@ -273,12 +273,42 @@ class MainActivity : AppCompatActivity() {
             lifecycleScope.launch {
                 when (val r = authApiClient.me(authToken)) {
                     is ApiResult.Success -> {
-                        txtRatingHeader.text = "Rating: %.0f".format(r.data.rating)
+                        // Recovery path for the OnboardingActivity PATCH:
+                        // if the local PREF_PLAYER_RATING_ESTIMATE was
+                        // set (i.e. user completed Onboarding) but the
+                        // server rating still differs, the PATCH
+                        // attempted there must have failed (offline,
+                        // server down).  Re-PATCH now while we have a
+                        // good network round-trip in flight, then use
+                        // the local values as the source of truth for
+                        // this cold-start.  Without this branch the
+                        // server's stale rating would clobber the
+                        // calibration the user just completed.
+                        val localEstimate = prefs.getFloat(PREF_PLAYER_RATING_ESTIMATE, -1f)
+                        val localConfidence = prefs.getFloat(PREF_PLAYER_CONFIDENCE_LOCAL, -1f)
+                        val needsReconcile = localEstimate >= 0f &&
+                            kotlin.math.abs(localEstimate - r.data.rating) > RATING_RECONCILE_EPSILON
+                        val reconciled = if (needsReconcile) {
+                            val confArg = localConfidence.takeIf { it >= 0f }
+                            when (val patch = authApiClient.updateMe(
+                                token = authToken,
+                                rating = localEstimate,
+                                confidence = confArg,
+                            )) {
+                                is ApiResult.Success -> patch.data
+                                else -> {
+                                    Log.d("AUTH", "PATCH /auth/me reconcile failed: $patch")
+                                    r.data
+                                }
+                            }
+                        } else r.data
+
+                        txtRatingHeader.text = "Rating: %.0f".format(reconciled.rating)
                         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
-                            .putFloat(PREF_RATING, r.data.rating)
-                            .putFloat(PREF_CONFIDENCE, r.data.confidence)
+                            .putFloat(PREF_RATING, reconciled.rating)
+                            .putFloat(PREF_CONFIDENCE, reconciled.confidence)
                             .apply()
-                        val tags = formatWeaknessTags(r.data.skillVector)
+                        val tags = formatWeaknessTags(reconciled.skillVector)
                         if (tags.isNotEmpty()) {
                             txtWeaknessTags.text = tags
                             txtWeaknessTags.visibility = View.VISIBLE
@@ -431,6 +461,21 @@ class MainActivity : AppCompatActivity() {
         const val PREF_LAST_GAME_MOVE_COUNT   = "last_game_move_count"
         const val PREF_LAST_GAME_TIMESTAMP    = "last_game_timestamp"
         const val PREF_LAST_GAME_IN_PROGRESS  = "last_game_in_progress"
+
+        // Onboarding-time calibration persisted by OnboardingActivity.
+        // We re-declare the names here as constants because the
+        // recovery path in this file's onCreate reads them, and the
+        // Kotlin compiler refuses cross-companion-object constant
+        // imports inside the activity body without explicit aliasing.
+        const val PREF_PLAYER_RATING_ESTIMATE  = OnboardingActivity.PREF_PLAYER_RATING_ESTIMATE
+        const val PREF_PLAYER_CONFIDENCE_LOCAL = OnboardingActivity.PREF_PLAYER_CONFIDENCE
+
+        // Tolerance for the cold-start reconcile path: a server rating
+        // within 0.5 of the local estimate is "close enough" — common
+        // case is exact equality after the OnboardingActivity PATCH
+        // succeeded; the epsilon guards against IEEE 754 round-trip
+        // noise from the float→JSON→float conversion.
+        const val RATING_RECONCILE_EPSILON = 0.5f
 
         // Intent extras used by HomeActivity to ask MainActivity to
         // open a specific bottom sheet on startup.  String constants

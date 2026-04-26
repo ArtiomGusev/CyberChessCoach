@@ -187,6 +187,46 @@ class ChangePasswordRequest(BaseModel):
         return v
 
 
+class UpdateMeRequest(BaseModel):
+    """Partial update to the authenticated player's profile.
+
+    Both fields are optional so the client can update them independently.
+    The Android Onboarding screen sends rating + confidence together, but
+    a future "I want to bump my rating" affordance could send just one.
+
+    Bounds rationale
+    ----------------
+    * rating: ``(0, 4000]`` — the slider's effective range is 800–2600
+      and Stockfish tops out around 3700, so 4000 is a comfortable
+      defensive ceiling.  We reject 0 and negatives so a corrupt slider
+      value never erases a real rating server-side.
+    * confidence: ``[0.0, 1.0]`` — the adaptation layer treats this as
+      an uncertainty band, so anything outside [0,1] would either crash
+      downstream or silently be misinterpreted.
+    """
+
+    rating: float | None = None
+    confidence: float | None = None
+
+    @field_validator("rating")
+    @classmethod
+    def validate_rating(cls, v: float | None) -> float | None:
+        if v is None:
+            return None
+        if not 0.0 < v <= 4000.0:
+            raise ValueError("rating must be in (0, 4000]")
+        return float(v)
+
+    @field_validator("confidence")
+    @classmethod
+    def validate_confidence(cls, v: float | None) -> float | None:
+        if v is None:
+            return None
+        if not 0.0 <= v <= 1.0:
+            raise ValueError("confidence must be in [0.0, 1.0]")
+        return float(v)
+
+
 # ---------------------------
 # Endpoints
 # ---------------------------
@@ -237,8 +277,14 @@ def logout(
     return {"status": "logged_out"}
 
 
-@router.get("/me")
-def me(player=Depends(get_current_player)):
+def _serialise_player(player) -> dict:
+    """Shared shape for GET /auth/me and PATCH /auth/me responses.
+
+    Both endpoints return the full player profile so the Android client
+    can replace its cached state from a single round-trip.  Pulled into
+    a helper so the GET and PATCH paths can never drift in their
+    response contract.
+    """
     try:
         skill_vector = json.loads(player.skill_vector_json or "{}")
         skill_vector = {k: float(v) for k, v in skill_vector.items() if isinstance(v, (int, float))}
@@ -251,6 +297,46 @@ def me(player=Depends(get_current_player)):
         "confidence": player.confidence,
         "skill_vector": skill_vector,
     }
+
+
+@router.get("/me")
+def me(player=Depends(get_current_player)):
+    return _serialise_player(player)
+
+
+@router.patch("/me")
+@limiter.limit("10/minute")
+def update_me(
+    req: UpdateMeRequest,
+    request: Request,
+    player=Depends(get_current_player),
+    db: DBSession = Depends(get_db),
+):
+    """Apply a partial update to the authenticated player's profile.
+
+    Used by the Android Onboarding screen to forward the calibration
+    estimate (rating + confidence) so the adaptation layer can dispatch
+    a first opponent at the right level without waiting for the user
+    to play enough games for rating drift to converge.
+
+    Behaviour
+    ---------
+    * Empty request body (both fields ``None``) → 400.  Saves a wasted
+      DB write and surfaces a malformed client immediately.
+    * Either field ``None`` → leave the existing value intact.
+    * Both fields present → update both.
+    * Returns the same shape as GET /auth/me so the client can replace
+      its cache from this single round-trip.
+    """
+    if req.rating is None and req.confidence is None:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    if req.rating is not None:
+        player.rating = req.rating
+    if req.confidence is not None:
+        player.confidence = req.confidence
+    db.commit()
+    db.refresh(player)
+    return _serialise_player(player)
 
 
 @router.post("/change-password")
