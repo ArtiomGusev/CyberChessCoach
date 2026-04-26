@@ -1,6 +1,7 @@
 package ai.chesscoach.app
 
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -95,6 +96,15 @@ class SettingsBottomSheet : BottomSheetDialogFragment() {
             prefs.edit().putBoolean(PREF_NOTIFICATIONS_ENABLED, checked).apply()
         }
         view.findViewById<View>(R.id.rowNotifications).setOnClickListener { notif.toggle() }
+
+        // ── Premium chevron row ──────────────────────────────────────
+        view.findViewById<View>(R.id.rowUpgrade).setOnClickListener {
+            // Dismiss the sheet first so the paywall slides in over a
+            // settled MainActivity background, not over a half-faded
+            // bottom-sheet scrim.
+            dismiss()
+            startActivity(Intent(requireContext(), PaywallActivity::class.java))
+        }
 
         // ── Account chevron rows ─────────────────────────────────────
         view.findViewById<View>(R.id.rowChangePassword).setOnClickListener {

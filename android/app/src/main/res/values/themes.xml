@@ -411,4 +411,29 @@
         <item name="android:textColor">@color/atrium_muted</item>
     </style>
 
+    <!-- ─── Paywall plan tiles ──────────────────────────────────────── -->
+
+    <!-- 30sp italic Cormorant price.  Active tile overrides
+         android:textColor in the layout to atrium_accent_cyan. -->
+    <style name="Atrium.PaywallPlan.Price" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">@dimen/atrium_space_4</item>
+        <item name="android:fontFamily">@font/cormorant_garamond</item>
+        <item name="android:textStyle">italic</item>
+        <item name="android:textSize">30sp</item>
+        <item name="android:textColor">@color/atrium_ink</item>
+    </style>
+
+    <!-- 11sp italic Inter sub label below the price (e.g. "per month"). -->
+    <style name="Atrium.PaywallPlan.Sub" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">@dimen/atrium_space_4</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:textStyle">italic</item>
+        <item name="android:textSize">11sp</item>
+        <item name="android:textColor">@color/atrium_muted</item>
+    </style>
+
 </resources>

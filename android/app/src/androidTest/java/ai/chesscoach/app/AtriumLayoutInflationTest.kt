@@ -121,6 +121,24 @@ class AtriumLayoutInflationTest {
         assertNotNull(v.findViewById<View>(R.id.openingActiveBadge))
     }
 
+    @Test
+    fun activity_paywall_inflates() {
+        val v = inflate(R.layout.activity_paywall)
+        assertNotNull(v.findViewById<View>(R.id.paywallFeatures))
+        assertNotNull(v.findViewById<View>(R.id.paywallPlanMonthly))
+        assertNotNull(v.findViewById<View>(R.id.paywallPlanYearly))
+        assertNotNull(v.findViewById<View>(R.id.paywallPlanMonthlyPrice))
+        assertNotNull(v.findViewById<View>(R.id.paywallPlanYearlyPrice))
+        assertNotNull(v.findViewById<View>(R.id.btnPaywallBegin))
+        assertNotNull(v.findViewById<View>(R.id.btnPaywallMaybeLater))
+    }
+
+    @Test
+    fun item_paywall_bullet_inflates() {
+        val v = inflate(R.layout.item_paywall_bullet)
+        assertNotNull(v.findViewById<View>(R.id.paywallBulletText))
+    }
+
     // ── Bottom sheets ────────────────────────────────────────────────
 
     @Test

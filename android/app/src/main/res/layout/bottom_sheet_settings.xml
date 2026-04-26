@@ -242,6 +242,28 @@
         <View
             style="@style/Atrium.SettingsDivider" />
 
+        <!-- ── Premium ──────────────────────────────────────────────── -->
+        <LinearLayout
+            android:id="@+id/rowUpgrade"
+            style="@style/Atrium.SettingsRow.Trailing">
+
+            <TextView
+                style="@style/Atrium.SettingsRow.Title"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:textColor="@color/atrium_accent_cyan"
+                android:text="Upgrade · Premium" />
+
+            <TextView
+                style="@style/Atrium.SettingsRow.Chevron"
+                android:textColor="@color/atrium_accent_cyan"
+                android:text="›" />
+
+        </LinearLayout>
+
+        <View
+            style="@style/Atrium.SettingsDivider" />
+
         <!-- ── Account ──────────────────────────────────────────────── -->
         <LinearLayout
             android:id="@+id/rowChangePassword"
