@@ -184,22 +184,27 @@ class ProgressDashboardBottomSheet : BottomSheetDialogFragment() {
     // ── Row builders ─────────────────────────────────────────────────────────
 
     private fun buildWorldModelRow(label: String, value: String): View {
-        return LinearLayout(requireContext()).apply {
+        // Atrium re-skin: mono dim kicker on the left, mono ink value
+        // on the right.  Mono stays for telemetry rows per Atrium's
+        // "Numerics: JetBrains Mono" role; the colour shift to the
+        // dim/ink tokens lines up with the rest of the dashboard.
+        val ctx = requireContext()
+        return LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, 8, 0, 8)
 
-            addView(TextView(requireContext()).apply {
+            addView(TextView(ctx).apply {
                 text = label
                 textSize = 11f
-                setTextColor(Color.parseColor("#666666"))
+                setTextColor(androidx.core.content.ContextCompat.getColor(ctx, R.color.atrium_dim))
                 typeface = Typeface.MONOSPACE
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
 
-            addView(TextView(requireContext()).apply {
+            addView(TextView(ctx).apply {
                 text = value
                 textSize = 12f
-                setTextColor(Color.parseColor("#CCCCCC"))
+                setTextColor(androidx.core.content.ContextCompat.getColor(ctx, R.color.atrium_ink))
                 typeface = Typeface.MONOSPACE
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
             })
@@ -221,14 +226,21 @@ class ProgressDashboardBottomSheet : BottomSheetDialogFragment() {
             .split(" ")
             .joinToString(" ") { it.replaceFirstChar(Char::uppercase) }
 
-        return LinearLayout(requireContext()).apply {
+        // Atrium colours: priority kicker in the two-tone signal
+        // (amber for high/medium, cyan for low), category in ink,
+        // rationale in muted ink.  Mono kept for kickers; category
+        // and rationale stay mono here for compact-list density —
+        // promoting them to Cormorant italic would inflate row
+        // height and crowd the small-screen bottom sheet.
+        val ctx = requireContext()
+        return LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, 10, 0, 10)
 
-            addView(LinearLayout(requireContext()).apply {
+            addView(LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL
 
-                addView(TextView(requireContext()).apply {
+                addView(TextView(ctx).apply {
                     text = rec.priority.uppercase()
                     textSize = 9f
                     setTextColor(priorityColor)
@@ -236,18 +248,18 @@ class ProgressDashboardBottomSheet : BottomSheetDialogFragment() {
                     setPadding(0, 0, 12, 0)
                 })
 
-                addView(TextView(requireContext()).apply {
+                addView(TextView(ctx).apply {
                     text = categoryLabel
                     textSize = 13f
-                    setTextColor(Color.WHITE)
+                    setTextColor(androidx.core.content.ContextCompat.getColor(ctx, R.color.atrium_ink))
                     typeface = Typeface.MONOSPACE
                 })
             })
 
-            addView(TextView(requireContext()).apply {
+            addView(TextView(ctx).apply {
                 text = rec.rationale
                 textSize = 11f
-                setTextColor(Color.parseColor("#888888"))
+                setTextColor(androidx.core.content.ContextCompat.getColor(ctx, R.color.atrium_muted))
                 typeface = Typeface.MONOSPACE
                 setPadding(0, 4, 0, 0)
             })
