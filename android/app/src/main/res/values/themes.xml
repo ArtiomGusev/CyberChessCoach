@@ -181,4 +181,79 @@
         <item name="android:background">@color/atrium_hairline</item>
     </style>
 
+    <!-- ─── Settings sheet rows ─────────────────────────────────────── -->
+
+    <!--
+        Atrium settings row — radio variant (custom dot leading the row).
+        Used for "Coach voice" and "Board style" rows.  Dot is a 12dp
+        View whose background drawable swaps between
+        atrium_radio_selected / atrium_radio_unselected via Kotlin.
+    -->
+    <style name="Atrium.SettingsRow">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">@dimen/atrium_tap_target</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:paddingStart">@dimen/atrium_space_24</item>
+        <item name="android:paddingEnd">@dimen/atrium_space_24</item>
+        <item name="android:background">?attr/selectableItemBackground</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
+
+    <!--
+        Atrium settings row — trailing-control variant.  Used for rows
+        whose right-hand element is a switch / chevron / value, not a
+        leading radio dot.
+    -->
+    <style name="Atrium.SettingsRow.Trailing" parent="Atrium.SettingsRow" />
+
+    <!-- Leading radio dot — 12dp circle, 12dp end margin. -->
+    <style name="Atrium.SettingsRow.Dot">
+        <item name="android:layout_width">12dp</item>
+        <item name="android:layout_height">12dp</item>
+        <item name="android:layout_marginEnd">@dimen/atrium_space_12</item>
+    </style>
+
+    <!-- Italic Cormorant title, 16sp ink. -->
+    <style name="Atrium.SettingsRow.Title">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:fontFamily">@font/cormorant_garamond</item>
+        <item name="android:textStyle">italic</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:textColor">@color/atrium_ink</item>
+    </style>
+
+    <!-- Inter sub label after the title (e.g. "Patient, scholarly"). -->
+    <style name="Atrium.SettingsRow.Sub">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginStart">@dimen/atrium_space_8</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/atrium_dim</item>
+    </style>
+
+    <!-- ›-shaped trailing chevron, italic Cormorant for visual rhyme. -->
+    <style name="Atrium.SettingsRow.Chevron">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:fontFamily">@font/cormorant_garamond</item>
+        <item name="android:textStyle">italic</item>
+        <item name="android:textSize">22sp</item>
+        <item name="android:textColor">@color/atrium_dim</item>
+    </style>
+
+    <!--
+        Hairline divider between settings sections.  Same primitive as
+        Atrium.Divider with the standard 16dp top + 16dp bottom margin
+        already applied so layouts don't have to repeat it.
+    -->
+    <style name="Atrium.SettingsDivider" parent="Atrium.Divider">
+        <item name="android:layout_marginStart">@dimen/atrium_space_24</item>
+        <item name="android:layout_marginEnd">@dimen/atrium_space_24</item>
+        <item name="android:layout_marginTop">@dimen/atrium_space_8</item>
+    </style>
+
 </resources>

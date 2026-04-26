@@ -419,7 +419,16 @@
             android:layout_width="match_parent"
             android:layout_height="@dimen/atrium_tap_target"
             android:textSize="16sp"
-            android:text="Training session" />
+            android:text="Training session"
+            android:layout_marginBottom="@dimen/atrium_space_8" />
+
+        <Button
+            android:id="@+id/btnSettings"
+            style="@style/Atrium.Button.Secondary"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/atrium_tap_target"
+            android:textSize="16sp"
+            android:text="Settings" />
 
         <View
             android:layout_width="match_parent"

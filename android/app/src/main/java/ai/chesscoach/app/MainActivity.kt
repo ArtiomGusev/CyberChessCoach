@@ -217,6 +217,18 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // Atrium Settings sheet — preferences (coach voice, board
+        // style, sound, notifications, account chevrons).  Account
+        // section delegates to the existing change-password dialog
+        // and logout flow rather than duplicating them.
+        findViewById<Button>(R.id.btnSettings)?.setOnClickListener {
+            drawerLayout.closeDrawer(GravityCompat.END)
+            val sheet = SettingsBottomSheet()
+            sheet.onChangePasswordTapped = { showChangePasswordDialog() }
+            sheet.onSignOutTapped = { performLogout() }
+            sheet.show(supportFragmentManager, "SettingsBottomSheet")
+        }
+
         btnChangePassword.setOnClickListener {
             drawerLayout.closeDrawer(GravityCompat.END)
             showChangePasswordDialog()
