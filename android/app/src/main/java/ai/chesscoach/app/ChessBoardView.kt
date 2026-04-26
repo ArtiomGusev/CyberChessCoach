@@ -1,5 +1,6 @@
 package ai.chesscoach.app
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.*
 import android.util.AttributeSet
@@ -98,6 +99,28 @@ class ChessBoardView @JvmOverloads constructor(
         alpha = 180
     }
 
+    /**
+     * Atrium focus ring — a pulsing dashed amber circle on the square
+     * the coach is referencing.  Per handoff: "Focus ring on the piece
+     * being discussed (pulsing dashed amber, NOT an arrow)".  Atrium
+     * deliberately disallows move arrows; focus ring is the
+     * single-square emphasis primitive.
+     *
+     * The ring is enabled via [setFocusSquare] / [clearFocusSquare].
+     * The pulse animates opacity 1.0 ↔ 0.45 over 1.8s — same cv-pulse
+     * keyframe used by AtriumTypingDotsView and the EvalBand dot glow.
+     */
+    private var focusSquare: Pair<Int, Int>? = null
+    private var focusPulseAlpha: Float = 1f
+    private var focusPulseAnimator: ValueAnimator? = null
+
+    private val focusRingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#FFC069") // atrium_accent_amber
+        style = Paint.Style.STROKE
+        // strokeWidth and pathEffect are set per-draw because they
+        // depend on squareSize (only known after measure).
+    }
+
     private var squareSize = 0f
 
     init { 
@@ -107,6 +130,60 @@ class ChessBoardView @JvmOverloads constructor(
     }
 
     /* ================= PUBLIC API ================= */
+
+    /**
+     * Number of half-moves played since the last [resetBoard].  Backed
+     * by the internal undo history list, so it stays in sync with both
+     * human and AI moves.  Used by [MainActivity] to drive the dynamic
+     * Atrium chapter header copy ("Chapter · Move 14") on the in-game
+     * coaching screen.
+     */
+    val moveCount: Int get() = history.size
+
+    /**
+     * Render an Atrium focus ring on ([row],[col]).  The ring pulses
+     * opacity 1 ↔ 0.45 over 1.8s.  Coordinates use the same row/col
+     * convention as [applyMove] — row 0 is the top rank from white's
+     * perspective.  Calling repeatedly with the same square keeps the
+     * existing animator running (no flicker); calling with a different
+     * square moves the ring.
+     */
+    fun setFocusSquare(row: Int, col: Int) {
+        if (row !in 0..7 || col !in 0..7) return
+        if (focusSquare?.first == row && focusSquare?.second == col) return
+        focusSquare = row to col
+        startFocusPulse()
+        invalidate()
+    }
+
+    /** Clear the focus ring and stop the pulse animator. */
+    fun clearFocusSquare() {
+        if (focusSquare == null) return
+        focusSquare = null
+        focusPulseAnimator?.cancel()
+        focusPulseAnimator = null
+        invalidate()
+    }
+
+    private fun startFocusPulse() {
+        focusPulseAnimator?.cancel()
+        focusPulseAnimator = ValueAnimator.ofFloat(1f, 0.45f, 1f).apply {
+            duration = 1800
+            repeatCount = ValueAnimator.INFINITE
+            repeatMode = ValueAnimator.RESTART
+            addUpdateListener { va ->
+                focusPulseAlpha = va.animatedValue as Float
+                invalidate()
+            }
+            start()
+        }
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        focusPulseAnimator?.cancel()
+        focusPulseAnimator = null
+    }
 
     fun resetBoard() {
         val start = arrayOf("rnbqkbnr", "pppppppp", "........", "........", "........", "........", "PPPPPPPP", "RNBQKBNR")
@@ -435,6 +512,22 @@ class ChessBoardView @JvmOverloads constructor(
         
         for (arrow in arrows) {
             drawArrow(canvas, arrow)
+        }
+
+        // Atrium focus ring — pulsing dashed amber circle on the
+        // square the coach is referencing.  Drawn last so it sits on
+        // top of the piece glyph; alpha is the cv-pulse keyframe
+        // updated by focusPulseAnimator.
+        focusSquare?.let { (r, c) ->
+            val cx = c * squareSize + squareSize / 2f
+            val cy = r * squareSize + squareSize / 2f
+            val radius = squareSize * 0.42f
+            focusRingPaint.strokeWidth = squareSize * 0.04f
+            focusRingPaint.pathEffect = DashPathEffect(
+                floatArrayOf(squareSize * 0.06f, squareSize * 0.045f), 0f,
+            )
+            focusRingPaint.alpha = (focusPulseAlpha * 255f).toInt().coerceIn(0, 255)
+            canvas.drawCircle(cx, cy, radius, focusRingPaint)
         }
     }
 
