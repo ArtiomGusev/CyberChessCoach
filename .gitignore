@@ -19,6 +19,9 @@ hs_err_pid*.log
 android/.gradle/
 android/**/build/
 android/**/.idea/
+# Repo-root IDE sidecar — Studio occasionally writes one at the
+# parent of the opened project depending on how it's opened.
+.idea/
 android/**/local.properties
 android/**/*.iml
 android/**/*.apk

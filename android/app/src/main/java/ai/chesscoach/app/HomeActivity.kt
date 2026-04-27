@@ -7,7 +7,9 @@ import android.os.Bundle
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -71,6 +73,20 @@ class HomeActivity : AppCompatActivity() {
         AuthRepository(EncryptedTokenStorage(this))
     }
 
+    /**
+     * Lazy GameApiClient used only for the pending-finish retry path.
+     * MainActivity owns the equivalent client for live gameplay; this
+     * one is used solely for the offline-sync attempt at HomeActivity
+     * cold-start, so we don't keep state across the activity's life.
+     */
+    private val gameApiClient: GameApiClient by lazy {
+        HttpGameApiClient(
+            baseUrl = BuildConfig.COACH_API_BASE,
+            apiKey = BuildConfig.COACH_API_KEY,
+            tokenProvider = { authRepo.getToken() },
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -98,6 +114,33 @@ class HomeActivity : AppCompatActivity() {
         avatar.text = initialsFor(playerId)
 
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+        // If a previous /game/finish failed offline (timeout / 5xx /
+        // network), the payload is in prefs.  Try again from here in
+        // case the user lands on Home and never enters MainActivity —
+        // the shared helper's process-singleton guard prevents
+        // double-firing if MainActivity also runs the retry.
+        PendingGameFinish.retryFromPrefs(
+            prefs = prefs,
+            client = gameApiClient,
+            scope = lifecycleScope,
+            onSuccess = {
+                Toast.makeText(
+                    this@HomeActivity,
+                    "Synced your offline game",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            },
+            onSessionExpired = {
+                // Token lapsed between save and retry — kick back to
+                // login.  The payload stays put for the next session.
+                startActivity(
+                    Intent(this, LoginActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
+                )
+                finish()
+            },
+        )
         val firstSeen = prefs.getLong(PREF_HOME_FIRST_SEEN_AT, -1L)
             .takeIf { it > 0L }
             ?: System.currentTimeMillis().also {

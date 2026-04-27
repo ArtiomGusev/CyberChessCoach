@@ -890,56 +890,26 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * Try to send any pending /game/finish payload from a previous
-     * session that failed offline.  Called once from onCreate.  The
-     * call is fire-and-forget on the activity's lifecycleScope:
-     *   - Success: clear the slot + brief toast confirming sync
-     *   - Still-transient failure: leave the slot for the next try
-     *   - Non-transient failure (4xx other than 401): clear the slot
-     *     since the call would just fail again
-     *
-     * Skipped silently when there's nothing pending or the stored
-     * blob is malformed (PendingGameFinish.fromJson returns null —
-     * see its kdoc for the failure modes it tolerates).
+     * session that failed offline.  Called once from onCreate;
+     * HomeActivity also calls the same shared helper so the retry
+     * fires on either the post-auth landing OR direct relaunch into
+     * MainActivity.  The helper's process-singleton guard prevents
+     * the two call sites from double-firing on the same cold-start.
      */
     private fun retryPendingFinishOnColdStart() {
-        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-        val raw = prefs.getString(PendingGameFinish.PREF_PENDING_FINISH_PAYLOAD, null)
-            ?: return
-        val req = PendingGameFinish.fromJson(raw)
-        if (req == null) {
-            // Corrupted blob — drop it so we don't keep tripping over it.
-            prefs.edit().remove(PendingGameFinish.PREF_PENDING_FINISH_PAYLOAD).apply()
-            Log.w("GAME", "Dropping malformed pending finish payload")
-            return
-        }
-        lifecycleScope.launch {
-            when (val r = gameApiClient.finishGame(req)) {
-                is ApiResult.Success -> {
-                    prefs.edit().remove(PendingGameFinish.PREF_PENDING_FINISH_PAYLOAD).apply()
-                    Toast.makeText(
-                        this@MainActivity,
-                        "Synced your offline game",
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                    Log.d("GAME", "Pending finish synced successfully")
-                }
-                is ApiResult.HttpError -> {
-                    if (r.code == 401) {
-                        // Token expired between save and retry — keep
-                        // the payload, redirect to login; the next
-                        // successful auth + cold-start will try again.
-                        handleSessionExpired()
-                    } else if (PendingGameFinish.isTransient(r)) {
-                        Log.d("GAME", "Pending finish still transient (HTTP ${r.code}); keeping for next try")
-                    } else {
-                        prefs.edit().remove(PendingGameFinish.PREF_PENDING_FINISH_PAYLOAD).apply()
-                        Log.w("GAME", "Pending finish HTTP ${r.code} non-retryable; dropping")
-                    }
-                }
-                is ApiResult.NetworkError -> Log.d("GAME", "Pending finish network error; keeping", r.cause)
-                ApiResult.Timeout         -> Log.d("GAME", "Pending finish timed out; keeping")
-            }
-        }
+        PendingGameFinish.retryFromPrefs(
+            prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE),
+            client = gameApiClient,
+            scope = lifecycleScope,
+            onSuccess = {
+                Toast.makeText(
+                    this@MainActivity,
+                    "Synced your offline game",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            },
+            onSessionExpired = { handleSessionExpired() },
+        )
     }
 
     private fun computeAccuracy(): Float {

@@ -136,4 +136,62 @@ class PendingGameFinishTest {
         assertNull(PendingGameFinish.fromJson("""{"pgn":"x","accuracy":0.5}"""))
         assertNull(PendingGameFinish.fromJson("""{"pgn":"x","result":"win"}"""))
     }
+
+    // ── classifyRetryResult ──────────────────────────────────────────
+
+    @Test
+    fun `classifyRetryResult maps Success to DONE`() {
+        assertEquals(
+            PendingGameFinish.RetryAction.DONE,
+            PendingGameFinish.classifyRetryResult(ApiResult.Success("ok")),
+        )
+    }
+
+    @Test
+    fun `classifyRetryResult maps 401 to SESSION_EXPIRED`() {
+        // 401 is special-cased so retry callers can route to login
+        // and keep the payload for after re-auth.
+        assertEquals(
+            PendingGameFinish.RetryAction.SESSION_EXPIRED,
+            PendingGameFinish.classifyRetryResult(ApiResult.HttpError(401)),
+        )
+    }
+
+    @Test
+    fun `classifyRetryResult maps 5xx to RESTORE`() {
+        // Server-side incident; payload stays put for next try.
+        for (code in listOf(500, 502, 503, 504)) {
+            assertEquals(
+                "HTTP $code must be RESTORE (transient → keep slot)",
+                PendingGameFinish.RetryAction.RESTORE,
+                PendingGameFinish.classifyRetryResult(ApiResult.HttpError(code)),
+            )
+        }
+    }
+
+    @Test
+    fun `classifyRetryResult maps other 4xx to DROP`() {
+        // Server actively rejected the payload; retrying same payload
+        // would just fail again.  Drop the slot so we don't keep
+        // tripping over it.
+        for (code in listOf(400, 403, 404, 409, 422, 429)) {
+            assertEquals(
+                "HTTP $code must be DROP (non-retryable)",
+                PendingGameFinish.RetryAction.DROP,
+                PendingGameFinish.classifyRetryResult(ApiResult.HttpError(code)),
+            )
+        }
+    }
+
+    @Test
+    fun `classifyRetryResult maps NetworkError and Timeout to RESTORE`() {
+        assertEquals(
+            PendingGameFinish.RetryAction.RESTORE,
+            PendingGameFinish.classifyRetryResult(ApiResult.NetworkError(RuntimeException("dns"))),
+        )
+        assertEquals(
+            PendingGameFinish.RetryAction.RESTORE,
+            PendingGameFinish.classifyRetryResult(ApiResult.Timeout),
+        )
+    }
 }
