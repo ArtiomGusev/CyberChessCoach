@@ -193,4 +193,20 @@ class AtriumLayoutInflationTest {
     fun item_chat_user_inflates() {
         inflate(R.layout.item_chat_user)
     }
+
+    @Test
+    fun activity_onboarding_welcome_inflates() {
+        val v = inflate(R.layout.activity_onboarding_welcome)
+        assertNotNull(v.findViewById<View>(R.id.onboardingWelcomeBullets))
+        assertNotNull(v.findViewById<View>(R.id.btnOnboardingWelcomeBegin))
+    }
+
+    @Test
+    fun activity_onboarding_complete_inflates() {
+        val v = inflate(R.layout.activity_onboarding_complete)
+        assertNotNull(v.findViewById<View>(R.id.onboardingCompleteRating))
+        assertNotNull(v.findViewById<View>(R.id.onboardingCompleteConfidence))
+        assertNotNull(v.findViewById<View>(R.id.onboardingCompleteOpponent))
+        assertNotNull(v.findViewById<View>(R.id.btnOnboardingCompleteStart))
+    }
 }

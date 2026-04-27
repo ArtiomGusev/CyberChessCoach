@@ -185,8 +185,12 @@ class LoginActivity : AppCompatActivity() {
     }
 
     private fun launchOnboarding() {
+        // Enter at step 1/3 (Welcome).  Step 2/3 (calibration) and
+        // step 3/3 (completion) are reached by the Begin / Continue
+        // buttons on each screen; HomeActivity is the post-onboarding
+        // landing.
         startActivity(
-            Intent(this, OnboardingActivity::class.java)
+            Intent(this, OnboardingWelcomeActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
         )
         finish()

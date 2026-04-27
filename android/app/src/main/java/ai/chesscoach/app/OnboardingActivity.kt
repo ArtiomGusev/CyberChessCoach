@@ -130,7 +130,10 @@ class OnboardingActivity : AppCompatActivity() {
         // against the server-returned rating and re-PATCHing.
         firePatchAuthMe(rating, confidence)
 
-        startActivity(Intent(this, HomeActivity::class.java)
+        // Step 3/3 reads back what we just saved so the user sees the
+        // calibration confirmed before the first game; that screen
+        // owns the final "go to Home" navigation.
+        startActivity(Intent(this, OnboardingCompleteActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
         finish()
     }

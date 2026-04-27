@@ -19,7 +19,15 @@
         </activity>
 
         <activity
+            android:name=".OnboardingWelcomeActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".OnboardingActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".OnboardingCompleteActivity"
             android:exported="false" />
 
         <activity
