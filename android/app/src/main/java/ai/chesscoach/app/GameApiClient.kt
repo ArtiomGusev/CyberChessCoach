@@ -163,6 +163,17 @@ interface GameApiClient {
      */
     suspend fun setActiveOpening(eco: String): ApiResult<List<RepertoireOpeningDto>> =
         ApiResult.HttpError(501)
+
+    /**
+     * POST /repertoire/{eco}/drill-result — apply one drill outcome
+     * to the named opening's mastery.  [outcome] is the user's
+     * self-rated score in [0.0, 1.0]; the server applies an EMA
+     * step toward it.  Returns the full updated list.
+     */
+    suspend fun recordDrillResult(
+        eco: String,
+        outcome: Float,
+    ): ApiResult<List<RepertoireOpeningDto>> = ApiResult.HttpError(501)
 }
 
 // ── HTTP implementation ───────────────────────────────────────────────────────
@@ -544,6 +555,33 @@ class HttpGameApiClient(
                 ApiResult.NetworkError(e)
             }
         }
+
+    override suspend fun recordDrillResult(
+        eco: String,
+        outcome: Float,
+    ): ApiResult<List<RepertoireOpeningDto>> = withContext(Dispatchers.IO) {
+        try {
+            val conn = openConnection("$baseUrl/repertoire/$eco/drill-result")
+            conn.setRequestProperty("X-Api-Key", apiKey)
+            tokenProvider?.invoke()?.let { token ->
+                conn.setRequestProperty("Authorization", "Bearer $token")
+            }
+            val body = JSONObject().put("outcome", outcome.toDouble()).toString()
+            conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            val code = conn.responseCode
+            if (code == 200) {
+                val text = conn.inputStream.bufferedReader().readText()
+                consumeRefreshedToken(conn, tokenSink)
+                ApiResult.Success(parseRepertoireResponse(text))
+            } else {
+                ApiResult.HttpError(code)
+            }
+        } catch (e: SocketTimeoutException) {
+            ApiResult.Timeout
+        } catch (e: Exception) {
+            ApiResult.NetworkError(e)
+        }
+    }
 
     private fun parseRepertoireResponse(body: String): List<RepertoireOpeningDto> {
         val root = JSONObject(body)

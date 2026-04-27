@@ -80,6 +80,7 @@ from llm.seca.storage.repo import (
     seed_default_repertoire,
     set_active_opening,
     update_learning_score,
+    update_opening_mastery,
     upsert_opening,
 )
 
@@ -1451,6 +1452,76 @@ def delete_opening_endpoint(
     seed_default_repertoire(str(player.id), DEFAULT_REPERTOIRE)
     if not delete_opening(str(player.id), eco):
         raise HTTPException(status_code=404, detail="opening not found")
+    return {"openings": list_repertoire(str(player.id))}
+
+
+class DrillResultRequest(BaseModel):
+    """Body of POST /repertoire/{eco}/drill-result.
+
+    `outcome` is a self-rated [0, 1] score from the user's drill
+    session — the Android client maps "Nailed it" / "Mostly" /
+    "Forgot it" to 1.0 / 0.6 / 0.2 respectively.  Future revisions
+    may compute it from a real per-move drill engine.
+    """
+
+    outcome: float
+
+    @field_validator("outcome")
+    @classmethod
+    def validate_outcome(cls, v: float) -> float:
+        if not (0.0 <= v <= 1.0):
+            raise ValueError("outcome must be in [0.0, 1.0]")
+        return float(v)
+
+
+# Exponential-moving-average step for mastery updates: a single drill
+# nudges mastery toward the outcome by this fraction.  0.2 means
+# 5 perfect drills move a fresh line from 0 → ~0.67, and one bad
+# drill of a well-mastered line never collapses it below ~80% of the
+# previous value — keeps the mastery bar feeling earned, not
+# whiplashed.
+_MASTERY_EMA_STEP = 0.2
+
+
+@app.post("/repertoire/{eco}/drill-result")
+@limiter.limit("30/minute")
+def drill_result_endpoint(
+    eco: str,
+    req: DrillResultRequest,
+    request: Request,
+    player=Depends(get_current_player),
+):
+    """Apply one drill outcome to the named opening's mastery.
+
+    Update math (EMA):
+        new = old + step * (outcome - old)
+    where step=_MASTERY_EMA_STEP.  Clamped to [0, 1] defensively,
+    though both inputs are bounded so the update can't escape the
+    range without floating-point noise.
+
+    Seeds defaults first so a user who drills one of the canonical
+    lines materialises their personal copy before the mastery bump
+    lands.
+
+    Returns the full updated repertoire so the client re-renders
+    in one round-trip.
+    """
+    eco = _validate_eco(eco)
+    seed_default_repertoire(str(player.id), DEFAULT_REPERTOIRE)
+    saved = list_repertoire(str(player.id))
+    target = next((o for o in saved if o["eco"] == eco), None)
+    if target is None:
+        raise HTTPException(status_code=404, detail="opening not found")
+
+    old = float(target["mastery"])
+    proposed = old + _MASTERY_EMA_STEP * (req.outcome - old)
+    new_mastery = max(0.0, min(1.0, proposed))
+
+    if not update_opening_mastery(str(player.id), eco, new_mastery):
+        # Race: row vanished between our seed/list and the update —
+        # treat as 404 so the client can refresh and retry.
+        raise HTTPException(status_code=404, detail="opening not found")
+
     return {"openings": list_repertoire(str(player.id))}
 
 

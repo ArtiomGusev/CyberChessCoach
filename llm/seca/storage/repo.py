@@ -106,6 +106,32 @@ def checkpoint_game(game_id: str, fen: str, uci_history: str) -> bool:
         conn.close()
 
 
+def update_opening_mastery(player_id: str, eco: str, new_mastery: float) -> bool:
+    """Set the mastery of an existing opening row.  Returns True iff
+    a row was actually updated.
+
+    Caller is responsible for clamping new_mastery to [0, 1] — this
+    helper just writes whatever it's given so the server-side endpoint
+    can keep the bounds policy in one place (server.py
+    drill_result_endpoint).
+    """
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            """
+            UPDATE repertoire
+               SET mastery = ?,
+                   updated_at = CURRENT_TIMESTAMP
+             WHERE player_id = ? AND eco = ?
+            """,
+            (float(new_mastery), player_id, eco),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
 def upsert_opening(
     player_id: str,
     eco: str,

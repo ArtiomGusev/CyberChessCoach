@@ -70,12 +70,15 @@ class OpeningsActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.btnOpeningsDrill).setOnClickListener {
             val active = currentRepertoire.firstOrNull { it.isActive }
-            val label = active?.let { "${it.eco} · ${it.name}" } ?: "your active line"
-            Toast.makeText(
-                this,
-                "Drill $label — coming soon",
-                Toast.LENGTH_SHORT,
-            ).show()
+            if (active == null) {
+                Toast.makeText(
+                    this,
+                    "Set an active line first by tapping a card.",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            } else {
+                showDrillOutcomeDialog(active)
+            }
         }
         findViewById<Button>(R.id.btnOpeningsAdd).setOnClickListener {
             showAddOpeningDialog(findViewById(R.id.openingsCardContainer))
@@ -238,6 +241,42 @@ class OpeningsActivity : AppCompatActivity() {
                         // Already gone server-side; just refresh.
                         fetchRepertoire(container)
                     } else showFailureToast("HTTP ${r.code}")
+                is ApiResult.NetworkError -> showFailureToast("offline")
+                ApiResult.Timeout -> showFailureToast("timed out")
+            }
+        }
+    }
+
+    /**
+     * Self-rated drill outcome dialog.  Three preset levels map to
+     * canonical outcome values:
+     *   "Nailed it" → 1.0
+     *   "Mostly"    → 0.6
+     *   "Forgot it" → 0.2
+     * The server applies an EMA step toward the chosen value, so a
+     * single drill nudges mastery without whipsawing the bar.
+     */
+    private fun showDrillOutcomeDialog(active: OpeningEntry) {
+        val labels = arrayOf("Nailed it", "Mostly", "Forgot it")
+        val outcomes = floatArrayOf(1.0f, 0.6f, 0.2f)
+        AlertDialog.Builder(this)
+            .setTitle("How did the drill go?")
+            .setMessage("Active line: ${active.eco} · ${active.name}")
+            .setItems(labels) { _, which ->
+                callDrillResult(active, outcomes[which], labels[which])
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun callDrillResult(active: OpeningEntry, outcome: Float, label: String) {
+        val container = findViewById<LinearLayout>(R.id.openingsCardContainer)
+        lifecycleScope.launch {
+            when (val r = gameApiClient.recordDrillResult(active.eco, outcome)) {
+                is ApiResult.Success -> applyServerList(
+                    container, r.data, "Drill recorded · $label",
+                )
+                is ApiResult.HttpError -> showFailureToast("HTTP ${r.code}")
                 is ApiResult.NetworkError -> showFailureToast("offline")
                 ApiResult.Timeout -> showFailureToast("timed out")
             }

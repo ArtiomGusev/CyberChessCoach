@@ -489,6 +489,29 @@ class GameApiClientIntegrationTest {
         assertEquals(500, (result as ApiResult.HttpError).code)
     }
 
+    @Test
+    fun `INT_DRILL_RESULT_BODY - outcome serialised + path correct`() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"openings":[{"eco":"C84","name":"Ruy","line":"1.e4","mastery":0.85,"is_active":true,"ordinal":0}]}""",
+            ),
+        )
+        client(token = "tok").recordDrillResult("C84", 1.0f)
+        val req = server.takeRequest(10, TimeUnit.SECONDS)!!
+        assertEquals("POST", req.method)
+        assertEquals("/repertoire/C84/drill-result", req.path)
+        val body = JSONObject(req.body.readUtf8())
+        assertEquals(1.0, body.getDouble("outcome"), 1e-3)
+    }
+
+    @Test
+    fun `INT_DRILL_RESULT_404 - unknown eco maps to HttpError`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(404).setBody("""{"detail":"opening not found"}"""))
+        val result = client(token = "tok").recordDrillResult("ZZ9", 0.5f)
+        assertTrue(result is ApiResult.HttpError)
+        assertEquals(404, (result as ApiResult.HttpError).code)
+    }
+
     // ---------------------------------------------------------------------------
     // GET /repertoire — opening list backing AtriumOpenings
     // ---------------------------------------------------------------------------

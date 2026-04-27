@@ -366,6 +366,89 @@ class TestRepertoireSetActive:
         assert actives == ["X99"]
 
 
+def _call_drill(player, eco, outcome):
+    from llm.server import drill_result_endpoint, DrillResultRequest
+    limiter = _disable_limiter()
+    prev = limiter.enabled
+    limiter.enabled = False
+    try:
+        return drill_result_endpoint(
+            eco=eco,
+            req=DrillResultRequest(outcome=outcome),
+            request=_fake_request(),
+            player=player,
+        )
+    finally:
+        limiter.enabled = prev
+
+
+class TestRepertoireDrillResult:
+    """POST /repertoire/{eco}/drill-result — EMA mastery update."""
+
+    def test_perfect_outcome_pushes_mastery_up(self, temp_db):
+        """Outcome 1.0 against a 0.78 default → 0.78 + 0.2*0.22 ≈ 0.824."""
+        _ensure_player()
+        result = _call_drill(_player_namespace(), eco="C84", outcome=1.0)
+        c84 = next(o for o in result["openings"] if o["eco"] == "C84")
+        assert c84["mastery"] == pytest.approx(0.824, abs=1e-9)
+
+    def test_bad_outcome_pushes_mastery_down(self, temp_db):
+        """Outcome 0.2 against a 0.78 default → 0.78 + 0.2*(-0.58) = 0.664."""
+        _ensure_player()
+        result = _call_drill(_player_namespace(), eco="C84", outcome=0.2)
+        c84 = next(o for o in result["openings"] if o["eco"] == "C84")
+        assert c84["mastery"] == pytest.approx(0.664, abs=1e-9)
+
+    def test_clamped_to_unit_interval(self, temp_db):
+        """Successive perfect outcomes can never push mastery > 1.0
+        (defensive — the EMA can't escape [0,1] in theory but float
+        noise could)."""
+        _ensure_player()
+        for _ in range(50):
+            _call_drill(_player_namespace(), eco="C84", outcome=1.0)
+        result = _call_drill(_player_namespace(), eco="C84", outcome=1.0)
+        c84 = next(o for o in result["openings"] if o["eco"] == "C84")
+        assert 0.0 <= c84["mastery"] <= 1.0
+
+    def test_seeds_defaults_for_fresh_player(self, temp_db):
+        """A user who drills before ever editing should still see
+        their drill recorded — endpoint seeds defaults first."""
+        _ensure_player()
+        # A fresh player has nothing in the table; the endpoint must
+        # materialise the defaults before applying the drill.
+        result = _call_drill(_player_namespace(), eco="C84", outcome=1.0)
+        ecos = [o["eco"] for o in result["openings"]]
+        # All 4 defaults are now present (seeded), with C84's mastery bumped.
+        assert ecos == ["C84", "B22", "D02", "A04"]
+
+    def test_unknown_eco_returns_404(self, temp_db):
+        """The seed step materialises ONLY the canonical defaults;
+        an unknown ECO still has no row to update."""
+        _ensure_player()
+        with pytest.raises(HTTPException) as exc:
+            _call_drill(_player_namespace(), eco="ZZ9", outcome=1.0)
+        assert exc.value.status_code == 404
+
+    def test_invalid_outcome_rejected(self, temp_db):
+        """Outcome must be in [0,1]; out-of-range fails validation."""
+        from pydantic import ValidationError
+        _ensure_player()
+        for bad in (-0.1, 1.5, 100.0):
+            with pytest.raises(ValidationError, match="outcome must be in"):
+                _call_drill(_player_namespace(), eco="C84", outcome=bad)
+
+    def test_idempotent_with_outcome_equal_to_current(self, temp_db):
+        """When outcome exactly matches current mastery, EMA leaves
+        the value unchanged (defensive — guards against float drift
+        compounding into a noticeable shift over many drills)."""
+        _ensure_player()
+        # First seed defaults so we know mastery=0.78 for C84.
+        _call_drill(_player_namespace(), eco="C84", outcome=0.78)
+        result = _call_drill(_player_namespace(), eco="C84", outcome=0.78)
+        c84 = next(o for o in result["openings"] if o["eco"] == "C84")
+        assert c84["mastery"] == pytest.approx(0.78, abs=1e-9)
+
+
 class TestRepertoireSeedingIdempotence:
     """seed_default_repertoire is the central reason editing
     endpoints work on a fresh player.  These pin its behaviour."""
