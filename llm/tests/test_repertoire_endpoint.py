@@ -31,6 +31,7 @@ import os
 import sqlite3
 
 import pytest
+from fastapi import HTTPException
 
 os.environ.setdefault("SECA_API_KEY", "ci-test-key")
 os.environ.setdefault("SECA_ENV", "dev")
@@ -219,3 +220,163 @@ class TestRepertoireResponseShape:
         for entry in result["openings"]:
             missing = required - set(entry.keys())
             assert not missing, f"entry missing fields: {missing} in {entry}"
+
+
+# ---------------------------------------------------------------------------
+# 4.  Editing endpoints — POST add / DELETE / POST set-active
+# ---------------------------------------------------------------------------
+
+
+def _call_add(player, **kwargs):
+    from llm.server import add_or_update_opening, RepertoireEntryRequest
+    limiter = _disable_limiter()
+    prev = limiter.enabled
+    limiter.enabled = False
+    try:
+        return add_or_update_opening(
+            req=RepertoireEntryRequest(**kwargs),
+            request=_fake_request(),
+            player=player,
+        )
+    finally:
+        limiter.enabled = prev
+
+
+def _call_delete(player, eco):
+    from llm.server import delete_opening_endpoint
+    limiter = _disable_limiter()
+    prev = limiter.enabled
+    limiter.enabled = False
+    try:
+        return delete_opening_endpoint(
+            eco=eco,
+            request=_fake_request(),
+            player=player,
+        )
+    finally:
+        limiter.enabled = prev
+
+
+def _call_set_active(player, eco):
+    from llm.server import set_active_opening_endpoint
+    limiter = _disable_limiter()
+    prev = limiter.enabled
+    limiter.enabled = False
+    try:
+        return set_active_opening_endpoint(
+            eco=eco,
+            request=_fake_request(),
+            player=player,
+        )
+    finally:
+        limiter.enabled = prev
+
+
+class TestRepertoireAdd:
+    """POST /repertoire — add or upsert one opening."""
+
+    def test_add_seeds_defaults_then_appends(self, temp_db):
+        _ensure_player()
+        result = _call_add(
+            _player_namespace(),
+            eco="X99", name="My Custom", line="1.a3", mastery=0.0,
+        )
+        ecos = [o["eco"] for o in result["openings"]]
+        # Defaults (4) + new entry (1).  Ordering: defaults first by
+        # ordinal, custom appended at the end.
+        assert ecos == ["C84", "B22", "D02", "A04", "X99"]
+
+    def test_upsert_existing_eco_updates_in_place(self, temp_db):
+        _ensure_player()
+        # Seed defaults via a first call, then update C84's name.
+        _call_add(_player_namespace(), eco="X99", name="x", line="1.a3")
+        result = _call_add(
+            _player_namespace(),
+            eco="C84", name="Renamed Ruy", line="1.e4 e5", mastery=0.9,
+        )
+        # Same number of rows — no duplicate.
+        ecos = [o["eco"] for o in result["openings"]]
+        assert len([e for e in ecos if e == "C84"]) == 1
+        c84 = next(o for o in result["openings"] if o["eco"] == "C84")
+        assert c84["name"] == "Renamed Ruy"
+        assert c84["mastery"] == 0.9
+
+    def test_invalid_eco_rejected(self, temp_db):
+        _ensure_player()
+        for bad in ("", "   ", "longerthan8", "abc\nde", "abc\x00"):
+            with pytest.raises(HTTPException) as exc:
+                _call_add(_player_namespace(), eco=bad, name="x", line="1.a3")
+            assert exc.value.status_code == 400, f"expected 400 for eco={bad!r}"
+
+    def test_invalid_mastery_rejected(self, temp_db):
+        _ensure_player()
+        from pydantic import ValidationError
+        for bad in (-0.1, 1.5, 100.0):
+            with pytest.raises(ValidationError, match="mastery must be in"):
+                _call_add(_player_namespace(), eco="X1", name="x", line="1.a3", mastery=bad)
+
+
+class TestRepertoireDelete:
+    """DELETE /repertoire/{eco}."""
+
+    def test_delete_seeds_defaults_then_removes(self, temp_db):
+        _ensure_player()
+        result = _call_delete(_player_namespace(), eco="C84")
+        ecos = [o["eco"] for o in result["openings"]]
+        assert "C84" not in ecos
+        # Other defaults survived.
+        assert ecos == ["B22", "D02", "A04"]
+
+    def test_delete_unknown_returns_404(self, temp_db):
+        _ensure_player()
+        with pytest.raises(HTTPException) as exc:
+            _call_delete(_player_namespace(), eco="ZZ9")
+        assert exc.value.status_code == 404
+
+    def test_delete_invalid_eco_rejected(self, temp_db):
+        _ensure_player()
+        with pytest.raises(HTTPException) as exc:
+            _call_delete(_player_namespace(), eco="abc\ndef")
+        assert exc.value.status_code == 400
+
+
+class TestRepertoireSetActive:
+    """POST /repertoire/{eco}/active — atomic exactly-one-active swap."""
+
+    def test_promote_existing_default_line(self, temp_db):
+        _ensure_player()
+        # Defaults have C84 active; promote B22 instead.
+        result = _call_set_active(_player_namespace(), eco="B22")
+        actives = [o["eco"] for o in result["openings"] if o["is_active"]]
+        assert actives == ["B22"], f"expected only B22 active, got {actives}"
+
+    def test_unknown_eco_returns_404(self, temp_db):
+        _ensure_player()
+        with pytest.raises(HTTPException) as exc:
+            _call_set_active(_player_namespace(), eco="ZZ9")
+        assert exc.value.status_code == 404
+
+    def test_promote_after_add(self, temp_db):
+        """User adds a new line, then promotes it — the prior
+        active line (C84) must be demoted."""
+        _ensure_player()
+        _call_add(_player_namespace(), eco="X99", name="custom", line="1.a3")
+        result = _call_set_active(_player_namespace(), eco="X99")
+        actives = [o["eco"] for o in result["openings"] if o["is_active"]]
+        assert actives == ["X99"]
+
+
+class TestRepertoireSeedingIdempotence:
+    """seed_default_repertoire is the central reason editing
+    endpoints work on a fresh player.  These pin its behaviour."""
+
+    def test_seed_only_runs_when_empty(self, temp_db):
+        from llm.seca.storage.repo import seed_default_repertoire, list_repertoire
+        from llm.server import DEFAULT_REPERTOIRE
+
+        _ensure_player()
+        assert seed_default_repertoire("player-rep", DEFAULT_REPERTOIRE) == 4
+        assert len(list_repertoire("player-rep")) == 4
+        # Second call no-ops.
+        assert seed_default_repertoire("player-rep", DEFAULT_REPERTOIRE) == 0
+        assert len(list_repertoire("player-rep")) == 4

@@ -124,6 +124,14 @@ class AtriumLayoutInflationTest {
     }
 
     @Test
+    fun dialog_add_opening_inflates() {
+        val v = inflate(R.layout.dialog_add_opening)
+        assertNotNull(v.findViewById<View>(R.id.dialogAddOpeningEco))
+        assertNotNull(v.findViewById<View>(R.id.dialogAddOpeningName))
+        assertNotNull(v.findViewById<View>(R.id.dialogAddOpeningLine))
+    }
+
+    @Test
     fun activity_paywall_inflates() {
         val v = inflate(R.layout.activity_paywall)
         assertNotNull(v.findViewById<View>(R.id.paywallFeatures))

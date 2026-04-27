@@ -131,6 +131,38 @@ interface GameApiClient {
      */
     suspend fun getRepertoire(): ApiResult<List<RepertoireOpeningDto>> =
         ApiResult.HttpError(501)
+
+    /**
+     * POST /repertoire — add or upsert one opening.
+     *
+     * Server returns the full updated list so callers can re-render
+     * in one round-trip.  When the player has no saved entries yet,
+     * the server materialises the canonical defaults first then
+     * appends the new line — UX continuity with the GET defaults.
+     */
+    suspend fun addOpening(
+        eco: String,
+        name: String,
+        line: String,
+        mastery: Float = 0.0f,
+    ): ApiResult<List<RepertoireOpeningDto>> = ApiResult.HttpError(501)
+
+    /**
+     * DELETE /repertoire/{eco} — remove an opening from the
+     * player's repertoire.  404 means "already gone" from the
+     * caller's perspective — the client should still refresh the
+     * list either way.
+     */
+    suspend fun deleteOpening(eco: String): ApiResult<List<RepertoireOpeningDto>> =
+        ApiResult.HttpError(501)
+
+    /**
+     * POST /repertoire/{eco}/active — promote one opening to active,
+     * demoting any other active line atomically.  Returns the full
+     * updated list.
+     */
+    suspend fun setActiveOpening(eco: String): ApiResult<List<RepertoireOpeningDto>> =
+        ApiResult.HttpError(501)
 }
 
 // ── HTTP implementation ───────────────────────────────────────────────────────
@@ -411,6 +443,93 @@ class HttpGameApiClient(
                 tokenProvider?.invoke()?.let { token ->
                     conn.setRequestProperty("Authorization", "Bearer $token")
                 }
+                val code = conn.responseCode
+                if (code == 200) {
+                    val text = conn.inputStream.bufferedReader().readText()
+                    consumeRefreshedToken(conn, tokenSink)
+                    ApiResult.Success(parseRepertoireResponse(text))
+                } else {
+                    ApiResult.HttpError(code)
+                }
+            } catch (e: SocketTimeoutException) {
+                ApiResult.Timeout
+            } catch (e: Exception) {
+                ApiResult.NetworkError(e)
+            }
+        }
+
+    override suspend fun addOpening(
+        eco: String,
+        name: String,
+        line: String,
+        mastery: Float,
+    ): ApiResult<List<RepertoireOpeningDto>> = withContext(Dispatchers.IO) {
+        try {
+            val conn = openConnection("$baseUrl/repertoire")
+            conn.setRequestProperty("X-Api-Key", apiKey)
+            tokenProvider?.invoke()?.let { token ->
+                conn.setRequestProperty("Authorization", "Bearer $token")
+            }
+            val body = JSONObject()
+                .put("eco", eco)
+                .put("name", name)
+                .put("line", line)
+                .put("mastery", mastery.toDouble())
+                .toString()
+            conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            val code = conn.responseCode
+            if (code == 200) {
+                val text = conn.inputStream.bufferedReader().readText()
+                consumeRefreshedToken(conn, tokenSink)
+                ApiResult.Success(parseRepertoireResponse(text))
+            } else {
+                ApiResult.HttpError(code)
+            }
+        } catch (e: SocketTimeoutException) {
+            ApiResult.Timeout
+        } catch (e: Exception) {
+            ApiResult.NetworkError(e)
+        }
+    }
+
+    override suspend fun deleteOpening(eco: String): ApiResult<List<RepertoireOpeningDto>> =
+        withContext(Dispatchers.IO) {
+            try {
+                val conn = (URL("$baseUrl/repertoire/$eco").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "DELETE"
+                    connectTimeout = connectTimeoutMs
+                    readTimeout = readTimeoutMs
+                }
+                conn.setRequestProperty("X-Api-Key", apiKey)
+                tokenProvider?.invoke()?.let { token ->
+                    conn.setRequestProperty("Authorization", "Bearer $token")
+                }
+                val code = conn.responseCode
+                if (code == 200) {
+                    val text = conn.inputStream.bufferedReader().readText()
+                    consumeRefreshedToken(conn, tokenSink)
+                    ApiResult.Success(parseRepertoireResponse(text))
+                } else {
+                    ApiResult.HttpError(code)
+                }
+            } catch (e: SocketTimeoutException) {
+                ApiResult.Timeout
+            } catch (e: Exception) {
+                ApiResult.NetworkError(e)
+            }
+        }
+
+    override suspend fun setActiveOpening(eco: String): ApiResult<List<RepertoireOpeningDto>> =
+        withContext(Dispatchers.IO) {
+            try {
+                val conn = openConnection("$baseUrl/repertoire/$eco/active")
+                conn.setRequestProperty("X-Api-Key", apiKey)
+                tokenProvider?.invoke()?.let { token ->
+                    conn.setRequestProperty("Authorization", "Bearer $token")
+                }
+                // Empty body — the eco from the path is the only
+                // input; the endpoint takes no JSON.
+                conn.outputStream.use { it.write("{}".toByteArray(Charsets.UTF_8)) }
                 val code = conn.responseCode
                 if (code == 200) {
                     val text = conn.inputStream.bufferedReader().readText()

@@ -1,5 +1,6 @@
 package ai.chesscoach.app
 
+import android.app.AlertDialog
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
@@ -12,6 +13,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import com.google.android.material.textfield.TextInputEditText
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
@@ -76,7 +78,7 @@ class OpeningsActivity : AppCompatActivity() {
             ).show()
         }
         findViewById<Button>(R.id.btnOpeningsAdd).setOnClickListener {
-            Toast.makeText(this, "Add opening — coming soon", Toast.LENGTH_SHORT).show()
+            showAddOpeningDialog(findViewById(R.id.openingsCardContainer))
         }
     }
 
@@ -182,6 +184,136 @@ class OpeningsActivity : AppCompatActivity() {
             if (entry.isActive) R.drawable.atrium_opening_card_active
             else R.drawable.atrium_opening_card_dormant,
         )
+
+        // Tap → set as active (no-op when already active).  The
+        // current card's existing clickable+focusable + the parent's
+        // ripple takes care of the visual feedback.
+        card.setOnClickListener {
+            if (!entry.isActive) {
+                callSetActive(entry)
+            }
+        }
+        // Long-press → delete confirmation.  Returning true so the
+        // tap listener doesn't also fire.
+        card.setOnLongClickListener {
+            confirmDeleteOpening(entry)
+            true
+        }
+    }
+
+    /**
+     * Promote the tapped opening to active.  The server enforces the
+     * "exactly one active" invariant atomically; we re-render with
+     * the response so the UI never falls out of sync with the
+     * authoritative state.
+     */
+    private fun callSetActive(entry: OpeningEntry) {
+        val container = findViewById<LinearLayout>(R.id.openingsCardContainer)
+        lifecycleScope.launch {
+            when (val r = gameApiClient.setActiveOpening(entry.eco)) {
+                is ApiResult.Success -> applyServerList(container, r.data, "Set active")
+                is ApiResult.HttpError -> showFailureToast("HTTP ${r.code}")
+                is ApiResult.NetworkError -> showFailureToast("offline")
+                ApiResult.Timeout -> showFailureToast("timed out")
+            }
+        }
+    }
+
+    private fun confirmDeleteOpening(entry: OpeningEntry) {
+        AlertDialog.Builder(this)
+            .setTitle("Delete ${entry.eco}?")
+            .setMessage("Remove ${entry.name} from your repertoire.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Delete") { _, _ -> callDeleteOpening(entry) }
+            .show()
+    }
+
+    private fun callDeleteOpening(entry: OpeningEntry) {
+        val container = findViewById<LinearLayout>(R.id.openingsCardContainer)
+        lifecycleScope.launch {
+            when (val r = gameApiClient.deleteOpening(entry.eco)) {
+                is ApiResult.Success -> applyServerList(container, r.data, "Deleted ${entry.eco}")
+                is ApiResult.HttpError ->
+                    if (r.code == 404) {
+                        // Already gone server-side; just refresh.
+                        fetchRepertoire(container)
+                    } else showFailureToast("HTTP ${r.code}")
+                is ApiResult.NetworkError -> showFailureToast("offline")
+                ApiResult.Timeout -> showFailureToast("timed out")
+            }
+        }
+    }
+
+    private fun showAddOpeningDialog(container: LinearLayout) {
+        val view = LayoutInflater.from(this).inflate(R.layout.dialog_add_opening, null, false)
+        val ecoInput  = view.findViewById<TextInputEditText>(R.id.dialogAddOpeningEco)
+        val nameInput = view.findViewById<TextInputEditText>(R.id.dialogAddOpeningName)
+        val lineInput = view.findViewById<TextInputEditText>(R.id.dialogAddOpeningLine)
+
+        AlertDialog.Builder(this)
+            .setTitle("Add opening")
+            .setView(view)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save") { _, _ ->
+                val eco = ecoInput.text?.toString()?.trim().orEmpty().uppercase()
+                val name = nameInput.text?.toString()?.trim().orEmpty()
+                val line = lineInput.text?.toString()?.trim().orEmpty()
+                if (eco.isEmpty() || name.isEmpty() || line.isEmpty()) {
+                    Toast.makeText(this, "All three fields are required.", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                callAddOpening(container, eco, name, line)
+            }
+            .show()
+    }
+
+    private fun callAddOpening(container: LinearLayout, eco: String, name: String, line: String) {
+        lifecycleScope.launch {
+            when (val r = gameApiClient.addOpening(eco, name, line)) {
+                is ApiResult.Success -> applyServerList(container, r.data, "Added $eco")
+                is ApiResult.HttpError -> {
+                    val msg = when (r.code) {
+                        400 -> "Invalid opening (check the ECO format)"
+                        else -> "HTTP ${r.code}"
+                    }
+                    showFailureToast(msg)
+                }
+                is ApiResult.NetworkError -> showFailureToast("offline")
+                ApiResult.Timeout -> showFailureToast("timed out")
+            }
+        }
+    }
+
+    /**
+     * Replace the rendered list with the server's authoritative
+     * post-edit response + brief success toast.  Editing endpoints
+     * all return the full updated list so we never have to assemble
+     * the new state client-side.
+     */
+    private fun applyServerList(
+        container: LinearLayout,
+        dtos: List<RepertoireOpeningDto>,
+        toastLabel: String,
+    ) {
+        val mapped = dtos
+            .sortedBy { it.ordinal }
+            .map { dto ->
+                OpeningEntry(
+                    eco = dto.eco,
+                    name = dto.name,
+                    line = dto.line,
+                    mastery = dto.mastery,
+                    isActive = dto.isActive,
+                )
+            }
+        currentRepertoire = mapped
+        renderRepertoire(container, mapped)
+        renderStats(mapped)
+        Toast.makeText(this, toastLabel, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun showFailureToast(reason: String) {
+        Toast.makeText(this, "Couldn't update repertoire · $reason", Toast.LENGTH_SHORT).show()
     }
 
     private fun renderStats(entries: List<OpeningEntry>) {

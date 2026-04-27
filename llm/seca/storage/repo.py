@@ -106,6 +106,148 @@ def checkpoint_game(game_id: str, fen: str, uci_history: str) -> bool:
         conn.close()
 
 
+def upsert_opening(
+    player_id: str,
+    eco: str,
+    name: str,
+    line: str,
+    mastery: float = 0.0,
+    is_active: bool = False,
+    ordinal: int | None = None,
+) -> None:
+    """Insert or update an opening line for the player.
+
+    Conflict resolution: the (player_id, eco) UNIQUE constraint means
+    re-inserting an existing eco updates the row in place — name/
+    line/mastery/is_active/ordinal can drift over time without
+    creating duplicates.
+
+    When ordinal is None, the new row is appended at the end of
+    the player's list (max(ordinal) + 1).
+    """
+    if ordinal is None:
+        conn = get_conn()
+        try:
+            row = conn.execute(
+                "SELECT COALESCE(MAX(ordinal), -1) FROM repertoire WHERE player_id = ?",
+                (player_id,),
+            ).fetchone()
+            ordinal = (row[0] if row else -1) + 1
+        finally:
+            conn.close()
+
+    conn = get_conn()
+    try:
+        conn.execute(
+            """
+            INSERT INTO repertoire
+                (player_id, eco, name, line, mastery, is_active, ordinal, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(player_id, eco) DO UPDATE SET
+                name = excluded.name,
+                line = excluded.line,
+                mastery = excluded.mastery,
+                is_active = excluded.is_active,
+                ordinal = excluded.ordinal,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (player_id, eco, name, line, mastery, 1 if is_active else 0, ordinal),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def delete_opening(player_id: str, eco: str) -> bool:
+    """Remove an opening from the player's repertoire.  Returns True
+    iff a row was actually deleted (false for a non-existent eco)."""
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            "DELETE FROM repertoire WHERE player_id = ? AND eco = ?",
+            (player_id, eco),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def set_active_opening(player_id: str, eco: str) -> bool:
+    """Mark [eco] as the player's active line, demoting any other
+    currently-active row to inactive.  Returns True iff a row was
+    successfully promoted (false when the eco doesn't exist for
+    this player)."""
+    conn = get_conn()
+    try:
+        # Verify the target row exists first — otherwise we'd silently
+        # demote the current active row without promoting a replacement.
+        existing = conn.execute(
+            "SELECT 1 FROM repertoire WHERE player_id = ? AND eco = ?",
+            (player_id, eco),
+        ).fetchone()
+        if existing is None:
+            return False
+
+        # Demote everything else, then promote the target.  Two writes
+        # in one transaction so the "exactly one active" invariant
+        # holds at every observable moment.
+        conn.execute(
+            "UPDATE repertoire SET is_active = 0, updated_at = CURRENT_TIMESTAMP "
+            "WHERE player_id = ? AND eco != ?",
+            (player_id, eco),
+        )
+        conn.execute(
+            "UPDATE repertoire SET is_active = 1, updated_at = CURRENT_TIMESTAMP "
+            "WHERE player_id = ? AND eco = ?",
+            (player_id, eco),
+        )
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
+def seed_default_repertoire(player_id: str, defaults: list[dict]) -> int:
+    """Insert the canonical default repertoire for a player who has
+    nothing stored.  No-op (returns 0) when the player already has
+    at least one row.  Returns the number of rows inserted.
+
+    Called by the editing endpoints (POST/DELETE/active) before they
+    operate so the user can edit the defaults they see in the GET
+    response without an extra "save defaults" step.
+    """
+    conn = get_conn()
+    try:
+        existing = conn.execute(
+            "SELECT 1 FROM repertoire WHERE player_id = ? LIMIT 1",
+            (player_id,),
+        ).fetchone()
+        if existing is not None:
+            return 0
+        for entry in defaults:
+            conn.execute(
+                """
+                INSERT INTO repertoire
+                    (player_id, eco, name, line, mastery, is_active, ordinal)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    player_id,
+                    entry["eco"],
+                    entry["name"],
+                    entry["line"],
+                    entry["mastery"],
+                    1 if entry["is_active"] else 0,
+                    entry["ordinal"],
+                ),
+            )
+        conn.commit()
+        return len(defaults)
+    finally:
+        conn.close()
+
+
 def list_repertoire(player_id: str) -> list[dict]:
     """Return the player's opening repertoire ordered by `ordinal`,
     or an empty list when nothing is stored.
