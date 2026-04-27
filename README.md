@@ -1,66 +1,95 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Cereveon — In-Game Coaching</title>
+# ChessCoach-AI
 
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+A non-calculating chess coach. Stockfish is the source of truth; the LLM explains the engine's evaluation in natural language but never overrides it, never suggests moves, and never invents tactics.
 
-<style>
-  html, body {
-    margin: 0;
-    background: #0b0d13;
-    color: #e6e2d6;
-    font-family: 'Inter', system-ui, sans-serif;
-    overflow: hidden;
-  }
-  /* Chess glyph helper: use unicode chess pieces styled w/ filter/shadow.
-     No hand-drawn SVG; unicode ensures crisp rendering at any scale. */
-  .piece {
-    font-family: "Noto Sans Symbols 2", "Segoe UI Symbol", "Apple Color Emoji", serif;
-    font-feature-settings: "liga" off;
-    line-height: 1;
-    user-select: none;
-  }
-  /* Shared neon keyframes */
-  @keyframes cv-pulse {
-    0%,100% { opacity: 1; }
-    50%     { opacity: 0.45; }
-  }
-  @keyframes cv-scan {
-    0%   { transform: translateY(-100%); }
-    100% { transform: translateY(100%); }
-  }
-  @keyframes cv-flicker {
-    0%, 19.999%, 22%, 62.999%, 64%, 64.999%, 70%, 100% { opacity: 1; }
-    20%, 21.999%, 63%, 63.999%, 65%, 69.999% { opacity: 0.78; }
-  }
-</style>
+The system has three layers:
 
-<!-- React + Babel (pinned, integrity-checked) -->
-<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+1. **Engine** — Stockfish provides evaluations and best-move analysis. The raw output is normalised through an Engine Signal Vector (ESV) before any other layer sees it.
+2. **Mode-2 explainer** — a deterministic RAG retrieval, prompt rendering, and LLM generation pipeline that turns the ESV into prose. Every output passes through hard validators that reject move suggestions, invented tactics, or any deviation from the engine's truth.
+3. **SECA** — a thin per-user adaptation layer (rating, confidence, embeddings, deterministic action selection). The base intelligence (engine, LLM) stays fixed; only lightweight decision-layer state updates per game. Autonomous RL is prohibited by design.
 
-<!-- Starters -->
-<script type="text/babel" src="design-canvas.jsx"></script>
-<script type="text/babel" src="android-frame.jsx"></script>
-<script type="text/babel" src="tweaks-panel.jsx"></script>
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the invariants the system is built to guarantee, and [`docs/SECA.md`](docs/SECA.md) for what is live vs. deferred in the adaptation loop.
 
-<!-- Shared pieces and the three variants -->
-<script type="text/babel" src="coach-common.jsx"></script>
-<script type="text/babel" src="coach-variant-obsidian.jsx"></script>
-<script type="text/babel" src="coach-variant-atrium.jsx"></script>
-<script type="text/babel" src="coach-variant-hud.jsx"></script>
-<script type="text/babel" src="atrium-screens.jsx"></script>
-<script type="text/babel" src="atrium-screens-2.jsx"></script>
-<script type="text/babel" src="app.jsx"></script>
+## Repository layout
 
-</head>
-<body>
-<div id="root"></div>
-</body>
-</html>
+| Directory | Contents |
+|---|---|
+| [`llm/`](llm/) | Python FastAPI backend: API routes, RAG, validators, auth, SECA flows, engine pool |
+| [`android/`](android/) | Kotlin Android client (Atrium UI) + JNI engine bridge |
+| [`engine/`](engine/) | Native chess engine experiments (perft, strength) |
+| [`docs/`](docs/) | Architecture, testing, operations, deployment, release |
+| [`design/`](design/) | React/Babel design-canvas mockups (visual prototype only) |
+| [`scripts/`](scripts/) | Setup, deploy, smoke-test, and Android emulator scripts |
+
+## Quick start
+
+For full setup options (Docker, dev container, bare-metal, Android) see the **Developer Setup** section of [`CLAUDE.md`](CLAUDE.md).
+
+The shortest path to a running backend:
+
+```bash
+cp .env.example .env
+
+# Ollama runs on the host, not in Docker
+ollama pull qwen2.5:7b-instruct-q2_K
+ollama serve &
+
+docker compose up
+```
+
+The API is then reachable at `http://localhost:8000`:
+
+```bash
+curl http://localhost:8000/health
+```
+
+For the Android app, open [`android/`](android/) in Android Studio — it generates `local.properties` automatically — and run on an emulator or `arm64-v8a` device.
+
+## Tests
+
+Backend (Python):
+
+```bash
+python llm/run_ci_suite.py          # CI suite
+python llm/run_quality_gate.py      # black + pylint + mypy
+```
+
+Android (host JVM unit tests):
+
+```bash
+cd android && ./gradlew test
+```
+
+Android instrumented (emulator or device):
+
+```bash
+bash scripts/run_connected_android_tests.sh
+```
+
+CI runs a subset of these on every push; see [`docs/TESTING.md`](docs/TESTING.md) for the full policy on which tests gate merges and which (real-LLM regression, quality heuristics) run only locally.
+
+## Deployment
+
+Production runs on Hetzner via Docker Compose + Caddy + Ollama. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the bootstrap script, secrets list, and post-deploy smoke test; [`docs/OPERATIONS.md`](docs/OPERATIONS.md) for runtime monitoring and incident response.
+
+## Documentation
+
+| Document | Purpose |
+|---|---|
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System invariants and layer boundaries |
+| [`docs/SECA.md`](docs/SECA.md) | Adaptive layer: framework, six-step loop, live-vs-dormant map |
+| [`docs/API_CONTRACTS.md`](docs/API_CONTRACTS.md) | Authoritative HTTP request/response schemas |
+| [`docs/TESTING.md`](docs/TESTING.md) | Test taxonomy, CI policy, regression frequency |
+| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Production deployment runbook |
+| [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | Telemetry, regression detection, incident response |
+| [`docs/OPERATIONS_RETRIES.md`](docs/OPERATIONS_RETRIES.md) | Retry policy reference |
+| [`docs/RELEASE.md`](docs/RELEASE.md) | Release process |
+| [`CLAUDE.md`](CLAUDE.md) | Project rules, required reviews, subagent routing, developer setup |
+
+## Design canvas
+
+The React/Babel mockups under [`design/`](design/) (loaded by [`design/index.html`](design/index.html)) are a visual prototype of the Cereveon · Atrium design language for the Android client. They are not part of the build — open `design/index.html` in a browser to view them. The Android implementation lives in `android/app/src/main/`.
+
+## License
+
+See [`LICENSE.md`](LICENSE.md).

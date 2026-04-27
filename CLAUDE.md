@@ -50,6 +50,7 @@
 - `android/`: Android client and Gradle validation surface
 - `engine/`: native engine code and engine-side experiments
 - `docs/`: architecture, testing, operations, and release references
+- `design/`: React/Babel design canvas mockups (Atrium screens) — visual prototype only, not part of the build
 - `.claude/agents/`: project subagents
 - `.claude/hooks/`: deterministic governance hooks
 

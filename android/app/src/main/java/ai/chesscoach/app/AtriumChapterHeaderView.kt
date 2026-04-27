@@ -54,8 +54,8 @@ class AtriumChapterHeaderView @JvmOverloads constructor(
     init {
         orientation = VERTICAL
         // 16dp top, 20dp horizontal, 8dp bottom — matches the Atrium
-        // chapter-header padding from coach-variant-atrium.jsx (20px h,
-        // 16px t, 8px b in design pixels, dp-equivalent on Android).
+        // chapter-header padding from design/coach-variant-atrium.jsx
+        // (20px h, 16px t, 8px b in design pixels, dp-equivalent on Android).
         setPadding(dp(20), dp(16), dp(20), dp(8))
 
         addView(kickerView)
