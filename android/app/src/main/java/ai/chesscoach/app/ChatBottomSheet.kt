@@ -107,6 +107,10 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
             baseUrl = BuildConfig.COACH_API_BASE,
             apiKey = BuildConfig.COACH_API_KEY,
             tokenProvider = { authRepository?.getToken() },
+            // Rotate the JWT on every successful coach response — without
+            // this, a user who chats for 24h+ without ending a game would
+            // be bounced to login despite continuous activity.
+            tokenSink = { newToken -> authRepository?.saveToken(newToken) },
         )
     }
 

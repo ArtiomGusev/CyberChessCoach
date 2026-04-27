@@ -114,6 +114,13 @@ class HttpCoachApiClient(
     val connectTimeoutMs: Int = DEFAULT_CONNECT_TIMEOUT_MS,
     val readTimeoutMs: Int = DEFAULT_READ_TIMEOUT_MS,
     val tokenProvider: (() -> String?)? = null,
+    /**
+     * Optional sink for the X-Auth-Token refresh header — see
+     * [TokenRefresh].  Without this, a user who chats for a full
+     * day without ending a game would lose their session even
+     * though they're continuously active.
+     */
+    val tokenSink: ((String) -> Unit)? = null,
 ) : CoachApiClient {
 
     companion object {
@@ -153,6 +160,7 @@ class HttpCoachApiClient(
                 val code = conn.responseCode
                 if (code == HttpURLConnection.HTTP_OK) {
                     val body = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
+                    consumeRefreshedToken(conn, tokenSink)
                     ApiResult.Success(parseResponse(body))
                 } else {
                     ApiResult.HttpError(code)
@@ -196,6 +204,13 @@ class HttpCoachApiClient(
                     send(StreamChunk.StreamError("HTTP $code"))
                     return@withContext
                 }
+
+                // Response headers are available the moment the server
+                // commits to a 200 — well before the SSE stream itself
+                // starts emitting.  Rotate the JWT now rather than
+                // waiting for the stream to close, in case the user
+                // backgrounds mid-stream.
+                consumeRefreshedToken(conn, tokenSink)
 
                 conn.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
                     var line: String?
@@ -263,8 +278,12 @@ class HttpCoachApiClient(
             conn.readTimeout = readTimeoutMs
             conn.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(body) }
             val code = conn.responseCode
-            if (code == HttpURLConnection.HTTP_OK) ApiResult.Success(Unit)
-            else ApiResult.HttpError(code)
+            if (code == HttpURLConnection.HTTP_OK) {
+                consumeRefreshedToken(conn, tokenSink)
+                ApiResult.Success(Unit)
+            } else {
+                ApiResult.HttpError(code)
+            }
         } catch (_: SocketTimeoutException) {
             ApiResult.Timeout
         } catch (e: Exception) {

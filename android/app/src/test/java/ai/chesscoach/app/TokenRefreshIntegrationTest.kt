@@ -177,4 +177,42 @@ class TokenRefreshIntegrationTest {
         server.takeRequest(10, TimeUnit.SECONDS)
         assertEquals(NEW_TOKEN, sink.get())
     }
+
+    // ── HttpCoachApiClient.chat — rounds out the refresh story ──
+
+    @Test
+    fun `coach chat success rotates the JWT via tokenSink`() = runBlocking {
+        // Without this, a user who chats for 24h+ without ending a
+        // game would silently lose their session.  The chat endpoint
+        // is the most common authenticated call between game starts/
+        // finishes, so it must participate in the refresh.
+        val sink = AtomicReference<String?>(null)
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .addHeader("X-Auth-Token", NEW_TOKEN)
+                .setBody(
+                    """
+                    {"text":"Try Nf3","engine_signal":null,"mode":"CHAT_V1"}
+                    """.trimIndent(),
+                ),
+        )
+
+        val client = HttpCoachApiClient(
+            baseUrl = baseUrl(),
+            apiKey = "test-key",
+            tokenProvider = { OLD_TOKEN },
+            tokenSink = { sink.set(it) },
+        )
+        client.chat(
+            fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            messages = listOf(ChatMessageDto(role = "user", content = "What now?")),
+            playerProfile = null,
+            pastMistakes = null,
+            moveCount = null,
+        )
+
+        server.takeRequest(10, TimeUnit.SECONDS)
+        assertEquals(NEW_TOKEN, sink.get())
+    }
 }
