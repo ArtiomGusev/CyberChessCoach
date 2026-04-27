@@ -1,193 +1,287 @@
-# SECA — Skill-Estimating Coaching Architecture
+# SECA — Self-Evolving Coaching Architecture (v1)
 
-The `llm/seca/` tree is the chess-coach backend's largest subsystem.
-It owns auth, the per-player game lifecycle, opening repertoire,
-skill tracking, the post-game coach pipeline, and the dormant
-adaptive-learning research code that's intentionally frozen at
-runtime.
+SECA is the framework underneath `llm/seca/` — a feedback loop that
+adapts to individual users without retraining the underlying neural
+networks.  This doc describes what SECA v1 *is*, walks the canonical
+six-step loop, and pins the loop's live-vs-dormant status in this
+implementation against the framework's reference description.
 
-> The name was originally meant to evoke "Self-Evolving Coaching
-> Architecture" — the open-ended adaptive system the early commits
-> aspired to.  The runtime today is the disciplined subset of that
-> idea: deterministic skill estimation + scripted coaching, with the
-> evolutionary half explicitly fenced off.
+For HTTP schemas see [`API_CONTRACTS.md`](API_CONTRACTS.md); for the
+LLM Mode-2 explainer (downstream of SECA) see
+[`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ---
 
-## What lives in the live runtime
+## The framework in one paragraph
 
-These layers are loaded by every authenticated request and are
-under the test suite + the freeze guard's keyword scan.
+SECA defines a third path between static AI (strong but
+non-adaptive) and self-improving AI (powerful but unstable).  The
+underlying intelligence — chess engine, language model, recommender
+— stays fixed.  Adaptation lives in a thin **decision layer**:
+contextual bandits, lightweight embeddings, deterministic skill
+trackers.  Every interaction observes a state, selects an action,
+records a reward, and updates the decision-layer components in
+real time.  No gradient descent over large models, no
+self-modifying weights, no uncontrolled feedback loops.
+
+The result is a system that adapts immediately, costs almost
+nothing in compute, and is interpretable end-to-end: every action
+choice can be traced to a state + a reward history.
+
+---
+
+## The v1 algorithm — six-step loop
+
+```
+                ┌───────────────────────────────┐
+                │ 1. Input                      │
+                │   state + user profile        │
+                │   (rating, confidence,        │
+                │    embedding)                 │
+                └──────────────┬────────────────┘
+                               ▼
+                ┌───────────────────────────────┐
+                │ 2. Action selection           │
+                │   contextual bandit           │
+                │   argmax_a Q(state, profile, a)│
+                └──────────────┬────────────────┘
+                               ▼
+                ┌───────────────────────────────┐
+                │ 3. Output                     │
+                │   action + context →          │
+                │   user-facing response        │
+                └──────────────┬────────────────┘
+                               ▼
+                ┌───────────────────────────────┐
+                │ 4. Feedback signal            │
+                │   numerical reward            │
+                │   (outcome / engagement /     │
+                │    error rate)                │
+                └──────────────┬────────────────┘
+                               ▼
+                ┌───────────────────────────────┐
+                │ 5. Online update              │
+                │   bandit incorporates         │
+                │   (state, action, reward);    │
+                │   profile (rating, conf,      │
+                │   embedding) refreshed.       │
+                │   No retraining, no gradient  │
+                │   descent over base model.    │
+                └──────────────┬────────────────┘
+                               ▼
+                ┌───────────────────────────────┐
+                │ 6. Loop repeats               │
+                │   next interaction            │
+                └───────────────────────────────┘
+```
+
+The constraint that makes the loop tractable: **base intelligence is
+held fixed**.  In this codebase that's Stockfish (engine) and the
+LLM (Mode-2 explainer).  Adaptation never touches their weights.
+
+---
+
+## What's live in this implementation
+
+The chess coach implements parts of the loop today and intentionally
+defers others.  Mapping each step against the canonical algorithm:
+
+| Step | What v1 prescribes | What this codebase ships |
+|------|-------------------|--------------------------|
+| **1. Input** | State + user profile (rating, confidence, embedding) | **Live.**  `seca/auth/models.Player` carries `rating`, `confidence`, `skill_vector_json`, `player_embedding`.  `seca/brain/bandit/context_builder.build_context_vector()` assembles a 6-element feature vector from rating + confidence + accuracy + weaknesses. |
+| **2. Action selection** | Contextual bandit over a domain action space | **Deferred.**  Live runtime uses a *deterministic* `PostGameCoachController` (rule-based action selection from a small fixed action set), not a bandit.  Per CLAUDE.md rule #3 the project chose to ship the bandit-driven decision step only after the deterministic baseline is well understood; the bandit code under `seca/brain/bandit/contextual_bandit.py` exists but is dormant. |
+| **3. Output** | Action + context → user-facing response | **Live.**  `seca/coach/executor.CoachExecutor` renders the chosen action into a `coach_content` payload returned by `/game/finish`. |
+| **4. Feedback signal** | Numerical reward from the interaction | **Live.**  Per-game `accuracy`, `weaknesses`, and the rating delta from `SkillUpdater` together form the reward signal logged to `bandit_experiences`. |
+| **5. Online update** | Bandit + auxiliary refresh; no retraining | **Live (auxiliary side).**  `seca/skills/updater.SkillUpdater` refreshes rating, confidence, skill vector, and player embedding (`PlayerEmbeddingEncoder`) per game.  `seca/brain/bandit/experience_store.ExperienceStore` writes the (context, action, reward) tuple for the bandit.  **Bandit weight update itself: dormant** — the live system logs experiences but doesn't fit a policy from them. |
+| **6. Loop repeats** | Next interaction picks up the refreshed profile | **Live.**  Subsequent `/game/finish` calls read the updated player row; `/auth/me` returns the current state to the client. |
+
+In short: this codebase ships the **half of the loop that doesn't
+need a learned policy** (state assembly, deterministic action,
+output rendering, reward extraction, lightweight profile refresh,
+experience logging) and defers the **bandit-as-decision-maker**
+half.  The framework calls this "SECA v1 with deferred decision
+layer" — a valid configuration, since the framework's invariants
+hold either way.
+
+There is one further self-imposed constraint specific to this
+project: **no continuous-feedback retraining of any neural model**,
+period.  The framework permits lightweight online updates (bandit
+weights, embeddings); this implementation goes further and requires
+that the embedding refresh be deterministic too (no gradient steps
+in the live runtime, ever).  See "Freeze guard" below.
+
+---
+
+## Live runtime layers
+
+The directories under `llm/seca/` that participate in the live
+request path:
 
 | Layer | Module | Responsibility |
 |-------|--------|----------------|
-| **auth** | `seca/auth/` | Register / login / sessions / JWT issuance + sliding refresh.  Token lifecycle (incl. the `X-Auth-Token` rotation header).  PBKDF2 password hashing + email-enumeration timing defence. |
+| **auth** | `seca/auth/` | Register / login / sessions / JWT issuance + sliding refresh.  Token lifecycle (incl. the `X-Auth-Token` rotation header). |
 | **events** | `seca/events/` | `POST /game/finish` — stores GameEvent, runs SkillUpdater, dispatches to PostGameCoach. |
-| **storage** | `seca/storage/` | Raw-sqlite tables for `games`, `moves`, `explanations`, `repertoire`.  Boundary partner of the SQLAlchemy auth schema (see `test_schema_boundary.py`). |
-| **skills** | `seca/skills/` | `SkillUpdater` — translates a finished `GameEvent` into rating / confidence / skill-vector deltas. |
-| **adaptation** | `seca/adaptation/` | Per-session ELO drift for skill-assessment games.  No neural updates, no bandit training — fixed quality-delta table, in-memory state per player. |
-| **coach** | `seca/coach/` (live) | `PostGameCoachController` + `CoachExecutor` — chooses + renders the post-game coaching action returned in `/game/finish`. |
+| **storage** | `seca/storage/` | Raw-sqlite tables for `games`, `moves`, `explanations`, `repertoire`. |
+| **skills** | `seca/skills/` | `SkillUpdater` — translates a finished GameEvent into rating / confidence / skill-vector / embedding deltas (step 5 of the loop, auxiliary side). |
+| **adaptation** | `seca/adaptation/` | Per-session ELO drift for skill-assessment games — fixed quality-delta table, in-memory state per player.  Deterministic. |
+| **coach** | `seca/coach/` | `PostGameCoachController` (live action selection — currently rule-based, not bandit-driven) + `CoachExecutor` (renders the action). |
 | **analytics** | `seca/analytics/` | `AnalyticsLogger` (event log) + training recommendations derived from accumulated weakness counts. |
-| **analysis** | `seca/analysis/` | `HistoricalAnalysisPipeline` — deterministic per-player roll-up over recent games (dominant weakness category, etc.).  Read-only. |
-| **api** | `seca/api/` | Routers + key middleware.  X-API-Key enforcement (`auth/api_key.py`), shared rate limiter. |
-| **safety** | `seca/safety/` | The freeze guard described below — the single runtime enforcement of the "no autonomous RL" rule. |
-| **runtime** | `seca/runtime/` | `safe_mode.py` — `SAFE_MODE = True` constant + `assert_safe()` import-time gate that any forbidden module would trip. |
+| **analysis** | `seca/analysis/` | `HistoricalAnalysisPipeline` — deterministic per-player roll-up over recent games.  Read-only. |
+| **brain** (allowlisted only) | `seca/brain/bandit/{context_builder,experience_store}` | The two helpers participate in the loop today.  Everything else under `brain/` is dormant. |
+| **learning** (allowlisted only) | `seca/learning/player_embedding` | Embedding encoder + JSON serialisation, used by SkillUpdater. |
+| **api** | `seca/api/` | Routers + middleware (X-API-Key, shared rate limiter). |
+| **safety** | `seca/safety/` | Freeze guard — single runtime enforcement of the no-retraining rule. |
+| **runtime** | `seca/runtime/` | `safe_mode.py` — `SAFE_MODE = True` constant + `assert_safe()` import-time gate. |
 
 ---
 
-## The algorithm idea (and why most of it is frozen)
+## What's dormant and why
 
-The earliest SECA commits sketched a **closed-loop adaptive coach**:
+Several `seca/` directories are *not* in the live path: `world_model/`,
+`world/`, `henm/`, `closed_loop/`, `optim/`, `evolution/`, `policy/`,
+`memory/`, plus most of `brain/` (everything not in the allowlist).
+These hold research code for the **deferred decision layer** + the
+**not-permitted-in-v1 self-improving variants** beyond the framework's
+constraints:
 
-```
-        ┌────────────────────────────────────────┐
-        │              World Model               │
-        │  (skill dynamics: skill_t → skill_t+1) │
-        └──────────────┬─────────────────────────┘
-                       │ predict(skill, action)
-                       ▼
-        ┌────────────────────────────────────────┐
-        │           Counterfactual Planner       │
-        │   argmax_a  reward(world_model.predict(│
-        │              skill, a))                │
-        └──────────────┬─────────────────────────┘
-                       │ chosen training action
-                       ▼
-        ┌────────────────────────────────────────┐
-        │       Contextual Bandit (online)       │
-        │   ε-greedy over arms (tactics / opening│
-        │   / endgame / etc.); reward = ΔELO     │
-        └──────────────┬─────────────────────────┘
-                       │ logged context+action+reward
-                       ▼
-        ┌────────────────────────────────────────┐
-        │      Online learning (ΔELO → fit)      │
-        │   skill embedding update,              │
-        │   bandit weights update,               │
-        │   world-model regression refit         │
-        └──────────────┬─────────────────────────┘
-                       │ next session uses fresh weights
-                       ▲
-                       │
-        ┌──────────────┴─────────────────────────┐
-        │            User plays a game           │
-        │   GameEvent → reward signal → loop     │
-        └────────────────────────────────────────┘
-```
+- `seca/world_model/model.SkillDynamicsModel` — a 2-layer MLP that
+  predicts `skill_t+1` from `(skill, action)`.  Would be the dynamics
+  model for a counterfactual planner.
+- `seca/brain/bandit/contextual_bandit` — the bandit decision step
+  (step 2 in the loop above), dormant pending the deterministic
+  baseline being well understood.
+- `seca/brain/bandit/online_update`, `seca/learning/online_learner` —
+  the gradient steps that would refit the bandit / embedding
+  encoder online.  These are what the framework's "no gradient
+  descent over large models" rule explicitly excludes.
+- `seca/closed_loop/`, `seca/evolution/`, `seca/optim/` — beyond
+  v1's constraints (these explore self-improving variants the
+  framework's v1 spec rules out by design).
 
-Concretely: `seca/world_model/model.py` is a 2-layer MLP
-(`SkillDynamicsModel`) that predicts `skill_t+1` from `(skill, action)`;
-`seca/brain/bandit/contextual_bandit.py` is a bandit head that picks
-training arms; a `CounterfactualPlanner` (referenced from inside the
-unreachable `if not SAFE_MODE:` branch in `events/router.py`) was
-the plan-to-evaluate stage; `seca/learning/online_learner.py` is the
-gradient step that would have closed the loop.
-
-**None of that runs today.**  Per `CLAUDE.md` rule #3 ("Autonomous RL
-implementation is prohibited") and `docs/ARCHITECTURE.md` "Forbidden
-Changes", the project decided the adaptive-learning surface was too
-broad to ship correctness guarantees against.  The research code
-remains in the tree for future study but cannot be loaded into the
-live runtime.
-
-What ships instead is the **deterministic backbone** of that loop:
-`SkillUpdater` does the bookkeeping side (rating + confidence + skill
-vector after each game) without any neural component, and the
-post-game coach picks an action from a small fixed set rather than
-from a learned policy.  Closed-loop learning is replaced with
-**human-in-the-loop calibration**: the user re-tunes their estimate
-via the Settings → Skill rating affordance, and the server stores it
-verbatim through `PATCH /auth/me`.
+If a contributor needs to revive any of this for the bandit-decision
+step (the framework-permitted next milestone), the path is: move
+the relevant module out of the freeze guard's blast radius, add
+the new live module to the brain allowlist, document its
+determinism guarantees, and write tests that pin them.  No silent
+re-enablement.
 
 ---
 
-## The freeze guard
+## Freeze guard
 
-`seca/safety/freeze.py` is the single runtime-enforcement layer for
-the "no autonomous RL" rule.  Called once at FastAPI startup; calls
-`sys.exit(1)` immediately if any forbidden component has been loaded.
+`seca/safety/freeze.py` enforces the no-retraining rule at startup.
+Three independent checks:
 
-Three independent checks (defence in depth):
-
-1. **Brain-tree allowlist.**  Anything under `llm.seca.brain.*` that
-   isn't on the explicit allowlist is forbidden — regardless of name
-   or contents.  The allowlist is intentionally tiny (only the
-   SQLAlchemy schema modules + two helpers needed by the live skill
-   updater).  *New* brain modules cannot be silently loaded by
-   appearing in `sys.modules`; they must be deliberately added here.
-
-2. **Forbidden module-name parts.**  Substring matches against module
-   names used by historical or hypothetical adaptive components
-   elsewhere in the tree.  Fallback for code paths that may move
-   outside `brain/` in future refactors.
-
+1. **Brain-tree allowlist.**  Anything under `llm.seca.brain.*` not
+   on the allowlist is forbidden.  Allowlist is intentionally tiny:
+   schema modules + the two helpers (`context_builder`,
+   `experience_store`) the live loop actually uses.
+2. **Forbidden module-name parts.**  Substring matches against names
+   used by historical adaptive components (e.g. `brain.rl`,
+   `brain.bandit.online`).
 3. **Forbidden source keywords.**  Substring matches against module
-   *source text* — covers the major training entry points used by
-   the dormant ML code (`optimizer.step`, `loss.backward`,
-   `.partial_fit(`, `train(`, `bandit.update`, etc.).
+   *source text*: `optimizer.step`, `loss.backward`, `.partial_fit(`,
+   `train(`, `bandit.update`, etc.  Catches gradient updates anywhere
+   in the seca tree even if a module is renamed around the
+   allowlist.
 
 Plus two defensive guards:
 
 - `assert_safe_world_model(world_model)` — only the `SafeWorldModel`
-  stub class (a no-op `predict_next` that returns the input state
+  stub (a no-op `predict_next` that returns the input state
   unchanged) is allowed to be the live world model.
-- `assert_no_background_tasks()` — the env var
-  `SECA_ENABLE_ONLINE_LEARNING=1` is treated as a deliberate attempt
-  to bypass the freeze and crashes the process.
+- `assert_no_background_tasks()` — `SECA_ENABLE_ONLINE_LEARNING=1`
+  is treated as a deliberate bypass attempt and crashes the process.
 
-The tests in `test_safety_freeze.py` (16 cases) pin every check
-against intentional violations.
+`test_safety_freeze.py` (16 cases) pins every check against
+intentional violations.
+
+What the guard *doesn't* block: the lightweight updates v1 permits.
+`SkillUpdater`'s rating / confidence / embedding refresh runs every
+game; the bandit experience store writes every game.  The framework
+v1 explicitly distinguishes "incremental decision-layer update"
+(allowed) from "gradient descent on a learned model" (not allowed),
+and the guard's keyword list is calibrated against the latter.
 
 ---
 
-## Where the SECA layers wire into the API
+## Where the loop wires into the API
 
-| Endpoint | SECA layer(s) it touches |
-|----------|--------------------------|
-| `POST /auth/{register,login,logout}` | `auth/router.py`, `auth/service.py`, `auth/tokens.py` |
-| `GET /auth/me` / `PATCH /auth/me` | `auth/router.py`; PATCH writes back into `auth/models.Player` |
-| `POST /game/start` | `storage/repo.create_game` |
-| `POST /game/finish` | `events/router.py` → `events/storage.EventStorage` (game event row) → `skills/updater.SkillUpdater` (rating delta) → `coach/postgame_controller` (coach action) → `analytics/training_recommendations` |
-| `POST /game/{id}/checkpoint` | `storage/repo.checkpoint_game` |
-| `GET /game/active` | `storage/repo.get_active_game` |
-| `GET /game/history` | `events/storage.EventStorage.get_recent_games` |
-| `GET /repertoire` | `storage/repo.list_repertoire` (+ default fallback in `server.py`) |
-| `POST /chat`, `POST /chat/stream` | upstream of SECA — handled by the LLM coach layer in `server.py` (Mode-2 explainer; see `docs/ARCHITECTURE.md`) |
+| Endpoint | SECA layer(s) it touches | Loop step |
+|----------|--------------------------|-----------|
+| `POST /auth/{register,login,logout}` | `auth/router.py`, `auth/service.py`, `auth/tokens.py` | (auth, not the loop) |
+| `GET /auth/me` / `PATCH /auth/me` | `auth/router.py`; PATCH writes back into `auth/models.Player` | 1 (state read) / 5 (manual profile refresh) |
+| `POST /game/start` | `storage/repo.create_game` | (lifecycle) |
+| `POST /game/finish` | `events/router.py` → `events/storage.EventStorage` (game event) → `skills/updater.SkillUpdater` (rating / embedding refresh) → `coach/postgame_controller` (action selection) → `coach/executor` (output rendering) → `analytics/training_recommendations` | 1 → 4 → 5 → 2 → 3, per game |
+| `POST /game/{id}/checkpoint` | `storage/repo.checkpoint_game` | (cross-device resume) |
+| `GET /game/active` | `storage/repo.get_active_game` | (cross-device resume) |
+| `GET /game/history` | `events/storage.EventStorage.get_recent_games` | (read-only history) |
+| `GET /repertoire` | `storage/repo.list_repertoire` (+ default fallback in `server.py`) | (study material) |
+| `POST /chat`, `POST /chat/stream` | upstream of SECA — handled by the LLM coach layer in `server.py` (Mode-2 explainer; see `ARCHITECTURE.md`) | (Mode-2, not the SECA loop) |
 
-Authenticated endpoints depend on `seca/auth/router.get_current_player`,
-which both validates the session AND attaches the `X-Auth-Token`
-refresh header.  Sliding-session expiry extension lives in
+Authenticated endpoints depend on
+`seca/auth/router.get_current_player`, which both validates the
+session AND attaches the `X-Auth-Token` refresh header.  Sliding
+session expiry extension lives in
 `seca/auth/service.AuthService.get_player_by_session`.
 
 ---
 
-## Why the seca/ tree looks bigger than what runs
+## The framework beyond chess
 
-A grep across `llm/seca/` reveals directories that aren't in the
-"live runtime" table above: `henm/`, `closed_loop/`, `optim/`,
-`evolution/`, `policy/`, `world_model/`, `world/`, `memory/`,
-`coaching/`, etc.  These are the **dormant research code paths**
-preserved for future study.  They:
+SECA v1 is domain-agnostic.  The same six-step loop applies to:
 
-- Cannot be imported into a live process (the freeze guard would
-  crash startup if they were).
-- Are excluded from the active code paths the test suite exercises.
-- Should never be referenced from anything under `seca/api/`,
-  `seca/auth/`, `seca/events/`, `seca/skills/`, `seca/adaptation/`,
-  `seca/coach/`, `seca/analytics/`, `seca/analysis/`, or
-  `seca/storage/`.
+- **Adaptive learning platforms** — state = current lesson + student
+  profile; action = next exercise; reward = mastery delta.
+- **Developer tooling** — state = project + code context; action =
+  suggestion / refactor; reward = accept / reject signal.
+- **Cognitive training** — state = recent performance + cognitive
+  profile; action = next drill; reward = improvement on a held-out
+  benchmark.
+- **Dynamic difficulty in games** — state = player + recent
+  performance; action = enemy parameters / level layout; reward =
+  retention / engagement.
+- **Productivity / habit formation** — state = recent actions +
+  user profile; action = next prompt / nudge; reward = completion
+  signal.
+- **Health coaching** — state = vitals + history; action =
+  workout / nutrition / sleep prescription; reward = adherence +
+  progress.
 
-If a contributor needs to revive any of that code, the path is:
-move the relevant module *out* of the freeze-guard's blast radius
-(rename, split, etc.), add it to the brain allowlist if applicable,
-update `docs/ARCHITECTURE.md` "Forbidden Changes", and write tests
-that pin its determinism guarantees.  No silent re-enablement.
+The core invariant — base intelligence stays fixed, adaptation lives
+in the decision layer, every action is interpretable — survives
+across every domain.
+
+---
+
+## Why v1's constraints are features
+
+SECA v1 deliberately rules out autonomous training, self-modifying
+models, and uncontrolled feedback loops.  These are not limitations
+to be patched out in v2; they are what makes v1 deployable.  In
+return for the constraint, you get:
+
+- **Deployability.**  A v1 system can ship to production today; a
+  fully self-improving variant cannot.
+- **Auditability.**  Every action choice is a function of a state
+  + a logged reward history.  No opaque weight updates entangle
+  the explanation.
+- **Stability.**  No risk of catastrophic forgetting, weight
+  divergence, or regression on previously-handled cases.
+- **Cost.**  No retraining infrastructure, no gradient compute, no
+  large-model checkpointing.
+
+The framework's bet is that **most "self-improving" capabilities
+people actually want are achievable inside the v1 envelope** — the
+adaptation users notice is the rapid, real-time, per-interaction
+kind, not the slow weight-update-and-redeploy kind.
 
 ---
 
 ## References
 
-- `CLAUDE.md` — rule #3 (Autonomous RL implementation is prohibited)
+- The framework article: *SECA v1: A Practical Framework for Adaptive Intelligence*
+- `CLAUDE.md` — rule #3 (autonomous RL prohibited)
 - `docs/ARCHITECTURE.md` — Forbidden Changes; engine + Mode-2 layer
 - `docs/API_CONTRACTS.md` — endpoint schemas
 - `llm/seca/safety/freeze.py` — the enforcement layer
