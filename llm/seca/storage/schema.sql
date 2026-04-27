@@ -36,6 +36,14 @@ CREATE TABLE IF NOT EXISTS games (
     result TEXT,
     started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     finished_at TIMESTAMP,
+    -- In-progress checkpoint state for cross-device resume.  Populated
+    -- by repo.checkpoint_game() during play; nulled out (or just left
+    -- alongside finished_at) when the game completes.  The client
+    -- pulls these via GET /game/active at cold-start when no local
+    -- snapshot exists, e.g. after a fresh install on a second device.
+    current_fen TEXT,
+    current_uci_history TEXT,
+    last_checkpoint_at TIMESTAMP,
     FOREIGN KEY(player_id) REFERENCES players(id)
 );
 

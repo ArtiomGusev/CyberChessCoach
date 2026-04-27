@@ -75,6 +75,94 @@ def finish_game(game_id: str, result: str):
 
 
 # -------------------------------------------------
+# In-progress checkpoint (cross-device resume)
+# -------------------------------------------------
+
+
+def checkpoint_game(game_id: str, fen: str, uci_history: str) -> bool:
+    """Persist the in-progress state for [game_id].  No-ops (returns
+    False) when the row is already finished or doesn't exist — sliding
+    a checkpoint onto a closed game would create a phantom resume
+    entry the user couldn't actually pick up.
+
+    Returns True iff the UPDATE touched a row.
+    """
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            """
+            UPDATE games
+               SET current_fen = ?,
+                   current_uci_history = ?,
+                   last_checkpoint_at = CURRENT_TIMESTAMP
+             WHERE id = ?
+               AND finished_at IS NULL
+            """,
+            (fen, uci_history, game_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def get_active_game(player_id: str) -> dict | None:
+    """Return the player's most recent unfinished game with a
+    non-null checkpoint, or None if there isn't one.
+
+    Shape (when present):
+        {
+          "game_id":             str,
+          "current_fen":         str,
+          "current_uci_history": str,
+          "last_checkpoint_at":  str (ISO timestamp),
+          "started_at":          str (ISO timestamp),
+        }
+
+    Filters:
+      - Same player_id.
+      - finished_at IS NULL  (unfinished).
+      - current_fen IS NOT NULL  (a checkpoint was actually written;
+        avoids returning rows for /game/start calls where the user
+        never played a single move).
+
+    Order: most-recent last_checkpoint_at first, so a multi-game
+    history returns the user's last active session, not an ancient
+    one.
+    """
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            """
+            SELECT id,
+                   current_fen,
+                   current_uci_history,
+                   last_checkpoint_at,
+                   started_at
+              FROM games
+             WHERE player_id = ?
+               AND finished_at IS NULL
+               AND current_fen IS NOT NULL
+             ORDER BY last_checkpoint_at DESC
+             LIMIT 1
+            """,
+            (player_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if row is None:
+        return None
+    return {
+        "game_id": row[0],
+        "current_fen": row[1],
+        "current_uci_history": row[2] or "",
+        "last_checkpoint_at": row[3],
+        "started_at": row[4],
+    }
+
+
+# -------------------------------------------------
 # Moves
 # -------------------------------------------------
 

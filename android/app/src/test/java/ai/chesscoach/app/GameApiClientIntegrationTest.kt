@@ -404,4 +404,88 @@ class GameApiClientIntegrationTest {
         assertEquals("puzzle", rec.format)
         assertEquals(8.5f, rec.expectedGain, 0.01f)
     }
+
+    // ---------------------------------------------------------------------------
+    // Cross-device resume — POST /game/{id}/checkpoint + GET /game/active
+    // ---------------------------------------------------------------------------
+
+    @Test
+    fun `INT_CHECKPOINT_BODY - fen + uci_history serialised`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"status":"checkpointed"}"""))
+        val result = client(token = "tok").checkpointGame(
+            gameId = "game-abc",
+            fen = "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4",
+            uciHistory = "e2e4,e7e5,g1f3",
+        )
+        assertTrue(result is ApiResult.Success<*>)
+        val req = server.takeRequest(10, TimeUnit.SECONDS)!!
+        assertEquals("POST", req.method)
+        assertEquals("/game/game-abc/checkpoint", req.path)
+        val body = JSONObject(req.body.readUtf8())
+        assertEquals(
+            "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4",
+            body.getString("fen"),
+        )
+        assertEquals("e2e4,e7e5,g1f3", body.getString("uci_history"))
+    }
+
+    @Test
+    fun `INT_CHECKPOINT_BEARER - Authorization Bearer sent`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"status":"checkpointed"}"""))
+        client(token = "bearer-token-xyz").checkpointGame("g1", "fen", "")
+        val req = server.takeRequest(10, TimeUnit.SECONDS)!!
+        assertEquals("Bearer bearer-token-xyz", req.getHeader("Authorization"))
+    }
+
+    @Test
+    fun `INT_CHECKPOINT_404_HTTP_ERROR - unknown game maps to HttpError(404)`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(404).setBody("""{"detail":"game not found"}"""))
+        val result = client(token = "tok").checkpointGame("missing", "fen", "")
+        assertTrue("expected HttpError(404), got $result", result is ApiResult.HttpError)
+        assertEquals(404, (result as ApiResult.HttpError).code)
+    }
+
+    @Test
+    fun `INT_ACTIVE_GAME_PARSED - 200 returns Success with parsed body`() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """
+                {
+                  "game_id": "game-xyz",
+                  "current_fen": "fen-from-server",
+                  "current_uci_history": "e2e4,e7e5",
+                  "last_checkpoint_at": "2026-04-27 12:34:56",
+                  "started_at": "2026-04-27 12:30:00"
+                }
+                """.trimIndent(),
+            ),
+        )
+        val result = client(token = "tok").getActiveGame()
+        assertTrue("expected Success, got $result", result is ApiResult.Success<*>)
+        val data = (result as ApiResult.Success<*>).data as ActiveGameResponse?
+        assertNotNull(data)
+        assertEquals("game-xyz", data!!.gameId)
+        assertEquals("fen-from-server", data.currentFen)
+        assertEquals("e2e4,e7e5", data.currentUciHistory)
+    }
+
+    @Test
+    fun `INT_ACTIVE_GAME_404_IS_NULL_SUCCESS - no resumable game maps to Success(null)`() = runBlocking {
+        // 404 is the documented "no resumable game" signal — must NOT
+        // surface as ApiResult.HttpError(404), because the caller
+        // (HomeActivity) treats absence-of-data and "fetch failed"
+        // as different code paths.
+        server.enqueue(MockResponse().setResponseCode(404).setBody("""{"detail":"no active game"}"""))
+        val result = client(token = "tok").getActiveGame()
+        assertTrue("expected Success(null), got $result", result is ApiResult.Success<*>)
+        assertNull((result as ApiResult.Success<*>).data)
+    }
+
+    @Test
+    fun `INT_ACTIVE_GAME_OTHER_HTTP_ERROR - non-404 maps to HttpError`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(500).setBody("""{"detail":"boom"}"""))
+        val result = client(token = "tok").getActiveGame()
+        assertTrue("expected HttpError, got $result", result is ApiResult.HttpError)
+        assertEquals(500, (result as ApiResult.HttpError).code)
+    }
 }

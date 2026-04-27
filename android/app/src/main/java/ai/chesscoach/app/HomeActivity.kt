@@ -11,6 +11,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -187,6 +188,14 @@ class HomeActivity : AppCompatActivity() {
         dateKicker.text = formatDateKicker(System.currentTimeMillis(), firstSeen)
 
         maybeShowResumeCard(prefs)
+        // Cross-device resume: when the local snapshot is missing
+        // (fresh install / device swap) but the server has an
+        // unfinished game with a checkpoint, pull it down and
+        // populate the local snapshot so the user sees a Resume
+        // card on the same surface they'd see one on the original
+        // device.  Skipped when local already has an in-progress
+        // game (we trust the local snapshot — it's strictly fresher).
+        maybeFetchCrossDeviceResume(prefs)
 
         // ── Library rows ─────────────────────────────────────────────
         findViewById<LinearLayout>(R.id.homeRowNewGame).setOnClickListener {
@@ -258,6 +267,53 @@ class HomeActivity : AppCompatActivity() {
     private fun refreshSyncIndicator(prefs: SharedPreferences) {
         val pending = prefs.contains(PendingGameFinish.PREF_PENDING_FINISH_PAYLOAD)
         syncIndicator.visibility = if (pending) View.VISIBLE else View.GONE
+    }
+
+    /**
+     * Cross-device resume: when the local snapshot is missing but
+     * the server has an unfinished game with a checkpoint, pull it
+     * down and populate the snapshot prefs the same way MainActivity
+     * would on a normal mid-game.  After populating we re-render
+     * the Resume card so the user immediately sees the recovery.
+     *
+     * Skipped (no-op) when:
+     *   - PREF_LAST_GAME_IN_PROGRESS is already true (local snapshot
+     *     is at least as fresh as the server; trust it)
+     *   - The user has no token (still in some pre-auth state, which
+     *     shouldn't happen given the auth check at the top of
+     *     onCreate but defends against races)
+     */
+    private fun maybeFetchCrossDeviceResume(prefs: SharedPreferences) {
+        if (prefs.getBoolean(MainActivity.PREF_LAST_GAME_IN_PROGRESS, false)) return
+        if (authRepo.getToken() == null) return
+        lifecycleScope.launch {
+            when (val r = gameApiClient.getActiveGame()) {
+                is ApiResult.Success -> {
+                    val active = r.data ?: return@launch
+                    if (active.currentFen.isBlank()) return@launch
+                    val moveCount = active.currentUciHistory
+                        .split(',')
+                        .count { it.isNotBlank() }
+                    prefs.edit()
+                        .putBoolean(MainActivity.PREF_LAST_GAME_IN_PROGRESS, true)
+                        .putString(MainActivity.PREF_LAST_GAME_FEN, active.currentFen)
+                        .putString(
+                            MainActivity.PREF_LAST_GAME_UCI_HISTORY,
+                            active.currentUciHistory,
+                        )
+                        .putString(MainActivity.PREF_LAST_GAME_SERVER_ID, active.gameId)
+                        .putInt(MainActivity.PREF_LAST_GAME_MOVE_COUNT, moveCount)
+                        .putLong(
+                            MainActivity.PREF_LAST_GAME_TIMESTAMP,
+                            System.currentTimeMillis(),
+                        )
+                        .apply()
+                    maybeShowResumeCard(prefs)
+                }
+                is ApiResult.HttpError -> { /* 401 handled elsewhere; other 4xx/5xx silent */ }
+                is ApiResult.NetworkError, ApiResult.Timeout -> { /* offline; try again next time */ }
+            }
+        }
     }
 
     /**

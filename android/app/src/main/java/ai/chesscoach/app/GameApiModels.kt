@@ -155,6 +155,18 @@ data class GameStartRequest(val playerId: String)
 
 data class GameStartResponse(val gameId: String)
 
+/**
+ * Response from GET /game/active — the most recent unfinished
+ * game's checkpoint for the authenticated player.  Null is returned
+ * by the client when the server responds 404 (= "no resumable game").
+ */
+data class ActiveGameResponse(
+    val gameId: String,
+    val currentFen: String,
+    /** Comma-separated UCI moves; empty when no moves were made yet. */
+    val currentUciHistory: String,
+)
+
 // ── /game/finish ─────────────────────────────────────────────────────────────
 
 data class GameFinishRequest(

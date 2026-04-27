@@ -72,6 +72,50 @@ interface GameApiClient {
      * do not need to override this method.
      */
     suspend fun getPlayerProgress(): ApiResult<PlayerProgressResponse> = ApiResult.HttpError(501)
+
+    /**
+     * POST /game/{gameId}/checkpoint — store the in-progress board state.
+     *
+     * Used by the cross-device resume feature: every move on the
+     * client triggers a checkpoint so the server knows the latest
+     * FEN + UCI history for this game.  When the user later opens
+     * the app on a different device (or after a reinstall), they
+     * pull this state via [getActiveGame].
+     *
+     * Bearer auth required.  Returns:
+     *   - [ApiResult.Success(Unit)] on HTTP 200 (server returns
+     *     {"status":"checkpointed"} but we don't surface the field)
+     *   - [ApiResult.HttpError(404)] when the game_id is unknown
+     *   - [ApiResult.HttpError(403)] when the game belongs to
+     *     another player
+     *   - [ApiResult.HttpError(409)] when the game is already
+     *     finished (a stale checkpoint after /game/finish)
+     *   - Transport variants on failure
+     *
+     * Default implementation returns [ApiResult.HttpError(501)] so
+     * test fakes don't have to implement it.
+     */
+    suspend fun checkpointGame(
+        gameId: String,
+        fen: String,
+        uciHistory: String,
+    ): ApiResult<Unit> = ApiResult.HttpError(501)
+
+    /**
+     * GET /game/active — fetch the most recent unfinished game's
+     * checkpoint for the authenticated player, or null on 404.
+     *
+     * Used at cold-start when the local SharedPreferences resume
+     * snapshot is missing (fresh install / device swap).  Returning
+     * `null` on 404 (rather than HttpError) treats "no resumable
+     * game" as the same case as "no checkpoint stored" — both
+     * mean "start fresh".
+     *
+     * Default implementation returns [ApiResult.HttpError(501)] so
+     * test fakes don't have to implement it.
+     */
+    suspend fun getActiveGame(): ApiResult<ActiveGameResponse?> =
+        ApiResult.HttpError(501)
 }
 
 // ── HTTP implementation ───────────────────────────────────────────────────────
@@ -270,6 +314,72 @@ class HttpGameApiClient(
                     ApiResult.Success(parseSecaStatusResponse(text))
                 } else {
                     ApiResult.HttpError(code)
+                }
+            } catch (e: SocketTimeoutException) {
+                ApiResult.Timeout
+            } catch (e: Exception) {
+                ApiResult.NetworkError(e)
+            }
+        }
+
+    override suspend fun checkpointGame(
+        gameId: String,
+        fen: String,
+        uciHistory: String,
+    ): ApiResult<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val conn = openConnection("$baseUrl/game/${gameId}/checkpoint")
+            conn.setRequestProperty("X-Api-Key", apiKey)
+            tokenProvider?.invoke()?.let { token ->
+                conn.setRequestProperty("Authorization", "Bearer $token")
+            }
+            val body = JSONObject()
+                .put("fen", fen)
+                .put("uci_history", uciHistory)
+                .toString()
+            conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            val code = conn.responseCode
+            if (code == 200) {
+                consumeRefreshedToken(conn, tokenSink)
+                ApiResult.Success(Unit)
+            } else {
+                ApiResult.HttpError(code)
+            }
+        } catch (e: SocketTimeoutException) {
+            ApiResult.Timeout
+        } catch (e: Exception) {
+            ApiResult.NetworkError(e)
+        }
+    }
+
+    override suspend fun getActiveGame(): ApiResult<ActiveGameResponse?> =
+        withContext(Dispatchers.IO) {
+            try {
+                val conn = openGetConnection("$baseUrl/game/active")
+                conn.setRequestProperty("X-Api-Key", apiKey)
+                tokenProvider?.invoke()?.let { token ->
+                    conn.setRequestProperty("Authorization", "Bearer $token")
+                }
+                val code = conn.responseCode
+                when (code) {
+                    200 -> {
+                        val text = conn.inputStream.bufferedReader().readText()
+                        consumeRefreshedToken(conn, tokenSink)
+                        val root = JSONObject(text)
+                        ApiResult.Success(
+                            ActiveGameResponse(
+                                gameId = root.optString("game_id", ""),
+                                currentFen = root.optString("current_fen", ""),
+                                currentUciHistory = root.optString("current_uci_history", ""),
+                            ),
+                        )
+                    }
+                    // 404 is the documented "no resumable game" signal —
+                    // a normal absence-of-data response, not an error.
+                    // Return Success(null) so callers can treat it as
+                    // "start fresh" without a separate code path.
+                    404 -> ApiResult.Success(null)
+                    else -> ApiResult.HttpError(code)
                 }
             } catch (e: SocketTimeoutException) {
                 ApiResult.Timeout

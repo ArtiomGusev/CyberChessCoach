@@ -850,6 +850,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun persistInProgressSnapshot() {
+        val fen = chessBoard.exportFEN()
+        val uciHistory = viewModel.exportUciHistory()
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
             .putInt(PREF_LAST_GAME_MOVE_COUNT, viewModel.moveCount)
             .putLong(PREF_LAST_GAME_TIMESTAMP, System.currentTimeMillis())
@@ -859,9 +861,24 @@ class MainActivity : AppCompatActivity() {
             // position.  Without these the Resume card would only be
             // a "you have an unfinished game" indicator that starts a
             // new game on tap.
-            .putString(PREF_LAST_GAME_FEN, chessBoard.exportFEN())
-            .putString(PREF_LAST_GAME_UCI_HISTORY, viewModel.exportUciHistory())
+            .putString(PREF_LAST_GAME_FEN, fen)
+            .putString(PREF_LAST_GAME_UCI_HISTORY, uciHistory)
             .apply()
+
+        // Push the checkpoint server-side too so a device swap /
+        // reinstall can pull this state via HomeActivity's cold-start
+        // GET /game/active.  Best-effort: log + drop on failure (the
+        // local snapshot still works).  No game_id → no checkpoint
+        // (the very first move before /game/start returns).
+        val gameId = currentServerGameId ?: return
+        lifecycleScope.launch {
+            when (val r = gameApiClient.checkpointGame(gameId, fen, uciHistory)) {
+                is ApiResult.Success -> { /* silent — checkpoint per move would be too noisy */ }
+                is ApiResult.HttpError -> Log.d("CHECKPOINT", "HTTP ${r.code}")
+                is ApiResult.NetworkError -> Log.d("CHECKPOINT", "network error", r.cause)
+                ApiResult.Timeout -> Log.d("CHECKPOINT", "timed out")
+            }
+        }
     }
 
     private fun clearInProgressSnapshot() {

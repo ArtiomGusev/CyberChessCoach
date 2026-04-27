@@ -69,7 +69,9 @@ from llm.seca.coach.chat_pipeline import (
 )
 from llm.seca.coach.live_move_pipeline import generate_live_reply
 from llm.seca.storage.repo import (
+    checkpoint_game,
     create_game,
+    get_active_game,
     get_or_create_auto_game,
     log_move,
     log_explanation,
@@ -1106,6 +1108,133 @@ def start_game(req: StartGameRequest, request: Request, player=Depends(get_curre
     # req.player_id sent by older clients is ignored (see StartGameRequest).
     game_id = create_game(str(player.id))
     return {"game_id": game_id}
+
+
+# ---------------------------------------------------------------------------
+# Cross-device resume — checkpoint + active-game query
+# ---------------------------------------------------------------------------
+#
+# These endpoints back the cross-device resume feature: the client
+# persists its in-progress board state server-side via /game/{id}/
+# checkpoint after each move, and pulls the most recent unfinished
+# game's state via /game/active at cold-start when the local
+# SharedPreferences snapshot is missing (e.g. fresh install on a
+# second device).
+#
+# Reuses the same `games` table /game/start writes to — see
+# storage/schema.sql + storage/db.py for the schema.
+
+
+class GameCheckpointRequest(BaseModel):
+    """In-progress board state pushed by the client after each move.
+
+    fen: full FEN of the current position.  Bounded at 256 chars
+        (a real FEN tops out around 90; the cap rejects abuse).
+    uci_history: comma-separated UCI moves (e.g. "e2e4,e7e5,g1f3").
+        Bounded at 16 KB — enough for a 2000-move game which is
+        well beyond any realistic length.
+    """
+    fen: str
+    uci_history: str = ""
+
+    @field_validator("fen")
+    @classmethod
+    def validate_fen(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("fen must not be empty")
+        if len(v) > 256:
+            raise ValueError("fen too long (max 256 chars)")
+        for ch in v:
+            if ord(ch) < 0x20 or ord(ch) == 0x7f:
+                raise ValueError("fen contains control characters")
+        return v
+
+    @field_validator("uci_history")
+    @classmethod
+    def validate_uci_history(cls, v: str) -> str:
+        if len(v) > 16_384:
+            raise ValueError("uci_history too long (max 16384 chars)")
+        for ch in v:
+            if ord(ch) < 0x20 or ord(ch) == 0x7f:
+                raise ValueError("uci_history contains control characters")
+        return v
+
+
+@app.post("/game/{game_id}/checkpoint")
+@limiter.limit("60/minute")
+def checkpoint_game_state(
+    game_id: str,
+    req: GameCheckpointRequest,
+    request: Request,
+    player=Depends(get_current_player),
+):
+    """Persist the current in-progress state for [game_id].
+
+    Authorization is enforced by the games-table query inside
+    repo.checkpoint_game (only updates when finished_at IS NULL).
+    Cross-player attempts return 404 because the row matches no
+    unfinished game owned by this player.
+
+    Rate limit is 60/minute — generous enough that a fast-paced
+    game (~one checkpoint per move) never trips it, but bounded
+    against accidental tight-loop spam from a buggy client.
+    """
+    # Defensive: cap game_id at 64 chars to match GameFinishRequest's
+    # game_id validator.  Path params don't go through pydantic
+    # validation by default.
+    if len(game_id) > 64:
+        raise HTTPException(status_code=400, detail="game_id too long")
+    for ch in game_id:
+        if ord(ch) < 0x20 or ord(ch) == 0x7f:
+            raise HTTPException(status_code=400, detail="game_id contains control characters")
+
+    # Verify the game belongs to this player BEFORE checkpointing —
+    # repo.checkpoint_game only filters by finished_at, not player.
+    # A stricter check here means a stolen game_id can't be hijacked
+    # to overwrite another player's checkpoint.
+    active = get_active_game(str(player.id))
+    if active is None or active["game_id"] != game_id:
+        # Look up by id directly to distinguish "wrong owner" (403)
+        # from "doesn't exist / already finished" (404).
+        from llm.seca.storage.db import get_conn
+        conn = get_conn()
+        try:
+            row = conn.execute(
+                "SELECT player_id, finished_at FROM games WHERE id = ?",
+                (game_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        if row is None:
+            raise HTTPException(status_code=404, detail="game not found")
+        owner_id, finished_at = row
+        if owner_id != str(player.id):
+            raise HTTPException(status_code=403, detail="not your game")
+        if finished_at is not None:
+            raise HTTPException(status_code=409, detail="game already finished")
+
+    if not checkpoint_game(game_id, req.fen, req.uci_history):
+        # Race: row was finished between the ownership check and now.
+        raise HTTPException(status_code=409, detail="game already finished")
+    return {"status": "checkpointed"}
+
+
+@app.get("/game/active")
+@limiter.limit("60/minute")
+def active_game(request: Request, player=Depends(get_current_player)):
+    """Return the player's most recent unfinished game with a
+    checkpoint, or 404 when there isn't one (= "no resumable game").
+
+    Used by the Android client at cold-start when the local
+    SharedPreferences snapshot is missing (fresh install / device
+    swap).  Combined with the local snapshot, this lets a user pick
+    up exactly where they left off across devices.
+    """
+    state = get_active_game(str(player.id))
+    if state is None:
+        raise HTTPException(status_code=404, detail="no active game")
+    return state
 
 
 # ------------------------------------------------------------------
