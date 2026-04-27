@@ -87,11 +87,23 @@ CVE-2026-40225 until:2027-07-01
 # `apt-get upgrade -y` ships a fixed libc6.
 CVE-2026-5928 until:2027-07-01
 
-# NOTE: A separate Trivy alert flags a glibc heap buffer overflow in
-# scanf() with the `%mc` format specifier and a large width.  The CVE
-# number for that specific issue is not currently confirmed in this
-# repository's records — DO NOT add a placeholder CVE number here, as
-# Trivy matches by exact CVE-ID and a wrong number would silently fail
-# to suppress.  When the actual CVE-ID is known, add an entry here
-# with the same reachability analysis as CVE-2026-5928 (Python +
-# Stockfish do not invoke C scanf on attacker-controlled input).
+# glibc 2.41-12: heap buffer overflow in scanf() with `%mc` format
+# specifier and large width.  Affects libc-bin, libc6.  Confirmed via
+# `trivy image` against the published API image on 2026-04-27 — same
+# Trivy DB as CI, both libc-bin and libc6 entries returned no
+# FixedVersion (unfixed in Debian 13 Trixie).
+# Reachability analysis (2026-04-27):
+#   - The vulnerable code path is the C-level scanf family with the
+#     `%mc` (allocate-buffer-for-multibyte-char) modifier.  Neither
+#     CPython nor any of our Python deps call scanf with %mc on
+#     attacker-controlled input — Python parsing happens at the
+#     interpreter level (PyArg_Parse*, struct module, etc.) and never
+#     invokes scanf on byte streams from HTTP requests.
+#   - Stockfish parses UCI commands with its own ad-hoc tokeniser
+#     (Search/UCI.cpp), not scanf.
+#   - The width-modifier overflow requires the application to pass an
+#     attacker-controlled width specifier to scanf — no such code path
+#     exists in this codebase.
+# Accepted risk pending a Debian glibc patch; remove this entry when
+# `apt-get upgrade -y` ships a fixed libc6.
+CVE-2026-5450 until:2027-07-01
