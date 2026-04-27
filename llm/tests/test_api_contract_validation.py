@@ -24,6 +24,8 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -982,3 +984,268 @@ class TestAnalyzeContractSchema:
                     return
 
         raise AssertionError("@app.<method>('/analyze') decorator not found")
+
+
+# ---------------------------------------------------------------------------
+# /chat + /chat/stream + /live/move boundary validators
+# ---------------------------------------------------------------------------
+
+
+def _valid_engine_signal() -> dict:
+    """A minimal engine_signal dict that satisfies EngineSignalSchema."""
+    return {
+        "evaluation": {"type": "cp", "band": "small_advantage", "side": "white"},
+        "eval_delta": "stable",
+        "last_move_quality": "good",
+        "tactical_flags": [],
+        "position_flags": [],
+        "phase": "middlegame",
+    }
+
+
+class TestChatResponseValidation:
+    """Boundary validator for POST /chat and POST /chat/stream responses.
+
+    Mirrors the /explain validator: structural Pydantic check + Mode-2
+    negative content rules on the reply field, with mode pinned to CHAT_V1.
+    """
+
+    def _payload(self, **overrides) -> dict:
+        base = {
+            "reply": "The position is balanced; both sides have active pieces.",
+            "engine_signal": _valid_engine_signal(),
+            "mode": "CHAT_V1",
+        }
+        base.update(overrides)
+        return base
+
+    def test_valid_payload_passes(self):
+        from llm.rag.validators.explain_response_schema import validate_chat_response
+
+        validated = validate_chat_response(self._payload())
+        assert validated.mode == "CHAT_V1"
+        assert validated.reply.strip() != ""
+
+    def test_missing_reply_raises(self):
+        from llm.rag.validators.explain_response_schema import (
+            ExplainSchemaError,
+            validate_chat_response,
+        )
+
+        payload = self._payload()
+        del payload["reply"]
+        with pytest.raises(ExplainSchemaError):
+            validate_chat_response(payload)
+
+    def test_empty_reply_raises(self):
+        from llm.rag.validators.explain_response_schema import (
+            ExplainSchemaError,
+            validate_chat_response,
+        )
+
+        with pytest.raises(ExplainSchemaError, match="non-empty"):
+            validate_chat_response(self._payload(reply="   "))
+
+    def test_forbidden_move_pattern_raises(self):
+        """Invented chess moves (Nf3, Qh5, ...) must be caught at the boundary."""
+        from llm.rag.validators.explain_response_schema import (
+            ExplainSchemaError,
+            validate_chat_response,
+        )
+
+        with pytest.raises(ExplainSchemaError, match="Mode-2"):
+            validate_chat_response(self._payload(reply="The engine prefers Nf3 here."))
+
+    def test_forbidden_mate_claim_raises(self):
+        """Mate claims must be caught at the boundary."""
+        from llm.rag.validators.explain_response_schema import (
+            ExplainSchemaError,
+            validate_chat_response,
+        )
+
+        with pytest.raises(ExplainSchemaError, match="Mode-2"):
+            validate_chat_response(self._payload(reply="It is checkmate in two."))
+
+    def test_speculative_language_raises(self):
+        """Mode-2 forbids speculative language ("should", "consider", etc.)."""
+        from llm.rag.validators.explain_response_schema import (
+            ExplainSchemaError,
+            validate_chat_response,
+        )
+
+        with pytest.raises(ExplainSchemaError, match="Mode-2"):
+            validate_chat_response(
+                self._payload(reply="White should consider activating the rook.")
+            )
+
+    def test_wrong_mode_raises(self):
+        from llm.rag.validators.explain_response_schema import (
+            ExplainSchemaError,
+            validate_chat_response,
+        )
+
+        with pytest.raises(ExplainSchemaError, match="schema"):
+            validate_chat_response(self._payload(mode="EXPLAIN_V1"))
+
+    def test_bad_engine_signal_band_raises(self):
+        from llm.rag.validators.explain_response_schema import (
+            ExplainSchemaError,
+            validate_chat_response,
+        )
+
+        bad_signal = _valid_engine_signal()
+        bad_signal["evaluation"]["band"] = "completely_winning"  # not in enum
+        with pytest.raises(ExplainSchemaError, match="schema"):
+            validate_chat_response(self._payload(engine_signal=bad_signal))
+
+    def test_engine_signal_missing_phase_raises(self):
+        from llm.rag.validators.explain_response_schema import (
+            ExplainSchemaError,
+            validate_chat_response,
+        )
+
+        bad_signal = _valid_engine_signal()
+        del bad_signal["phase"]
+        with pytest.raises(ExplainSchemaError, match="schema"):
+            validate_chat_response(self._payload(engine_signal=bad_signal))
+
+    def test_extra_fields_are_ignored(self):
+        """Lenient by default — future fields don't break old clients."""
+        from llm.rag.validators.explain_response_schema import validate_chat_response
+
+        payload = self._payload()
+        payload["extra_diagnostic"] = {"latency_ms": 42}
+        validated = validate_chat_response(payload)
+        assert validated.mode == "CHAT_V1"
+
+
+class TestLiveMoveResponseValidation:
+    """Boundary validator for POST /live/move response.
+
+    Empty hint is allowed (deterministic-fallback path); non-empty hints
+    pass through Mode-2 negative validation.  move_quality may be any of
+    the EngineSignalSchema.last_move_quality buckets, including "unknown".
+    """
+
+    def _payload(self, **overrides) -> dict:
+        base = {
+            "status": "ok",
+            "hint": "Solid central pawn. Develop a knight to claim more space.",
+            "engine_signal": _valid_engine_signal(),
+            "move_quality": "good",
+            "mode": "LIVE_V1",
+        }
+        base.update(overrides)
+        return base
+
+    def test_valid_payload_passes(self):
+        from llm.rag.validators.explain_response_schema import validate_live_move_response
+
+        validated = validate_live_move_response(self._payload())
+        assert validated.mode == "LIVE_V1"
+        assert validated.status == "ok"
+
+    def test_empty_hint_is_allowed(self):
+        """API_CONTRACTS.md §4 explicitly allows empty hint and forbids
+        the client from substituting null."""
+        from llm.rag.validators.explain_response_schema import validate_live_move_response
+
+        validated = validate_live_move_response(self._payload(hint=""))
+        assert validated.hint == ""
+
+    def test_whitespace_hint_is_allowed(self):
+        """Whitespace-only hint counts as empty for content-validation purposes."""
+        from llm.rag.validators.explain_response_schema import validate_live_move_response
+
+        validated = validate_live_move_response(self._payload(hint="   "))
+        assert validated.hint == "   "
+
+    def test_forbidden_move_in_non_empty_hint_raises(self):
+        from llm.rag.validators.explain_response_schema import (
+            ExplainSchemaError,
+            validate_live_move_response,
+        )
+
+        with pytest.raises(ExplainSchemaError, match="Mode-2"):
+            validate_live_move_response(
+                self._payload(hint="Castle kingside with 0-0 next move.")
+            )
+
+    def test_unknown_move_quality_raises(self):
+        from llm.rag.validators.explain_response_schema import (
+            ExplainSchemaError,
+            validate_live_move_response,
+        )
+
+        with pytest.raises(ExplainSchemaError, match="schema"):
+            validate_live_move_response(self._payload(move_quality="excellent_blunder"))
+
+    def test_unknown_string_for_move_quality_passes(self):
+        """live_move_pipeline returns "unknown" when the engine signal lacks
+        a quality bucket — that value must be accepted."""
+        from llm.rag.validators.explain_response_schema import validate_live_move_response
+
+        validated = validate_live_move_response(self._payload(move_quality="unknown"))
+        assert validated.move_quality == "unknown"
+
+    def test_wrong_status_raises(self):
+        from llm.rag.validators.explain_response_schema import (
+            ExplainSchemaError,
+            validate_live_move_response,
+        )
+
+        with pytest.raises(ExplainSchemaError, match="schema"):
+            validate_live_move_response(self._payload(status="error"))
+
+    def test_wrong_mode_raises(self):
+        from llm.rag.validators.explain_response_schema import (
+            ExplainSchemaError,
+            validate_live_move_response,
+        )
+
+        with pytest.raises(ExplainSchemaError, match="schema"):
+            validate_live_move_response(self._payload(mode="CHAT_V1"))
+
+    def test_dynamic_adaptation_extra_field_is_ignored(self):
+        """server.py adds dynamic_adaptation to the response payload but the
+        field is not in API_CONTRACTS.md §4 — verify the validator tolerates
+        the extra field (lenient by default)."""
+        from llm.rag.validators.explain_response_schema import validate_live_move_response
+
+        payload = self._payload()
+        payload["dynamic_adaptation"] = True
+        validated = validate_live_move_response(payload)
+        assert validated.mode == "LIVE_V1"
+
+
+class TestChatStreamBoundaryValidation:
+    """The /chat/stream endpoint validates BEFORE any bytes are streamed.
+
+    Confirms structurally — reading the source — that validate_chat_response
+    is invoked before StreamingResponse is constructed, so a contract failure
+    propagates as a clean HTTP 500 instead of a half-delivered SSE stream.
+    """
+
+    def test_chat_stream_validates_before_streaming(self):
+        import ast
+        from pathlib import Path
+
+        src = (Path(__file__).parent.parent / "server.py").read_text()
+        tree = ast.parse(src)
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.AsyncFunctionDef) or node.name != "chat_stream":
+                continue
+
+            body_str = "\n".join(ast.unparse(stmt) for stmt in node.body)
+            validate_pos = body_str.find("validate_chat_response")
+            stream_pos = body_str.find("StreamingResponse")
+
+            assert validate_pos != -1, "validate_chat_response not called in /chat/stream"
+            assert stream_pos != -1, "StreamingResponse not used in /chat/stream"
+            assert validate_pos < stream_pos, (
+                "validate_chat_response must precede StreamingResponse in /chat/stream"
+            )
+            return
+
+        raise AssertionError("async def chat_stream not found in server.py")

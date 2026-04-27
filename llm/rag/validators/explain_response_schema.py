@@ -1,16 +1,18 @@
-"""Strict JSON schema for /explain and embedded explain responses.
+"""Strict JSON schemas for the LLM-touching API responses.
 
-Defines Pydantic models for structural validation and provides
-``validate_explain_response()`` / ``validate_embedded_explain_response()``
-as the authoritative validation entry points used at the API boundary.
+Defines Pydantic models for structural validation and exposes
+``validate_explain_response()``, ``validate_embedded_explain_response()``,
+``validate_chat_response()``, and ``validate_live_move_response()`` as the
+authoritative validation entry points used at the API boundary.
 
 Design constraints:
 - engine_signal is produced exclusively by extract_engine_signal() and is
   never sourced from or modified by LLM output.  The EngineSignalSchema
-  enforces this contract structurally.
-- validate_explain_response() applies Mode-2 content validators for any
-  LLM-generated mode (mode != "SAFE_V1"), providing defence-in-depth on
-  top of the per-generation validators already applied in run_mode_2().
+  enforces this contract structurally on every endpoint that returns one.
+- For LLM-generated modes (anything other than SAFE_V1), the validators
+  apply Mode-2 content rules (validate_mode_2_negative) on the user-facing
+  text field — defence-in-depth over the per-generation validators already
+  applied inside the chat / live-move pipelines.
 - validate_embedded_explain_response() is the equivalent gate for the
   edge-deployment embedded.py path.
 """
@@ -117,6 +119,46 @@ class EmbeddedExplainResponse(BaseModel):
         return v
 
 
+class ChatResponse(BaseModel):
+    """Schema for the POST /chat (and /chat/stream pre-stream payload) API response.
+
+    Mode is always ``CHAT_V1`` for this endpoint — the LLM-powered Mode-2
+    coaching path with deterministic fallback.  Both branches must produce a
+    non-empty reply that satisfies the Mode-2 negative validator.
+
+    engine_signal is produced exclusively by extract_engine_signal() and must
+    pass EngineSignalSchema validation.
+    """
+
+    reply: str
+    engine_signal: EngineSignalSchema
+    mode: Literal["CHAT_V1"]
+
+
+class LiveMoveResponse(BaseModel):
+    """Schema for the POST /live/move API response.
+
+    Mode is always ``LIVE_V1``.  ``hint`` may be the empty string (per
+    API_CONTRACTS.md §4 the deterministic-fallback path is allowed to emit
+    an empty hint when no commentary is warranted), but when non-empty the
+    Mode-2 negative validator applies.
+
+    move_quality mirrors EngineSignalSchema.last_move_quality — the live
+    pipeline propagates whichever quality bucket extract_engine_signal()
+    assigned, including ``"unknown"`` when the engine signal lacks one.
+    The narrower API_CONTRACTS.md §4 list ({good, inaccuracy, mistake,
+    blunder}) is a documentation gap, not a code constraint.
+    """
+
+    status: Literal["ok"]
+    hint: str
+    engine_signal: EngineSignalSchema
+    move_quality: Literal[
+        "unknown", "ok", "best", "excellent", "good", "inaccuracy", "mistake", "blunder"
+    ]
+    mode: Literal["LIVE_V1"]
+
+
 # ---------------------------------------------------------------
 # Validation entry points
 # ---------------------------------------------------------------
@@ -176,3 +218,78 @@ def validate_embedded_explain_response(response: dict) -> EmbeddedExplainRespons
         raise ExplainSchemaError(
             f"Embedded explain response schema validation failed: {exc}"
         ) from exc
+
+
+def validate_chat_response(response: dict) -> ChatResponse:
+    """Validate a /chat (or /chat/stream) response dict.
+
+    Always enforces:
+    - All required fields are present with correct types.
+    - mode is exactly ``"CHAT_V1"``.
+    - engine_signal matches EngineSignalSchema exactly.
+    - reply is non-empty.
+    - reply passes validate_mode_2_negative (no forbidden patterns,
+      including invented chess moves, mate claims, and analysis language
+      forbidden in Mode-2).
+
+    The chat pipeline already runs validate_mode_2_negative inside the LLM
+    retry loop and the OutputFirewall on top.  This validator is the
+    boundary defence-in-depth seam: any future refactor that drops or
+    weakens those internal checks will be caught here at the API edge.
+
+    Raises ExplainSchemaError on failure.  Returns the validated
+    ChatResponse on success.
+    """
+    try:
+        validated = ChatResponse.model_validate(response)
+    except ValidationError as exc:
+        raise ExplainSchemaError(f"Chat response schema validation failed: {exc}") from exc
+
+    if not validated.reply.strip():
+        raise ExplainSchemaError("Chat reply must be non-empty")
+
+    from llm.rag.validators.mode_2_negative import validate_mode_2_negative
+
+    try:
+        validate_mode_2_negative(validated.reply)
+    except AssertionError as exc:
+        raise ExplainSchemaError(f"Chat reply failed Mode-2 content validation: {exc}") from exc
+
+    return validated
+
+
+def validate_live_move_response(response: dict) -> LiveMoveResponse:
+    """Validate a /live/move response dict.
+
+    Always enforces:
+    - All required fields are present with correct types.
+    - status is exactly ``"ok"``, mode is exactly ``"LIVE_V1"``.
+    - engine_signal matches EngineSignalSchema exactly.
+    - move_quality is one of the EngineSignalSchema.last_move_quality bucket
+      labels.
+
+    For non-empty hints the Mode-2 negative validator applies — invented
+    chess moves, mate claims, and forbidden analysis language are rejected.
+    Empty hints pass through unchanged: API_CONTRACTS.md §4 explicitly
+    permits the deterministic-fallback path to emit ``""`` and requires
+    clients to preserve it as-is rather than substituting null.
+
+    Raises ExplainSchemaError on failure.  Returns the validated
+    LiveMoveResponse on success.
+    """
+    try:
+        validated = LiveMoveResponse.model_validate(response)
+    except ValidationError as exc:
+        raise ExplainSchemaError(f"Live-move response schema validation failed: {exc}") from exc
+
+    if validated.hint.strip():
+        from llm.rag.validators.mode_2_negative import validate_mode_2_negative
+
+        try:
+            validate_mode_2_negative(validated.hint)
+        except AssertionError as exc:
+            raise ExplainSchemaError(
+                f"Live-move hint failed Mode-2 content validation: {exc}"
+            ) from exc
+
+    return validated

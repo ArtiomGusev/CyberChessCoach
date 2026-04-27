@@ -47,6 +47,8 @@ from llm.rag.engine_signal.extract_engine_signal import extract_engine_signal
 from llm.explain_pipeline import generate_validated_explanation
 from llm.rag.validators.explain_response_schema import (
     validate_explain_response,
+    validate_chat_response,
+    validate_live_move_response,
     ExplainSchemaError,
 )
 from llm.rag.prompts.input_sanitizer import sanitize_user_query
@@ -1082,7 +1084,7 @@ async def live_move(
     )
     if _dynamic_registry.get_state(str(player.id)).enabled:
         _dynamic_registry.record_move_quality(str(player.id), result.move_quality)
-    return {
+    response = {
         "status": "ok",
         "hint": result.hint,
         "engine_signal": result.engine_signal,
@@ -1090,6 +1092,8 @@ async def live_move(
         "mode": result.mode,
         "dynamic_adaptation": _dynamic_registry.get_state(str(player.id)).enabled,
     }
+    validate_live_move_response(response)
+    return response
 
 
 # ------------------------------------------------------------------
@@ -1618,11 +1622,13 @@ async def chat(
         req.move_count,
         req.coach_voice,
     )
-    return {
+    response = {
         "reply": result.reply,
         "engine_signal": result.engine_signal,
         "mode": result.mode,
     }
+    validate_chat_response(response)
+    return response
 
 
 # ------------------------------------------------------------------
@@ -1658,6 +1664,17 @@ async def chat_stream(
         req.past_mistakes,
         req.move_count,
         req.coach_voice,
+    )
+
+    # Boundary validation runs before any bytes are streamed so a contract
+    # failure surfaces as a clean 500 from FastAPI, not a half-delivered
+    # SSE stream the client has to parse to discover the failure.
+    validate_chat_response(
+        {
+            "reply": result.reply,
+            "engine_signal": result.engine_signal,
+            "mode": result.mode,
+        }
     )
 
     def _generate():
