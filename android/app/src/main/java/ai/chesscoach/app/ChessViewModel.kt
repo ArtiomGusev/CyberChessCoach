@@ -18,7 +18,21 @@ class ChessViewModel(
     var engineEvalClient: EngineEvalClient? = null,
     /** Injected after construction; null disables live per-move coaching hints. */
     var liveCoachClient: LiveMoveClient? = null,
-    private val playerProfileCache: PlayerProfileCache? = null,
+    /**
+     * Optional source of the server-derived `opponentElo` for the AI
+     * strength dial.  Mutable (rather than `private val`) so the
+     * activity can wire it in after the ChessViewModel has been
+     * resolved by `by viewModels()` — same pattern as
+     * [engineEvalClient] / [liveCoachClient].  Without this wiring
+     * the strength always falls back to the no-cache default of 100,
+     * which is what the AdaptiveEngineWiringTest's
+     * NO_CACHE_DEFAULTS_TO_100 case pins.
+     *
+     * Invalidate the cache (via [PlayerProfileCache.invalidate]) after
+     * every /game/finish so the next AI move sees the rating bump
+     * the server applied.
+     */
+    var playerProfileCache: PlayerProfileCache? = null,
 ) : ViewModel() {
 
     private var turn: Turn = Turn.HUMAN

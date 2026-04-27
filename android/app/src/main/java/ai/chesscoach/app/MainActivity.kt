@@ -90,6 +90,15 @@ class MainActivity : AppCompatActivity() {
                 tokenProvider = { authRepo.getToken() },
                 tokenSink = { newToken -> authRepo.saveToken(newToken) },
             )
+
+        // Wire the engine-strength dial: the server's /player/progress
+        // returns a rating-derived opponentElo, which ChessViewModel
+        // reads via PlayerProfileCache and maps to a 0–100 strength
+        // level passed to ChessNative.getBestMoveWithStrength.  Without
+        // this wiring the engine plays at full strength regardless of
+        // the user's calibration — see test_adaptive_engine_wiring.py
+        // for the contract on both ends.
+        viewModel.playerProfileCache = PlayerProfileCache(gameApiClient)
         authApiClient = HttpAuthApiClient(
             baseUrl = BuildConfig.COACH_API_BASE,
             // Wire X-Auth-Token rotation: every successful authenticated
@@ -409,6 +418,11 @@ class MainActivity : AppCompatActivity() {
                     is ApiResult.Success -> {
                         lastGameFinishResponse = r.data
                         showCoachingResult(r.data, finalResult, finalMoveCount)
+                        // Server bumped the rating + (likely) shifted
+                        // opponent_elo.  Drop the cached profile so
+                        // the next AI move re-fetches and the
+                        // strength dial reflects the updated level.
+                        viewModel.playerProfileCache?.invalidate()
                     }
                     is ApiResult.HttpError -> {
                         if (r.code == 401) {
