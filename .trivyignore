@@ -68,3 +68,30 @@ CVE-2026-40226 until:2027-07-01
 # nodes, and has no hardware enumeration code. Physical device access to
 # cloud infrastructure is outside the threat model. No fix in Debian 13.
 CVE-2026-40225 until:2027-07-01
+
+# glibc 2.41-12: information disclosure or denial of service via ungetwc()
+# with specific wide-character encodings. Affects libc-bin, libc6.
+# Reachability analysis (2026-04-27):
+#   - ungetwc() is a C-level wide-character stream API (push back a
+#     wide character onto a FILE*).  Python 3 does NOT use ungetwc():
+#     CPython's text I/O goes through its own codec layer
+#     (Lib/_pyio.py + the io module), wrapping the underlying byte
+#     stream — wide-character C functions are bypassed entirely.
+#   - The only other glibc consumer in the image is Stockfish, which
+#     speaks UCI text protocol over stdin/stdout: ASCII bytes only,
+#     no wide-character I/O.  See engine_pool.py for how we feed it.
+#   - The exploit precondition (attacker-controlled wide-character
+#     stream reaching ungetwc) does not occur in this image's
+#     execution paths.
+# Accepted risk pending a Debian glibc patch; remove this entry when
+# `apt-get upgrade -y` ships a fixed libc6.
+CVE-2026-5928 until:2027-07-01
+
+# NOTE: A separate Trivy alert flags a glibc heap buffer overflow in
+# scanf() with the `%mc` format specifier and a large width.  The CVE
+# number for that specific issue is not currently confirmed in this
+# repository's records — DO NOT add a placeholder CVE number here, as
+# Trivy matches by exact CVE-ID and a wrong number would silently fail
+# to suppress.  When the actual CVE-ID is known, add an entry here
+# with the same reachability analysis as CVE-2026-5928 (Python +
+# Stockfish do not invoke C scanf on attacker-controlled input).
