@@ -32,6 +32,34 @@ from llm.seca.runtime.safe_mode import SAFE_MODE
 router = APIRouter(prefix="/game", tags=["game"])
 
 
+# Code points that terminate or visually break a log line.  Stripped by
+# _safe_log() so an attacker controlling a request body field cannot
+# inject forged log lines (CWE-117).  Includes the obscure Unicode line
+# separators that some loggers respect even though repr() normally
+# escapes ASCII control characters.
+_LOG_INJECTION_CHARS = ("\r", "\n", "\x85", " ", " ")
+
+
+def _safe_log(value: object, max_len: int = 80) -> str:
+    """Sanitize an untrusted value for safe inclusion in a log line.
+
+    Mitigates CWE-117 log injection where a request-body field could
+    otherwise embed CR/LF and forge a fake log entry.  ``repr()``
+    escapes standard ASCII control characters, but Unicode line
+    separators (NEL U+0085, U+2028, U+2029) can slip past it depending
+    on the encoder; we strip every line-terminating code point, then
+    truncate so a giant payload cannot bloat the log file.
+
+    The explicit replace chain is also what makes the sanitiser visible
+    to CodeQL's ``py/log-injection`` taint tracker — bare ``repr`` is
+    not recognised as a sanitiser even though it is one.
+    """
+    s = repr(value)
+    for ch in _LOG_INJECTION_CHARS:
+        s = s.replace(ch, "")
+    return s[:max_len]
+
+
 # ---------------------------------------------------------------------------
 # Bandit decision integration
 # ---------------------------------------------------------------------------
@@ -157,10 +185,10 @@ def coach_feedback(
     db: DBSession = Depends(get_db),
 ):
     logger.info(
-        "Coach feedback: player=%s fen=%.30s helpful=%s",
+        "Coach feedback: player=%s fen=%s helpful=%s",
         player.id,
-        req.session_fen,
-        req.is_helpful,
+        _safe_log(req.session_fen, max_len=30),
+        _safe_log(req.is_helpful, max_len=8),
     )
     return {"status": "recorded"}
 
@@ -293,7 +321,7 @@ def finish_game(
         except Exception:
             logger.exception(
                 "repo.finish_game failed for game_id=%s; GameEvent already stored",
-                req.game_id,
+                _safe_log(req.game_id),
             )
 
     # ---- skill update ----

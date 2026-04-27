@@ -20,6 +20,35 @@ _KNOWN_MOVE_QUALITIES = frozenset(
     ("unknown", "ok", "best", "excellent", "good", "inaccuracy", "mistake", "blunder")
 )
 
+# Code points that terminate or visually break a log line.  Stripped by
+# _safe_log() so an attacker controlling Stockfish JSON or an HTTP-supplied
+# FEN cannot inject forged log lines (CWE-117).  Includes the obscure
+# Unicode line separators that some loggers respect even though repr()
+# normally escapes ASCII control characters.
+_LOG_INJECTION_CHARS = ("\r", "\n", "\x85", " ", " ")
+
+
+def _safe_log(value: object, max_len: int = 80) -> str:
+    """Sanitize an untrusted value for safe inclusion in a log line.
+
+    Mitigates CWE-117 log injection: values reaching this module come
+    from a Stockfish JSON payload (or an untrusted FEN supplied via
+    HTTP) — an attacker who controls those bytes could otherwise embed
+    CR/LF and forge a fake log entry.  ``repr()`` already escapes
+    standard ASCII control characters, but Unicode line separators
+    (NEL U+0085, U+2028, U+2029) can slip past it depending on the
+    encoder; we strip every line-terminating code point, then truncate
+    so a giant payload cannot bloat the log file.
+
+    The explicit replace chain is also what makes the sanitiser visible
+    to CodeQL's ``py/log-injection`` taint tracker — bare ``repr`` is
+    not recognised as a sanitiser even though it is one.
+    """
+    s = repr(value)
+    for ch in _LOG_INJECTION_CHARS:
+        s = s.replace(ch, "")
+    return s[:max_len]
+
 
 def side_from_fen(fen: str | None) -> str | None:
     if not fen:
@@ -80,14 +109,16 @@ def extract_engine_signal(
     stockfish_json = _enrich_from_fen(stockfish_json or {}, fen)
     if not _had_eval:
         logger.debug(
-            "No Stockfish evaluation data; applied FEN material fallback (fen=%r)", fen
+            "No Stockfish evaluation data; applied FEN material fallback (fen=%s)",
+            _safe_log(fen),
         )
 
     evaluation = stockfish_json.get("evaluation", {})
     eval_type = evaluation.get("type", "cp")
     if eval_type not in _VALID_EVAL_TYPES:
         logger.warning(
-            "Unknown eval_type %r from Stockfish; treating as 'cp'", eval_type
+            "Unknown eval_type %s from Stockfish; treating as 'cp'",
+            _safe_log(eval_type),
         )
         eval_type = "cp"
 
@@ -96,7 +127,8 @@ def extract_engine_signal(
         value = int(_raw_value)
     except (TypeError, ValueError):
         logger.warning(
-            "Non-numeric eval value %r from Stockfish; using 0", _raw_value
+            "Non-numeric eval value %s from Stockfish; using 0",
+            _safe_log(_raw_value),
         )
         value = 0
 
@@ -104,14 +136,15 @@ def extract_engine_signal(
     errors = stockfish_json.get("errors", {})
     if not isinstance(errors, dict):
         logger.warning(
-            "'errors' field is not a dict (%r); ignoring move quality", type(errors).__name__
+            "'errors' field is not a dict (%s); ignoring move quality",
+            type(errors).__name__,
         )
         errors = {}
     last_move_quality = errors.get("last_move_quality", "unknown")
     if last_move_quality not in _KNOWN_MOVE_QUALITIES:
         logger.warning(
-            "Unknown last_move_quality %r from Stockfish; normalizing to 'unknown'",
-            last_move_quality,
+            "Unknown last_move_quality %s from Stockfish; normalizing to 'unknown'",
+            _safe_log(last_move_quality),
         )
         last_move_quality = "unknown"
 
