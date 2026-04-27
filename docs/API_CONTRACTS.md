@@ -394,6 +394,196 @@ should not block the UI on the result.
 
 ---
 
+## 10. `GET /auth/me` / `PATCH /auth/me`
+
+**Host:** `llm/seca/auth/router.py`
+**Auth:** `Authorization: Bearer <token>` (required)
+
+### `GET /auth/me`
+
+Returns the authenticated player's profile + skill vector.
+
+#### Response
+
+```json
+{
+  "id":           <string>,
+  "email":        <string>,
+  "rating":       <float>,
+  "confidence":   <float>,
+  "skill_vector": { "<skill>": <float>, ... }
+}
+```
+
+### `PATCH /auth/me`
+
+Partial profile update — used by the Onboarding flow + the Settings
+"Skill rating" affordance to forward calibration to the server.
+
+#### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `rating`     | `float \| null` | no | Bounds: `(0, 4000]`. |
+| `confidence` | `float \| null` | no | Bounds: `[0.0, 1.0]`. |
+
+At least one field must be non-null (empty body returns 400).
+
+#### Wire shape (Android client)
+
+The JDK's HttpURLConnection rejects PATCH on JDK 17, so the Android
+client sends `POST /auth/me` + `X-HTTP-Method-Override: PATCH` —
+the server's `http_method_override` middleware promotes it.
+
+#### Response
+
+Same shape as `GET /auth/me` (post-update values).
+
+### `X-Auth-Token` refresh header
+
+**Both endpoints** (and every other authenticated endpoint that
+depends on `get_current_player`) include a `X-Auth-Token` response
+header with a freshly-minted JWT bound to the same `session_id`.
+Active clients rotate their stored token via this header so the JWT
+exp can stay tight (24h) without bouncing active users.
+
+Failure paths (401 / 403 / 422 / 500) do NOT emit `X-Auth-Token` —
+defends against a hostile client harvesting tokens by probing.
+
+---
+
+## 11. `POST /game/start`
+
+**Host:** `server.py`
+**Auth:** `X-Api-Key` + `Authorization: Bearer <token>`
+
+Creates a new in-progress row in the `games` table.  `player_id` is
+derived from the JWT; any value in the request body is ignored.
+
+### Request body
+
+```json
+{ "player_id": <string>  // legacy field, ignored }
+```
+
+### Response
+
+```json
+{ "game_id": <string> }   // UUID
+```
+
+Pair with `POST /game/finish` (see §3) and `POST /game/{game_id}/checkpoint`
+(see §12) to close the lifecycle properly.
+
+---
+
+## 12. `POST /game/{game_id}/checkpoint`
+
+**Host:** `server.py`
+**Auth:** `X-Api-Key` + `Authorization: Bearer <token>`
+
+Persists the in-progress board state for cross-device resume.  Called
+by the Android client after every move.
+
+### Path params
+
+| Field     | Type     | Notes                                          |
+|-----------|----------|------------------------------------------------|
+| `game_id` | `string` | Max 64 chars, no control chars.  Returned by `POST /game/start`. |
+
+### Request body
+
+| Field         | Type     | Required | Description |
+|---------------|----------|----------|-------------|
+| `fen`         | `string` | yes      | Full FEN of the current position.  Max 256 chars. |
+| `uci_history` | `string` | no       | Comma-separated UCI moves (e.g. `"e2e4,e7e5"`).  Max 16 384 chars; defaults to `""`. |
+
+### Response
+
+```json
+{ "status": "checkpointed" }
+```
+
+### Failure modes
+
+| Status | Meaning |
+|--------|---------|
+| 400    | `game_id` too long or contains control chars; FEN/uci_history invalid |
+| 403    | Game belongs to another player |
+| 404    | `game_id` doesn't exist |
+| 409    | Game is already finished (cannot checkpoint a closed game) |
+
+---
+
+## 13. `GET /game/active`
+
+**Host:** `server.py`
+**Auth:** `X-Api-Key` + `Authorization: Bearer <token>`
+
+Returns the player's most-recent unfinished game with a checkpoint —
+the cross-device resume backbone.  Called by `HomeActivity` cold-start
+when no local SharedPreferences snapshot exists (fresh install /
+device swap).
+
+### Response (200)
+
+```json
+{
+  "game_id":             <string>,
+  "current_fen":         <string>,
+  "current_uci_history": <string>,
+  "last_checkpoint_at":  <string>,   // ISO timestamp
+  "started_at":          <string>    // ISO timestamp
+}
+```
+
+### Failure modes
+
+| Status | Meaning |
+|--------|---------|
+| 404    | No resumable game (no unfinished game with a checkpoint).  Treated as **absence-of-data, not error** by the Android client — `getActiveGame()` returns `Success(null)`. |
+
+---
+
+## 14. `GET /repertoire`
+
+**Host:** `server.py`
+**Auth:** `X-Api-Key` + `Authorization: Bearer <token>`
+
+Backs the AtriumOpenings screen.  Returns the player's saved
+opening lines, or a canonical 4-entry default list when nothing is
+stored (defaults are NOT persisted on read — GET stays
+side-effect-free).
+
+### Response
+
+```json
+{
+  "openings": [
+    {
+      "eco":       <string>,    // e.g. "C84"
+      "name":      <string>,    // e.g. "Ruy Lopez · Closed"
+      "line":      <string>,    // e.g. "1.e4 e5 2.♘f3 ♘c6 3.♗b5 a6"
+      "mastery":   <float>,     // 0.0–1.0
+      "is_active": <bool>,      // exactly one entry should be true
+      "ordinal":   <int>        // display order (lower = first)
+    },
+    ...
+  ]
+}
+```
+
+### Notes
+
+- Default ECOs (`C84`, `B22`, `D02`, `A04`) mirror the Android client's
+  `OpeningsActivity.DEFAULT_REPERTOIRE` exactly.  A drift test
+  (`test_repertoire_endpoint.py::test_default_mirrors_android_companion`)
+  pins them so first-vs-subsequent visits never show different defaults.
+- POST/DELETE endpoints (add / edit / remove) are not yet implemented;
+  the screen still has placeholder buttons that toast "coming soon".
+
+---
+
 ## Error responses
 
 All endpoints return standard FastAPI error shapes:
@@ -407,6 +597,7 @@ All endpoints return standard FastAPI error shapes:
 | 400 | Validation error (bad input) |
 | 401 | Missing or invalid auth |
 | 403 | Authenticated but insufficient permission |
+| 409 | Conflict (e.g. checkpointing a finished game) |
 | 413 | Request body exceeds 512 KB |
 | 422 | Pydantic validation failure |
 | 429 | Rate limit exceeded |
