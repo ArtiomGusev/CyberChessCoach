@@ -32,6 +32,104 @@ from llm.seca.runtime.safe_mode import SAFE_MODE
 router = APIRouter(prefix="/game", tags=["game"])
 
 
+# ---------------------------------------------------------------------------
+# Bandit decision integration
+# ---------------------------------------------------------------------------
+#
+# SECA v1's deferred step 2 — bandit-driven action selection.  This
+# helper wraps the LinUCB head from seca/brain/bandit/decision.py
+# behind a feature flag (SECA_USE_BANDIT_COACH).  Two modes:
+#
+#   Flag off (default): deterministic controller's action is what
+#       the user sees; bandit observes the (context, action, reward)
+#       tuple anyway so it can warm up.
+#   Flag on:  bandit's UCB1 selection becomes user-visible; same
+#       observation logging happens.
+#
+# The flag-off-with-observations design is the warm-up phase: by
+# the time someone flips the flag in production, the bandit has
+# already seen real reward signals from real games.
+#
+# Action space mirrors PostGameCoachController's rule outputs:
+#   NONE / REFLECT / DRILL / PUZZLE / PLAN_UPDATE
+# Bandit weights are stored per (player_id, action) in the
+# `bandit_weights` table — see seca/brain/bandit/decision.py.
+
+import os as _os
+
+_BANDIT_ACTIONS = ("NONE", "REFLECT", "DRILL", "PUZZLE", "PLAN_UPDATE")
+
+
+def _apply_bandit_decision(
+    player_id: str,
+    deterministic_action,
+    rating_before: float,
+    confidence_before: float,
+    accuracy: float,
+    weaknesses: dict,
+    reward: float,
+):
+    """Observe the deterministic action's outcome via the bandit;
+    optionally override the chosen action with the bandit's UCB1
+    selection when SECA_USE_BANDIT_COACH=1.
+
+    Bandit failures are non-fatal — if anything blows up we log and
+    return the deterministic action unchanged so the /game/finish
+    request keeps working.
+    """
+    use_bandit = _os.getenv("SECA_USE_BANDIT_COACH") == "1"
+
+    try:
+        from llm.seca.brain.bandit.context_builder import build_context_vector
+        from llm.seca.brain.bandit import decision as bandit_decision
+
+        context = build_context_vector(
+            rating_before=rating_before,
+            confidence_before=confidence_before,
+            accuracy=accuracy,
+            weaknesses=weaknesses,
+        )
+
+        # Always observe — even when the flag is off — so warm-up
+        # accumulates from real games.
+        try:
+            bandit_decision.record_observation(
+                player_id=player_id,
+                context=context.tolist(),
+                action=str(deterministic_action.type),
+                reward=float(reward),
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("Bandit observation logging failed (non-fatal)")
+
+        if not use_bandit:
+            return deterministic_action
+
+        # Flag on: UCB1 picks the next action.
+        try:
+            chosen_type = bandit_decision.select_action(
+                player_id=player_id,
+                context=context.tolist(),
+                candidate_actions=_BANDIT_ACTIONS,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("Bandit selection failed; falling back to deterministic")
+            return deterministic_action
+
+        # Reuse the deterministic action's `weakness` (it has the
+        # game-specific context the bandit can't reconstruct).
+        return SimpleNamespace(
+            type=chosen_type,
+            weakness=getattr(deterministic_action, "weakness", None),
+            reason=f"bandit:linucb (warm={chosen_type == deterministic_action.type})",
+        )
+    except Exception:  # noqa: BLE001
+        # Imports could fail if the freeze guard rejected the
+        # decision module for any reason — keep the request alive.
+        logger.exception("Bandit pipeline import failed (non-fatal)")
+        return deterministic_action
+
+
 class CoachFeedbackRequest(BaseModel):
     session_fen: str
     is_helpful: bool
@@ -303,6 +401,21 @@ def finish_game(
         coach_action = controller.decide(
             game=game_summary,
             recent_weaknesses=recent_weaknesses,
+        )
+
+        # Bandit decision step — SECA v1's deferred milestone.  The
+        # LinUCB head observes every game's outcome (warm-up); when
+        # SECA_USE_BANDIT_COACH=1 it also overrides the action the
+        # deterministic controller picked.  Off by default so live
+        # behaviour is unchanged unless explicitly enabled.
+        coach_action = _apply_bandit_decision(
+            player_id=str(player.id),
+            deterministic_action=coach_action,
+            rating_before=rating_before,
+            confidence_before=confidence_before,
+            accuracy=req.accuracy,
+            weaknesses=req.weaknesses or {},
+            reward=reward,
         )
 
         executor = CoachExecutor()
