@@ -56,15 +56,25 @@ done
 # Tool paths
 # ---------------------------------------------------------------------------
 
-# Use .bat on Windows (msys/mingw bash), bare on Linux/macOS.
-if [[ "$(uname -s)" =~ MINGW|MSYS|CYGWIN ]]; then
-    EXE_SUFFIX=".bat"
-else
-    EXE_SUFFIX=""
-fi
+# Tool extensions on Windows (msys/mingw bash):
+#   - cmdline-tools (avdmanager, sdkmanager) ship as .bat wrappers.
+#   - emulator and adb ship as native .exe binaries.
+# On Linux/macOS, all four are bare.  The previous version assumed
+# every tool used the same suffix and failed preflight on Windows
+# because emulator.bat / adb.bat do not exist.
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+        BAT_SUFFIX=".bat"
+        EXE_SUFFIX=".exe"
+        ;;
+    *)
+        BAT_SUFFIX=""
+        EXE_SUFFIX=""
+        ;;
+esac
 
-AVDMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/avdmanager${EXE_SUFFIX}"
-SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager${EXE_SUFFIX}"
+AVDMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/avdmanager${BAT_SUFFIX}"
+SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager${BAT_SUFFIX}"
 EMULATOR="$SDK_ROOT/emulator/emulator${EXE_SUFFIX}"
 ADB="$SDK_ROOT/platform-tools/adb${EXE_SUFFIX}"
 
@@ -113,8 +123,10 @@ fi
 
 echo "── [2/6] AVD: create '$AVD_NAME' if absent"
 existing_avds=$("$AVDMANAGER" list avd -c 2>/dev/null || true)
+NEED_PARTITION_SHRINK=0
 if echo "$existing_avds" | grep -qx "$AVD_NAME"; then
     echo "    reusing existing AVD '$AVD_NAME'"
+    NEED_PARTITION_SHRINK=1
 else
     if [[ ! -d "$SDK_ROOT/${SYSTEM_IMAGE//;//}" ]]; then
         echo "    system image $SYSTEM_IMAGE not present; downloading..."
@@ -126,6 +138,45 @@ else
         --package "$SYSTEM_IMAGE" \
         --device "$DEVICE_PROFILE" \
         --force >/dev/null
+
+    # Shrink the AVD's data partition so the emulator's pre-flight
+    # disk-space check passes on developer machines with limited free
+    # space.  The default Pixel 5 profile asks for a 6 GB userdata
+    # partition (≈ 7 GB total preallocation including system + cache);
+    # connectedAndroidTest only needs enough room to install the
+    # debug APK + the androidTest APK + a handful of small artefacts,
+    # which fits comfortably in 2 GB.  Override is in MB, no unit
+    # suffix in the config.
+    NEED_PARTITION_SHRINK=1
+fi
+
+# Apply the dataPartition shrink on every run (create or reuse) so a
+# previously-created AVD with the default 6 GB userdata gets fixed in
+# place rather than blocking the emulator pre-flight on every restart.
+if [[ "$NEED_PARTITION_SHRINK" -eq 1 ]]; then
+    AVD_HOME="${ANDROID_AVD_HOME:-$HOME/.android/avd}"
+    CONFIG_INI="$AVD_HOME/${AVD_NAME}.avd/config.ini"
+    if [[ -f "$CONFIG_INI" ]]; then
+        # Capped at 2000 MB so the emulator's `-partition-size` CLI
+        # override accepts the same value — that flag's documented
+        # range is 10–2047 MB, and a `-partition-size 2048` invocation
+        # fails fast with "must be between 10MB and 2047MB".
+        DATA_MB="${AVD_DATA_PARTITION_MB:-2000}"
+        echo "    shrinking dataPartition.size to ${DATA_MB}M in $CONFIG_INI"
+        # avdmanager normalises the file post-create:
+        #   - inserts spaces around '=':   "disk.dataPartition.size = ..."
+        #   - converts unit suffixes to raw bytes: "6442450944" not "6G"
+        # The previous regex matched only the un-normalised form and
+        # silently failed, leaving a 6 GB userdata that fails the
+        # emulator's pre-flight disk-space check.  Match both shapes
+        # and write the value with an "M" suffix that the emulator
+        # accepts directly without re-normalisation.
+        if grep -qE "^disk\.dataPartition\.size *= *" "$CONFIG_INI"; then
+            sed -i.bak -E "s|^disk\.dataPartition\.size *= *.*|disk.dataPartition.size = ${DATA_MB}M|" "$CONFIG_INI"
+        else
+            echo "disk.dataPartition.size = ${DATA_MB}M" >> "$CONFIG_INI"
+        fi
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -133,7 +184,15 @@ fi
 # ---------------------------------------------------------------------------
 
 echo "── [3/6] boot emulator headless"
+# `-partition-size` (in MB) is a belt-and-braces override of the
+# config.ini value — the emulator reads this argument first and
+# allocates the userdata partition accordingly, so a stale config.ini
+# (e.g. from an avdmanager run that re-normalised the size to bytes
+# after our sed) cannot resurrect the 6 GB default.  Same MB value as
+# the config edit so the two stay in sync.
+DATA_MB="${AVD_DATA_PARTITION_MB:-2000}"
 "$EMULATOR" -avd "$AVD_NAME" \
+    -partition-size "$DATA_MB" \
     -no-window -no-audio -no-snapshot -no-boot-anim \
     -gpu swiftshader_indirect \
     >/tmp/emulator-$$.log 2>&1 &
