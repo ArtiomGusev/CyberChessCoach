@@ -425,14 +425,29 @@ def _build_reply_deterministic(
     base_explanation: str,
     history: list[ChatTurn],
     skill_level: str = "intermediate",
+    coach_voice: str | None = None,
 ) -> str:
-    """Deterministic Mode-2 reply used when LLM is unavailable."""
+    """Deterministic Mode-2 reply used when LLM is unavailable.
+
+    The voice setting also shapes this path so the user gets a
+    coherent experience when Ollama is unreachable — they shouldn't
+    notice the LLM dropped out and suddenly start hearing a different
+    tone.  Engine-derived facts (context_block, base_explanation,
+    last move quality) are present in every voice; only the
+    chatty/connective copy varies.
+    """
+    voice = coach_voice if coach_voice in ("formal", "terse") else "conversational"
     parts: list[str] = []
 
+    # Prior-question preface — terse skips it (preamble is the first
+    # thing terse drops); formal swaps to a more restrained connector.
     prior_user_turns = [t for t in history[:-1] if t.role == "user"]
-    if prior_user_turns:
+    if prior_user_turns and voice != "terse":
         prev = prior_user_turns[-1].content[:80].strip()
-        parts.append(f'Following up on your earlier question about "{prev}":')
+        if voice == "formal":
+            parts.append(f'Regarding your earlier inquiry concerning "{prev}":')
+        else:
+            parts.append(f'Following up on your earlier question about "{prev}":')
 
     parts.append(context_block)
 
@@ -443,17 +458,24 @@ def _build_reply_deterministic(
     if base_explanation:
         parts.append(base_explanation)
 
-    # Phase tip — always included in Mode-2 (absent from Mode-1)
-    phase = engine_signal.get("phase", "middlegame")
-    phase_tip = _PHASE_HINT.get(phase, "")
-    if phase_tip:
-        parts.append(phase_tip)
+    # Phase tip — Mode-2 includes it by default, but it's exactly the
+    # kind of generic filler the user opted out of in terse mode.
+    if voice != "terse":
+        phase = engine_signal.get("phase", "middlegame")
+        phase_tip = _PHASE_HINT.get(phase, "")
+        if phase_tip:
+            parts.append(phase_tip)
 
     query = user_query.strip()
     if query:
         question_type = _detect_question_type(query)
         advice = _COACHING_ADVICE[question_type][skill_level]
-        parts.append(f'On your question "{query}": {advice}')
+        if voice == "terse":
+            parts.append(advice)
+        elif voice == "formal":
+            parts.append(f'On the matter of "{query}": {advice}')
+        else:
+            parts.append(f'On your question "{query}": {advice}')
 
     return " ".join(parts)
 
@@ -544,5 +566,6 @@ def generate_chat_reply(
         base_explanation=base_explanation,
         history=messages,
         skill_level=skill_level,
+        coach_voice=coach_voice,
     )
     return ChatReply(reply=reply, engine_signal=engine_signal, mode="CHAT_V1")

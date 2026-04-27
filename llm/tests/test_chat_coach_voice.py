@@ -179,3 +179,137 @@ class TestVoiceBlockInPrompt:
         unknown values rather than substituting raw text."""
         prompt = self._capture_prompt("not-a-real-voice")
         assert "COACH VOICE:" not in prompt
+
+
+# ---------------------------------------------------------------------------
+# 3.  Voice in the deterministic fallback
+# ---------------------------------------------------------------------------
+
+
+class TestVoiceInDeterministicFallback:
+    """When the LLM is unreachable the deterministic builder takes over.
+    The coach_voice setting must shape that output too — otherwise the
+    user notices a tone shift the moment Ollama drops, which is the
+    opposite of what 'voice' should mean."""
+
+    _STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+
+    @staticmethod
+    def _patch_llm_unavailable():
+        from unittest.mock import patch
+        return patch("llm.seca.coach.chat_pipeline._LLM_AVAILABLE", False)
+
+    @staticmethod
+    def _prior_turns():
+        from llm.seca.coach.chat_pipeline import ChatTurn
+        return [
+            ChatTurn(role="user", content="What about the rook?"),
+            ChatTurn(role="assistant", content="The rook is developed."),
+            ChatTurn(role="user", content="Help me plan."),
+        ]
+
+    def test_terse_drops_preface(self):
+        """Terse output strips the prior-question preamble — that's
+        exactly the chatty connective copy the user opted out of.  The
+        engine-derived facts must still be present."""
+        from llm.seca.coach.chat_pipeline import generate_chat_reply
+        with self._patch_llm_unavailable():
+            r = generate_chat_reply(self._STARTING_FEN, self._prior_turns(), coach_voice="terse")
+        assert "following up" not in r.reply.lower()
+        assert "regarding your earlier" not in r.reply.lower()
+        # Engine fact still in output
+        assert "engine evaluation" in r.reply.lower()
+
+    def test_terse_drops_phase_tip(self):
+        """Terse output drops the generic per-phase tip; engine-truth
+        survives so safety isn't impacted."""
+        from llm.seca.coach.chat_pipeline import _PHASE_HINT, generate_chat_reply
+        with self._patch_llm_unavailable():
+            r = generate_chat_reply(self._STARTING_FEN, self._prior_turns(), coach_voice="terse")
+        for tip in _PHASE_HINT.values():
+            assert tip not in r.reply, f"terse reply leaked phase tip: {tip!r}"
+
+    def test_terse_drops_question_preamble(self):
+        """Terse skips the 'On your question \"X\":' framing; the
+        advice itself still appears."""
+        from llm.seca.coach.chat_pipeline import generate_chat_reply
+        with self._patch_llm_unavailable():
+            r = generate_chat_reply(self._STARTING_FEN, self._prior_turns(), coach_voice="terse")
+        assert "on your question" not in r.reply.lower()
+        assert "on the matter of" not in r.reply.lower()
+
+    def test_formal_swaps_preface(self):
+        """Formal output uses a restrained 'Regarding your earlier
+        inquiry concerning' instead of the conversational 'Following
+        up on your earlier question about'."""
+        from llm.seca.coach.chat_pipeline import generate_chat_reply
+        with self._patch_llm_unavailable():
+            r = generate_chat_reply(self._STARTING_FEN, self._prior_turns(), coach_voice="formal")
+        assert "regarding your earlier" in r.reply.lower()
+        assert "following up" not in r.reply.lower()
+
+    def test_formal_swaps_question_framing(self):
+        """Formal swaps 'On your question \"X\":' → 'On the matter of \"X\":'."""
+        from llm.seca.coach.chat_pipeline import generate_chat_reply
+        with self._patch_llm_unavailable():
+            r = generate_chat_reply(self._STARTING_FEN, self._prior_turns(), coach_voice="formal")
+        assert "on the matter of" in r.reply.lower()
+        assert "on your question" not in r.reply.lower()
+
+    def test_conversational_keeps_default_phrasing(self):
+        """Conversational is the documented default — copy must
+        match what existed before voice landed in the fallback."""
+        from llm.seca.coach.chat_pipeline import generate_chat_reply
+        with self._patch_llm_unavailable():
+            r = generate_chat_reply(self._STARTING_FEN, self._prior_turns(), coach_voice="conversational")
+        assert "following up" in r.reply.lower()
+        assert "on your question" in r.reply.lower()
+
+    def test_none_voice_defaults_to_conversational(self):
+        """coach_voice=None (existing client) keeps the default copy
+        so this change is backwards-compatible."""
+        from llm.seca.coach.chat_pipeline import generate_chat_reply
+        with self._patch_llm_unavailable():
+            r = generate_chat_reply(self._STARTING_FEN, self._prior_turns(), coach_voice=None)
+        assert "following up" in r.reply.lower()
+
+    def test_unknown_voice_defaults_to_conversational(self):
+        """An unknown value (which the schema validator would reject
+        anyway) falls back to conversational phrasing in the
+        deterministic builder — never substitutes raw user input."""
+        from llm.seca.coach.chat_pipeline import generate_chat_reply
+        with self._patch_llm_unavailable():
+            r = generate_chat_reply(self._STARTING_FEN, self._prior_turns(), coach_voice="not-a-real-voice")
+        assert "following up" in r.reply.lower()
+
+    def test_terse_is_shorter_than_conversational(self):
+        """Pin the user-visible outcome: terse should produce a
+        meaningfully shorter reply than conversational on the same
+        input.  Without this, future edits could drift the variants
+        back to near-identical output and the setting would be a
+        toggle with no effect."""
+        from llm.seca.coach.chat_pipeline import generate_chat_reply
+        with self._patch_llm_unavailable():
+            terse = generate_chat_reply(
+                self._STARTING_FEN, self._prior_turns(), coach_voice="terse",
+            )
+            convo = generate_chat_reply(
+                self._STARTING_FEN, self._prior_turns(), coach_voice="conversational",
+            )
+        assert len(terse.reply) < len(convo.reply), (
+            f"terse ({len(terse.reply)}) should be shorter than "
+            f"conversational ({len(convo.reply)})"
+        )
+
+    def test_engine_facts_in_every_voice(self):
+        """No voice can drop engine-derived content — that's the
+        Mode-2 invariant, not a tone choice."""
+        from llm.seca.coach.chat_pipeline import generate_chat_reply
+        for voice in ("formal", "conversational", "terse", None):
+            with self._patch_llm_unavailable():
+                r = generate_chat_reply(
+                    self._STARTING_FEN, self._prior_turns(), coach_voice=voice,
+                )
+            assert "engine evaluation" in r.reply.lower(), (
+                f"voice={voice!r} dropped the engine evaluation line"
+            )
