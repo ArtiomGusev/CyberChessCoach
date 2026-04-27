@@ -369,4 +369,18 @@ No intermittent hallucinations are present
 
 Production deployment is permitted
 
+Android Instrumented Tests
+
+Host-JVM unit tests cover most of the Android client (`./gradlew :app:testDebugUnitTest`). A separate **instrumented** suite under `android/app/src/androidTest/` runs on a real Android runtime — primarily the Atrium layout-inflation smoke suite, which catches AAPT2 link errors / theme-attribute mismatches / drawable-not-found bugs that host-JVM tests can't see.
+
+To run the instrumented suite end-to-end:
+
+`bash scripts/run_connected_android_tests.sh`
+
+The script verifies the SDK + cmdline-tools install, creates a headless AVD if none exist (`atrium_test`, x86_64 Pixel 5 by default), boots the emulator, runs `./gradlew :app:connectedAndroidTest`, and tears the emulator down on success or failure. Idempotent — re-running with an AVD already created reuses it.
+
+One-time prerequisite: install **Android SDK Command-line Tools (latest)** via Android Studio → Settings → Android SDK → SDK Tools tab. The script's preflight check fails loudly with remediation steps when this is missing.
+
+Override knobs (env vars): `AVD_NAME`, `SYSTEM_IMAGE`, `DEVICE_PROFILE`, `BOOT_TIMEOUT_SECONDS`. Use `--keep-running` to leave the emulator up after tests for iterative debugging.
+
 End of TESTING.md
