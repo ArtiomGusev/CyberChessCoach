@@ -42,6 +42,13 @@ interface CoachApiClient {
         playerProfile: PlayerProfileDto? = null,
         pastMistakes: List<String>? = null,
         moveCount: Int? = null,
+        /**
+         * Coach voice setting from the user's Settings sheet
+         * (formal / conversational / terse).  Shapes the LLM's tone
+         * but never its content.  Null → server uses its default
+         * Mode-2 tone.
+         */
+        coachVoice: String? = null,
     ): ApiResult<ChatResponseBody>
 
     /**
@@ -62,8 +69,9 @@ interface CoachApiClient {
         playerProfile: PlayerProfileDto? = null,
         pastMistakes: List<String>? = null,
         moveCount: Int? = null,
+        coachVoice: String? = null,
     ): Flow<StreamChunk> = flow {
-        when (val result = chat(fen, messages, playerProfile, pastMistakes, moveCount)) {
+        when (val result = chat(fen, messages, playerProfile, pastMistakes, moveCount, coachVoice)) {
             is ApiResult.Success -> {
                 emit(StreamChunk.Chunk(result.data.reply))
                 emit(StreamChunk.Done(result.data.engineSignal, "CHAT_V1"))
@@ -137,6 +145,7 @@ class HttpCoachApiClient(
         playerProfile: PlayerProfileDto?,
         pastMistakes: List<String>?,
         moveCount: Int?,
+        coachVoice: String?,
     ): ApiResult<ChatResponseBody> = withRetry(maxAttempts = 2) {
         withContext(Dispatchers.IO) {
             try {
@@ -154,7 +163,7 @@ class HttpCoachApiClient(
                 conn.readTimeout = readTimeoutMs
 
                 conn.outputStream.bufferedWriter(Charsets.UTF_8).use {
-                    it.write(buildJson(fen, messages, playerProfile, pastMistakes, moveCount))
+                    it.write(buildJson(fen, messages, playerProfile, pastMistakes, moveCount, coachVoice))
                 }
 
                 val code = conn.responseCode
@@ -179,6 +188,7 @@ class HttpCoachApiClient(
         playerProfile: PlayerProfileDto?,
         pastMistakes: List<String>?,
         moveCount: Int?,
+        coachVoice: String?,
     ): Flow<StreamChunk> = channelFlow {
         withContext(Dispatchers.IO) {
             try {
@@ -196,7 +206,7 @@ class HttpCoachApiClient(
                 conn.readTimeout = readTimeoutMs
 
                 conn.outputStream.bufferedWriter(Charsets.UTF_8).use {
-                    it.write(buildJson(fen, messages, playerProfile, pastMistakes, moveCount))
+                    it.write(buildJson(fen, messages, playerProfile, pastMistakes, moveCount, coachVoice))
                 }
 
                 val code = conn.responseCode
@@ -301,6 +311,7 @@ class HttpCoachApiClient(
         playerProfile: PlayerProfileDto?,
         pastMistakes: List<String>?,
         moveCount: Int?,
+        coachVoice: String?,
     ): String {
         val arr = JSONArray()
         for (msg in messages) {
@@ -333,6 +344,11 @@ class HttpCoachApiClient(
                 }
                 // Move count gives the backend phase context during mid-game chat.
                 moveCount?.let { put("move_count", it) }
+                // Coach voice from the user's Settings sheet — omit
+                // when null so the server uses its default tone.
+                coachVoice?.takeIf { it.isNotBlank() }?.let {
+                    put("coach_voice", it)
+                }
             }
             .toString()
     }

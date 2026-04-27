@@ -263,6 +263,19 @@ def _sanitize_field(value: str, max_len: int = 200) -> str:
     return "".join(c if c >= "\x20" else " " for c in str(value).replace("\x7f", " "))[:max_len].strip()
 
 
+# Coach-voice tone instructions for the LLM system prompt.  Mapped
+# from the Android SettingsBottomSheet radio (formal / conversational
+# / terse).  None / unknown → no voice block (model uses default
+# Mode-2 tone).  Mirrors the SettingsBottomSheet sub-label copy
+# 1-for-1 so what users see in the toggle matches what the LLM is
+# instructed to do.
+_COACH_VOICE_INSTRUCTIONS = {
+    "formal":         "Use a formal, precise, restrained tone.  Avoid contractions or casual phrasing.",
+    "conversational": "Use a patient, scholarly conversational tone.  Welcoming but unhurried.",
+    "terse":          "Be brief.  No flourish, no preamble — answer directly in one or two short sentences.",
+}
+
+
 def _build_chat_llm(
     fen: str,
     messages: list[ChatTurn],
@@ -270,6 +283,7 @@ def _build_chat_llm(
     engine_signal: dict,
     past_mistakes: list[str] | None = None,
     retry_hint: str = "",
+    coach_voice: str | None = None,
 ) -> str:
     """Call the LLM with Mode-2 prompt including conversation history.
 
@@ -319,7 +333,17 @@ def _build_chat_llm(
     rag_docs = _retrieve(engine_signal, _DOCS)
     style_block = _build_clc(engine_signal)
 
-    system = _SYSTEM_PROMPT + "\n\n" + style_block + history_block + player_block
+    # Voice instruction goes immediately after the Mode-2 system
+    # prompt, before per-conversation context, so the tone framing
+    # is anchored by the strongest position in the prompt.  The
+    # voice never overrides Mode-2 content rules — the system
+    # prompt's "stick to engine truth" instruction is what's
+    # authoritative; the voice only shapes phrasing.
+    voice_block = ""
+    if coach_voice and coach_voice in _COACH_VOICE_INSTRUCTIONS:
+        voice_block = "\n\nCOACH VOICE: " + _COACH_VOICE_INSTRUCTIONS[coach_voice]
+
+    system = _SYSTEM_PROMPT + voice_block + "\n\n" + style_block + history_block + player_block
 
     prompt = _render(
         system_prompt=system,
@@ -445,6 +469,7 @@ def generate_chat_reply(
     player_profile: dict | None = None,
     past_mistakes: list[str] | None = None,
     move_count: int | None = None,
+    coach_voice: str | None = None,
 ) -> ChatReply:
     """Generate a coaching reply for the current chat turn.
 
@@ -488,6 +513,7 @@ def generate_chat_reply(
                 reply = _build_chat_llm(
                     fen, messages, player_profile, engine_signal, past_mistakes,
                     retry_hint=retry_hint,
+                    coach_voice=coach_voice,
                 )
                 # ESV structural integrity check (programming-error guard; never from LLM).
                 _EngineSignalSchema.model_validate(engine_signal)

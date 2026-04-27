@@ -740,6 +740,11 @@ class ChatRequest(BaseModel):
     messages: list[ChatTurnModel]
     player_profile: dict | None = None
     past_mistakes: list[str] | None = None
+    # Coach voice setting from the Android Settings sheet — affects
+    # the LLM's tone but never its content (the engine signal stays
+    # authoritative).  Strict allow-list so an unknown value fails
+    # validation rather than silently bleeding into the prompt.
+    coach_voice: str | None = None
 
     @field_validator("player_profile")
     @classmethod
@@ -787,6 +792,24 @@ class ChatRequest(BaseModel):
     def validate_move_count(cls, v: int | None) -> int | None:
         if v is not None and not (0 <= v <= 10_000):
             raise ValueError("move_count must be 0–10000")
+        return v
+
+    @field_validator("coach_voice")
+    @classmethod
+    def validate_coach_voice(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip().lower()
+        if v == "":
+            return None
+        # Allow-list mirrors the Android SettingsBottomSheet radio
+        # values exactly.  Any other value (e.g. attacker-supplied
+        # prompt-injection bait disguised as a tone) is rejected
+        # before it reaches the LLM prompt.
+        if v not in {"formal", "conversational", "terse"}:
+            raise ValueError(
+                "coach_voice must be one of 'formal', 'conversational', 'terse'"
+            )
         return v
 
 
@@ -1522,6 +1545,7 @@ async def chat(
         req.player_profile,
         req.past_mistakes,
         req.move_count,
+        req.coach_voice,
     )
     return {
         "reply": result.reply,
@@ -1562,6 +1586,7 @@ async def chat_stream(
         req.player_profile,
         req.past_mistakes,
         req.move_count,
+        req.coach_voice,
     )
 
     def _generate():

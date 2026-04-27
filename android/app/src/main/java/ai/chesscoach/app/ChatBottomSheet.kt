@@ -381,6 +381,10 @@ class ChatBottomSheet : BottomSheetDialogFragment() {
                 playerProfile = playerProfile,
                 pastMistakes = pastMistakes,
                 moveCount = moveCount.takeIf { it > 0 },
+                // Coach voice from Settings — pulled fresh on every
+                // chat turn so a setting change takes effect on the
+                // very next reply, not after a reopen.
+                coachVoice = SettingsBottomSheet.readCoachVoice(requireContext()),
             ).collect { chunk ->
                 when (chunk) {
                     is StreamChunk.Chunk -> {
