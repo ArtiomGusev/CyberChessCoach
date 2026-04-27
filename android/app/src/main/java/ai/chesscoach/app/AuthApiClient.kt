@@ -127,6 +127,15 @@ class HttpAuthApiClient(
     val baseUrl: String,
     val connectTimeoutMs: Int = DEFAULT_CONNECT_TIMEOUT_MS,
     val readTimeoutMs: Int = DEFAULT_READ_TIMEOUT_MS,
+    /**
+     * Optional sink for the X-Auth-Token refresh header — see
+     * [TokenRefresh].  When provided, every successful authenticated
+     * response (currently [me], [updateMe], [changePassword]) hands
+     * the freshly-minted JWT to this lambda so callers can rotate
+     * their stored token transparently.  Null disables the rotation
+     * (test fakes / clients that don't store tokens).
+     */
+    val tokenSink: ((String) -> Unit)? = null,
 ) : AuthApiClient {
 
     companion object {
@@ -213,6 +222,7 @@ class HttpAuthApiClient(
             val code = conn.responseCode
             if (code == HttpURLConnection.HTTP_OK) {
                 val raw = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
+                consumeRefreshedToken(conn, tokenSink)
                 ApiResult.Success(parseMeResponse(raw))
             } else {
                 ApiResult.HttpError(code)
@@ -262,6 +272,7 @@ class HttpAuthApiClient(
             val code = conn.responseCode
             if (code == HttpURLConnection.HTTP_OK) {
                 val raw = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
+                consumeRefreshedToken(conn, tokenSink)
                 ApiResult.Success(parseMeResponse(raw))
             } else {
                 ApiResult.HttpError(code)
@@ -293,8 +304,12 @@ class HttpAuthApiClient(
             conn.readTimeout = readTimeoutMs
             conn.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(body) }
             val code = conn.responseCode
-            if (code == HttpURLConnection.HTTP_OK) ApiResult.Success(Unit)
-            else ApiResult.HttpError(code)
+            if (code == HttpURLConnection.HTTP_OK) {
+                consumeRefreshedToken(conn, tokenSink)
+                ApiResult.Success(Unit)
+            } else {
+                ApiResult.HttpError(code)
+            }
         } catch (_: SocketTimeoutException) {
             ApiResult.Timeout
         } catch (e: Exception) {

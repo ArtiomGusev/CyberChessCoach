@@ -137,6 +137,24 @@ object PendingGameFinish {
     }
 
     /**
+     * Drop the pending finish payload from [prefs].  Idempotent —
+     * a no-op when no payload is present.  Returns true iff a
+     * payload was actually removed (so callers can decide whether
+     * to show a "Discarded" toast vs. nothing).
+     *
+     * Used by HomeActivity's long-press-on-sync-indicator → confirm
+     * affordance; gives the user an escape hatch when a stuck pending
+     * finish keeps failing (e.g. the underlying game has a malformed
+     * PGN the server perma-rejects but isTransient classifies as 5xx,
+     * or the user just no longer cares about the lost game).
+     */
+    fun discardFromPrefs(prefs: SharedPreferences): Boolean {
+        if (!prefs.contains(PREF_PENDING_FINISH_PAYLOAD)) return false
+        prefs.edit().remove(PREF_PENDING_FINISH_PAYLOAD).apply()
+        return true
+    }
+
+    /**
      * Process-singleton guard against double-fire when both
      * MainActivity and HomeActivity try to retry on the same
      * cold-start.  Without this, the user's offline game would

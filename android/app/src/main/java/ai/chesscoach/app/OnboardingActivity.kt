@@ -139,8 +139,13 @@ class OnboardingActivity : AppCompatActivity() {
     }
 
     private fun firePatchAuthMe(rating: Float, confidence: Float) {
-        val token = AuthRepository(EncryptedTokenStorage(this)).getToken() ?: return
-        val client: AuthApiClient = HttpAuthApiClient(baseUrl = BuildConfig.COACH_API_BASE)
+        val authRepo = AuthRepository(EncryptedTokenStorage(this))
+        val token = authRepo.getToken() ?: return
+        val client: AuthApiClient = HttpAuthApiClient(
+            baseUrl = BuildConfig.COACH_API_BASE,
+            // Same X-Auth-Token rotation as MainActivity — see kdoc there.
+            tokenSink = { newToken -> authRepo.saveToken(newToken) },
+        )
         // Fire on the activity's lifecycleScope rather than
         // GlobalScope: if the user backgrounds the app immediately
         // after Continue, the launch is cancelled and we don't leak

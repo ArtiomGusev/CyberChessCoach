@@ -18,19 +18,21 @@ if len(SECRET_KEY) < 32:
     raise RuntimeError("SECRET_KEY must be at least 32 characters.")
 ALGORITHM = "HS256"
 
-# JWT exp claim — match the default Session.expires_at window so the
-# JWT and the server-side session run on the same clock.  Combined
-# with the sliding-session window in AuthService.get_player_by_session
-# (extends expires_at on each authenticated request), an active user
-# only sees a re-login prompt after 7 days of *idleness*, not after
-# 7 days from any single request.  See the
-# `test_session_slides_on_authenticated_request` test for the
-# observable behaviour.
+# JWT exp claim — 24 hours.  The router's get_current_player now
+# attaches a fresh X-Auth-Token header on every authenticated
+# response, so an active user's client transparently rotates the
+# stored JWT every API call and never sees an expiry-driven
+# bounce.  Tight 24h cap means a stolen JWT expires the same day
+# regardless of session-sliding state on the server.
 #
-# Pre-2026-04 this was 15 minutes, which bounced active users every
-# 15 min because the client has no refresh path — way too aggressive
-# for a chess-coaching app's threat model.
-ACCESS_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
+# Lineage:
+#   pre-2026-04: 15 min — bounced active users every 15 min (no refresh)
+#   2026-04:     7 days — paired with sliding session, no refresh
+#   2026-04+ (now): 24 h — paired with X-Auth-Token refresh on every
+#                          authenticated response, so daily-active
+#                          users stay logged in indefinitely while
+#                          the security window stays tight.
+ACCESS_EXPIRE_MINUTES = 60 * 24  # 24 hours
 
 
 def create_access_token(player_id: str, session_id: str) -> str:

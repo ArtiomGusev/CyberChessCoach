@@ -88,8 +88,17 @@ class MainActivity : AppCompatActivity() {
                 baseUrl = BuildConfig.COACH_API_BASE,
                 apiKey = BuildConfig.COACH_API_KEY,
                 tokenProvider = { authRepo.getToken() },
+                tokenSink = { newToken -> authRepo.saveToken(newToken) },
             )
-        authApiClient = HttpAuthApiClient(baseUrl = BuildConfig.COACH_API_BASE)
+        authApiClient = HttpAuthApiClient(
+            baseUrl = BuildConfig.COACH_API_BASE,
+            // Wire X-Auth-Token rotation: every successful authenticated
+            // response (me, updateMe, changePassword) hands back a fresh
+            // 24h JWT; this sink saves it so the next call picks up the
+            // rotated token.  Without this, the JWT would expire after
+            // 24h and bounce the user to login.
+            tokenSink = { newToken -> authRepo.saveToken(newToken) },
+        )
 
         // If a previous /game/finish failed offline (timeout / 5xx /
         // network), the payload was persisted; try again now that we

@@ -82,6 +82,15 @@ class HttpGameApiClient(
     val connectTimeoutMs: Int = 8_000,
     val readTimeoutMs: Int = 30_000,
     val tokenProvider: (() -> String?)? = null,
+    /**
+     * Optional sink for the X-Auth-Token refresh header — see
+     * [TokenRefresh].  Every successful authenticated response
+     * (game/start, game/finish, etc.) hands the freshly-minted JWT
+     * here so the activity's AuthRepository can rotate the stored
+     * token transparently.  Without this, the user's JWT would
+     * expire after 24 h despite continuous gameplay.
+     */
+    val tokenSink: ((String) -> Unit)? = null,
 ) : GameApiClient {
 
     override suspend fun startGame(playerId: String): ApiResult<GameStartResponse> =
@@ -102,6 +111,7 @@ class HttpGameApiClient(
                 val code = conn.responseCode
                 if (code == 200) {
                     val text = conn.inputStream.bufferedReader().readText()
+                    consumeRefreshedToken(conn, tokenSink)
                     val json = JSONObject(text)
                     val gameId = json.opt("game_id")?.toString() ?: ""
                     ApiResult.Success(GameStartResponse(gameId))
@@ -149,6 +159,7 @@ class HttpGameApiClient(
                     val code = conn.responseCode
                     if (code == 200) {
                         val text = conn.inputStream.bufferedReader().readText()
+                        consumeRefreshedToken(conn, tokenSink)
                         ApiResult.Success(parseFinishResponse(text))
                     } else {
                         ApiResult.HttpError(code)
@@ -193,6 +204,7 @@ class HttpGameApiClient(
                 val code = conn.responseCode
                 if (code == 200) {
                     val text = conn.inputStream.bufferedReader().readText()
+                    consumeRefreshedToken(conn, tokenSink)
                     ApiResult.Success(parseCurriculumResponse(text))
                 } else {
                     ApiResult.HttpError(code)
@@ -214,6 +226,7 @@ class HttpGameApiClient(
                 val code = conn.responseCode
                 if (code == 200) {
                     val text = conn.inputStream.bufferedReader().readText()
+                    consumeRefreshedToken(conn, tokenSink)
                     ApiResult.Success(parseHistoryResponse(text))
                 } else {
                     ApiResult.HttpError(code)
@@ -235,6 +248,7 @@ class HttpGameApiClient(
                 val code = conn.responseCode
                 if (code == 200) {
                     val text = conn.inputStream.bufferedReader().readText()
+                    consumeRefreshedToken(conn, tokenSink)
                     ApiResult.Success(parseProgressResponse(text))
                 } else {
                     ApiResult.HttpError(code)

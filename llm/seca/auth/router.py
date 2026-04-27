@@ -1,6 +1,6 @@
 import json
 import os
-from fastapi import APIRouter, Depends, HTTPException, Header, Request
+from fastapi import APIRouter, Depends, HTTPException, Header, Request, Response
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session, Session as DBSession
 from llm.seca.shared_limiter import limiter
@@ -13,7 +13,7 @@ from llm.seca.events.models import *  # noqa: F401,F403
 from llm.seca.brain.models import *  # noqa: F401,F403
 from llm.seca.analytics.models import *  # noqa: F401,F403
 from .service import AuthService
-from .tokens import decode_token
+from .tokens import create_access_token, decode_token
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///data/seca.db")
 _is_sqlite = DATABASE_URL.startswith("sqlite")
@@ -78,9 +78,27 @@ def get_db():
 
 
 def get_current_player(
+    response: Response,
     authorization: str = Header(...),
     db: DBSession = Depends(get_db),
 ):
+    """Validate the Bearer token and return the matched Player.
+
+    Side effect: on successful validation, attaches an
+    ``X-Auth-Token`` response header containing a freshly-minted JWT
+    for the same session.  Combined with the sliding session window
+    in [AuthService.get_player_by_session], this gives the Android
+    client a transparent refresh path so the JWT exp can stay tight
+    (24h) without bouncing active users:
+       - Active user: every authenticated call hands back a fresh
+         24h JWT, the client saves it, the session slides forward.
+       - Idle user: the JWT eventually expires; next call returns
+         401 and the client routes to login.
+
+    The new token is NOT issued on the failure paths — an attacker
+    probing with a stolen-then-revoked token must not receive a
+    fresh JWT they could keep using.
+    """
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "bearer" or not token:
         raise HTTPException(status_code=401, detail="Invalid token")
@@ -95,6 +113,13 @@ def get_current_player(
     if not player:
         raise HTTPException(status_code=401, detail="Session invalid")
 
+    # Mint a fresh JWT for this session and hand it back so the
+    # client can rotate its stored token transparently.
+    new_token = create_access_token(
+        player_id=str(player.id),
+        session_id=payload["session_id"],
+    )
+    response.headers["X-Auth-Token"] = new_token
     return player
 
 

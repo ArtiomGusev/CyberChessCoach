@@ -1,5 +1,6 @@
 package ai.chesscoach.app
 
+import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -85,6 +86,7 @@ class HomeActivity : AppCompatActivity() {
             baseUrl = BuildConfig.COACH_API_BASE,
             apiKey = BuildConfig.COACH_API_KEY,
             tokenProvider = { authRepo.getToken() },
+            tokenSink = { newToken -> authRepo.saveToken(newToken) },
         )
     }
 
@@ -122,6 +124,32 @@ class HomeActivity : AppCompatActivity() {
         // the network is fast enough that the retry succeeds in a
         // few hundred ms.
         refreshSyncIndicator(prefs)
+
+        // Long-press the indicator → "Discard offline game?" prompt.
+        // Useful escape hatch when a payload keeps failing (e.g. a
+        // malformed PGN the server perma-rejects via 5xx instead of
+        // 4xx, or the user simply no longer cares).
+        syncIndicator.setOnLongClickListener {
+            AlertDialog.Builder(this)
+                .setTitle("Discard offline game?")
+                .setMessage(
+                    "This will drop the unsynced game and we won't try " +
+                        "to send it again.",
+                )
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Discard") { _, _ ->
+                    if (PendingGameFinish.discardFromPrefs(prefs)) {
+                        refreshSyncIndicator(prefs)
+                        Toast.makeText(
+                            this@HomeActivity,
+                            "Discarded · the game was not synced",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                }
+                .show()
+            true
+        }
 
         // If a previous /game/finish failed offline (timeout / 5xx /
         // network), the payload is in prefs.  Try again from here in
