@@ -134,6 +134,7 @@ class MainActivity : AppCompatActivity() {
 
         // -------- FIND VIEWS --------
         chessBoard = findViewById(R.id.chessBoard)
+        chessBoard.boardStyle = SettingsBottomSheet.readBoardStyle(this)
         drawerLayout = findViewById(R.id.drawerLayout)
         coachText = findViewById(R.id.txtCoach)
         coachDock = findViewById(R.id.txtCoachContainer)
@@ -1033,5 +1034,15 @@ class MainActivity : AppCompatActivity() {
         dialog.findViewById<Button>(R.id.btnBishop).setOnClickListener { onSelected('B') }
         dialog.findViewById<Button>(R.id.btnKnight).setOnClickListener { onSelected('N') }
         dialog.show()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Re-apply the board variant in case the user changed Settings →
+        // Board style while the bottom sheet was open over MainActivity;
+        // the sheet only persists, the consumer reads it back here.
+        if (::chessBoard.isInitialized) {
+            chessBoard.boardStyle = SettingsBottomSheet.readBoardStyle(this)
+        }
     }
 }

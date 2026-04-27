@@ -99,6 +99,39 @@ class ChessBoardView @JvmOverloads constructor(
         alpha = 180
     }
 
+    // Atrium board variants — see SettingsBottomSheet.PREF_BOARD_STYLE.
+    // Engraved adds an inset bevel per square (TL shadow / BR highlight),
+    // Wireframe overlays a thin cyan grid on the existing checker fill.
+    private val engravedShadowEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#0A0805")
+        style = Paint.Style.STROKE
+    }
+    private val engravedLightEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#5A5346")
+        style = Paint.Style.STROKE
+        alpha = 140
+    }
+    private val wireframeGridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#4FD9E5")                                 // atrium_accent_cyan
+        style = Paint.Style.STROKE
+        alpha = 130
+    }
+
+    /**
+     * Board variant selected from Settings → Board style.  Persisted via
+     * [SettingsBottomSheet.PREF_BOARD_STYLE]; MainActivity reads the
+     * value on resume and assigns here.  Unsupported strings fall back
+     * to [DEFAULT_BOARD_STYLE] silently — the setting is user-facing so
+     * we don't want a typo to crash the board.
+     */
+    var boardStyle: String = DEFAULT_BOARD_STYLE
+        set(value) {
+            val normalized = if (value in SUPPORTED_BOARD_STYLES) value else DEFAULT_BOARD_STYLE
+            if (field == normalized) return
+            field = normalized
+            invalidate()
+        }
+
     /**
      * Atrium focus ring — a pulsing dashed amber circle on the square
      * the coach is referencing.  Per handoff: "Focus ring on the piece
@@ -485,14 +518,30 @@ class ChessBoardView @JvmOverloads constructor(
         piecePaintBlack.textSize = squareSize * 0.8f
         coordinatePaint.textSize = squareSize * 0.22f
 
+        val edgeStroke = squareSize * 0.04f
+        engravedShadowEdge.strokeWidth = edgeStroke
+        engravedLightEdge.strokeWidth = edgeStroke
+        wireframeGridPaint.strokeWidth = edgeStroke * 0.7f
+
         for (r in 0..7) {
             for (c in 0..7) {
-                canvas.drawRect(c * squareSize, r * squareSize, (c + 1) * squareSize, (r + 1) * squareSize, if ((r + c) % 2 == 0) darkSquare else lightSquare)
+                val l = c * squareSize
+                val t = r * squareSize
+                val rr = (c + 1) * squareSize
+                val bb = (r + 1) * squareSize
+                canvas.drawRect(l, t, rr, bb, if ((r + c) % 2 == 0) darkSquare else lightSquare)
+                if (boardStyle == STYLE_ENGRAVED) {
+                    val pad = edgeStroke / 2f
+                    canvas.drawLine(l + pad, t + pad, rr - pad, t + pad, engravedShadowEdge)
+                    canvas.drawLine(l + pad, t + pad, l + pad, bb - pad, engravedShadowEdge)
+                    canvas.drawLine(l + pad, bb - pad, rr - pad, bb - pad, engravedLightEdge)
+                    canvas.drawLine(rr - pad, t + pad, rr - pad, bb - pad, engravedLightEdge)
+                }
                 if ((r == lastMoveFrom?.first && c == lastMoveFrom?.second) || (r == lastMoveTo?.first && c == lastMoveTo?.second)) {
-                    canvas.drawRect(c * squareSize, r * squareSize, (c + 1) * squareSize, (r + 1) * squareSize, highlightPaint)
+                    canvas.drawRect(l, t, rr, bb, highlightPaint)
                 }
                 if (r == selectedRow && c == selectedCol) {
-                    canvas.drawRect(c * squareSize, r * squareSize, (c + 1) * squareSize, (r + 1) * squareSize, selectPaint)
+                    canvas.drawRect(l, t, rr, bb, selectPaint)
                 }
                 if (c == 0) {
                     val rank = (8 - r).toString()
@@ -509,7 +558,16 @@ class ChessBoardView @JvmOverloads constructor(
                 }
             }
         }
-        
+
+        if (boardStyle == STYLE_WIREFRAME) {
+            val span = 8 * squareSize
+            for (i in 0..8) {
+                val v = i * squareSize
+                canvas.drawLine(0f, v, span, v, wireframeGridPaint)
+                canvas.drawLine(v, 0f, v, span, wireframeGridPaint)
+            }
+        }
+
         for (arrow in arrows) {
             drawArrow(canvas, arrow)
         }
@@ -567,5 +625,16 @@ class ChessBoardView @JvmOverloads constructor(
             setShadowLayer(10f, 0f, 0f, arrow.color)
         }
         canvas.drawPath(headPath, headPaint)
+    }
+
+    companion object {
+        const val STYLE_FLAT = "flat"
+        const val STYLE_ENGRAVED = "engraved"
+        const val STYLE_WIREFRAME = "wireframe"
+        const val DEFAULT_BOARD_STYLE = STYLE_FLAT
+
+        /** Variant keys recognised by [boardStyle]; mirrored from
+         *  [SettingsBottomSheet.PREF_BOARD_STYLE] row tags. */
+        val SUPPORTED_BOARD_STYLES: Set<String> = setOf(STYLE_FLAT, STYLE_ENGRAVED, STYLE_WIREFRAME)
     }
 }

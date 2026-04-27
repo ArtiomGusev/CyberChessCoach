@@ -34,18 +34,20 @@ import kotlinx.coroutines.launch
  * Persistence: [PREFS_NAME] SharedPreferences (the same store
  * MainActivity uses for the rating cache and curriculum chip).
  *
- * **Consumer wiring is intentionally out of scope for this scaffold:**
- *   - Coach voice persists, but [chat_pipeline] does not yet read it.
- *   - Board style persists, but [ChessBoardView] does not yet accept
- *     a variant — the rendered board stays "flat" until the variant
- *     parameter lands.
+ * **Consumer wiring status:**
+ *   - Coach voice — persisted and read by `chat_pipeline.generate_chat_reply`
+ *     via the `coach_voice` field on `/coach/chat`; CoachApiClient
+ *     forwards [readCoachVoice] on every request.
+ *   - Board style — persisted and read by [MainActivity.onCreate] /
+ *     [MainActivity.onResume]; assigns [ChessBoardView.boardStyle] which
+ *     branches the per-square render in `onDraw`.
  *   - Sound / notifications persist, but no audio system or
  *     notification channel exists yet to consume them.
  *
  * The settings UI is the right place to put these toggles ahead of the
  * features that read them, so users see one consistent surface.  The
  * downstream readers can opt-in via [readCoachVoice], [readBoardStyle],
- * [readSoundEnabled], [readNotificationsEnabled] when they're built.
+ * [readSoundEnabled], [readNotificationsEnabled].
  */
 class SettingsBottomSheet : BottomSheetDialogFragment() {
 
