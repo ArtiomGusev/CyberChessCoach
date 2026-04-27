@@ -68,3 +68,32 @@ CREATE TABLE IF NOT EXISTS explanations (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(game_id) REFERENCES games(id)
 );
+
+-- Per-player opening repertoire — backs AtriumOpenings.  Each row is
+-- one opening line the player has committed to studying.  GET
+-- /repertoire returns the list ordered by ordinal; if a player has
+-- nothing stored the endpoint returns the canonical 4-entry default
+-- repertoire so a fresh user sees a populated screen.
+--
+-- ordinal: stable display order (Roman numerals I–IV in the UI).
+-- mastery: 0.0–1.0 — how well the player knows this line.  Updated
+--          by future drill endpoints; for now seeded from the
+--          design defaults.
+-- is_active: exactly one row per player should be 1 (the line the
+--          "Drill active line" button targets).  Enforced by the
+--          set-active endpoint, not by a SQL constraint, so manual
+--          inserts won't crash if the invariant is briefly broken.
+CREATE TABLE IF NOT EXISTS repertoire (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id TEXT NOT NULL,
+    eco TEXT NOT NULL,
+    name TEXT NOT NULL,
+    line TEXT NOT NULL,
+    mastery REAL NOT NULL DEFAULT 0.0,
+    is_active INTEGER NOT NULL DEFAULT 0,
+    ordinal INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(player_id) REFERENCES players(id),
+    UNIQUE(player_id, eco)
+);

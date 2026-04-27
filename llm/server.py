@@ -73,6 +73,7 @@ from llm.seca.storage.repo import (
     create_game,
     get_active_game,
     get_or_create_auto_game,
+    list_repertoire,
     log_move,
     log_explanation,
     update_learning_score,
@@ -1235,6 +1236,72 @@ def active_game(request: Request, player=Depends(get_current_player)):
     if state is None:
         raise HTTPException(status_code=404, detail="no active game")
     return state
+
+
+# ---------------------------------------------------------------------------
+# Opening repertoire (backs AtriumOpenings)
+# ---------------------------------------------------------------------------
+
+
+# Canonical default repertoire — handed back when a player has nothing
+# stored so AtriumOpenings reads as a populated screen on first visit.
+# Mirrors OpeningsActivity.DEFAULT_REPERTOIRE 1-for-1 (drift here would
+# show the user different defaults on first vs. subsequent visits).
+DEFAULT_REPERTOIRE: list[dict] = [
+    {
+        "eco": "C84",
+        "name": "Ruy Lopez · Closed",
+        "line": "1.e4 e5 2.♘f3 ♘c6 3.♗b5 a6",
+        "mastery": 0.78,
+        "is_active": True,
+        "ordinal": 0,
+    },
+    {
+        "eco": "B22",
+        "name": "Sicilian · Alapin",
+        "line": "1.e4 c5 2.c3 ♘f6 3.e5 ♘d5",
+        "mastery": 0.55,
+        "is_active": False,
+        "ordinal": 1,
+    },
+    {
+        "eco": "D02",
+        "name": "Queen's Pawn · London",
+        "line": "1.d4 d5 2.♘f3 ♘f6 3.♗f4",
+        "mastery": 0.42,
+        "is_active": False,
+        "ordinal": 2,
+    },
+    {
+        "eco": "A04",
+        "name": "Réti opening",
+        "line": "1.♘f3 d5 2.c4 e6 3.g3",
+        "mastery": 0.18,
+        "is_active": False,
+        "ordinal": 3,
+    },
+]
+
+
+@app.get("/repertoire")
+@limiter.limit("30/minute")
+def get_repertoire(request: Request, player=Depends(get_current_player)):
+    """Return the authenticated player's opening repertoire.
+
+    Behaviour:
+      - When the player has saved entries, returns those (ordered by
+        ordinal ASC, id ASC for stable display).
+      - When the player has no saved entries, returns DEFAULT_REPERTOIRE
+        — a fresh user sees the canonical 4 lines without the screen
+        reading empty.  The defaults are NOT inserted on read to keep
+        the GET endpoint side-effect-free; a future POST /repertoire
+        endpoint can persist a copy when the user actually edits.
+
+    Response shape: {"openings": [...]} where each opening is
+    {eco, name, line, mastery, is_active, ordinal}.
+    """
+    saved = list_repertoire(str(player.id))
+    return {"openings": saved if saved else DEFAULT_REPERTOIRE}
 
 
 # ------------------------------------------------------------------

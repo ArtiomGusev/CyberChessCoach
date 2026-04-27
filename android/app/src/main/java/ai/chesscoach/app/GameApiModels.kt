@@ -167,6 +167,20 @@ data class ActiveGameResponse(
     val currentUciHistory: String,
 )
 
+/**
+ * One opening in the player's repertoire — wire shape of GET /repertoire.
+ * Mirrors OpeningsActivity.OpeningEntry but lives in the API layer so
+ * the client/UI conversion is explicit at the activity boundary.
+ */
+data class RepertoireOpeningDto(
+    val eco: String,
+    val name: String,
+    val line: String,
+    val mastery: Float,
+    val isActive: Boolean,
+    val ordinal: Int,
+)
+
 // ── /game/finish ─────────────────────────────────────────────────────────────
 
 data class GameFinishRequest(

@@ -106,6 +106,40 @@ def checkpoint_game(game_id: str, fen: str, uci_history: str) -> bool:
         conn.close()
 
 
+def list_repertoire(player_id: str) -> list[dict]:
+    """Return the player's opening repertoire ordered by `ordinal`,
+    or an empty list when nothing is stored.
+
+    Caller (server.py /repertoire) is responsible for substituting
+    the canonical defaults when the list is empty — the repo doesn't
+    invent rows for an unknown player.
+    """
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT eco, name, line, mastery, is_active, ordinal
+              FROM repertoire
+             WHERE player_id = ?
+             ORDER BY ordinal ASC, id ASC
+            """,
+            (player_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [
+        {
+            "eco": r[0],
+            "name": r[1],
+            "line": r[2],
+            "mastery": float(r[3]),
+            "is_active": bool(r[4]),
+            "ordinal": int(r[5]),
+        }
+        for r in rows
+    ]
+
+
 def get_active_game(player_id: str) -> dict | None:
     """Return the player's most recent unfinished game with a
     non-null checkpoint, or None if there isn't one.

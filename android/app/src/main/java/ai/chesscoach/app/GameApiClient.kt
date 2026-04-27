@@ -116,6 +116,21 @@ interface GameApiClient {
      */
     suspend fun getActiveGame(): ApiResult<ActiveGameResponse?> =
         ApiResult.HttpError(501)
+
+    /**
+     * GET /repertoire — fetch the player's opening repertoire.
+     *
+     * Backs the AtriumOpenings screen.  When the player has no saved
+     * entries the server returns a canonical 4-entry default list
+     * (so a fresh user sees a populated screen); the client doesn't
+     * distinguish saved-vs-default here, just renders what comes back.
+     *
+     * Bearer auth required.  Default implementation returns
+     * [ApiResult.HttpError(501)] so test fakes don't have to
+     * implement it.
+     */
+    suspend fun getRepertoire(): ApiResult<List<RepertoireOpeningDto>> =
+        ApiResult.HttpError(501)
 }
 
 // ── HTTP implementation ───────────────────────────────────────────────────────
@@ -387,6 +402,49 @@ class HttpGameApiClient(
                 ApiResult.NetworkError(e)
             }
         }
+
+    override suspend fun getRepertoire(): ApiResult<List<RepertoireOpeningDto>> =
+        withContext(Dispatchers.IO) {
+            try {
+                val conn = openGetConnection("$baseUrl/repertoire")
+                conn.setRequestProperty("X-Api-Key", apiKey)
+                tokenProvider?.invoke()?.let { token ->
+                    conn.setRequestProperty("Authorization", "Bearer $token")
+                }
+                val code = conn.responseCode
+                if (code == 200) {
+                    val text = conn.inputStream.bufferedReader().readText()
+                    consumeRefreshedToken(conn, tokenSink)
+                    ApiResult.Success(parseRepertoireResponse(text))
+                } else {
+                    ApiResult.HttpError(code)
+                }
+            } catch (e: SocketTimeoutException) {
+                ApiResult.Timeout
+            } catch (e: Exception) {
+                ApiResult.NetworkError(e)
+            }
+        }
+
+    private fun parseRepertoireResponse(body: String): List<RepertoireOpeningDto> {
+        val root = JSONObject(body)
+        val arr = root.optJSONArray("openings") ?: return emptyList()
+        return buildList {
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                add(
+                    RepertoireOpeningDto(
+                        eco = o.optString("eco", ""),
+                        name = o.optString("name", ""),
+                        line = o.optString("line", ""),
+                        mastery = o.optDouble("mastery", 0.0).toFloat(),
+                        isActive = o.optBoolean("is_active", false),
+                        ordinal = o.optInt("ordinal", i),
+                    ),
+                )
+            }
+        }
+    }
 
     private fun openConnection(urlStr: String): HttpURLConnection =
         (URL(urlStr).openConnection() as HttpURLConnection).apply {

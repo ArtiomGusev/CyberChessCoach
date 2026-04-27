@@ -41,7 +41,7 @@ import unittest
 # Tables that schema.sql legitimately owns and that no SQLAlchemy model
 # may shadow.  Update this list together with the schema.sql header
 # comment if the boundary is ever moved.
-EXPECTED_RAW_TABLES = frozenset({"games", "moves", "explanations"})
+EXPECTED_RAW_TABLES = frozenset({"games", "moves", "explanations", "repertoire"})
 
 
 def _read_schema_sql() -> str:

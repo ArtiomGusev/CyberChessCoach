@@ -488,4 +488,63 @@ class GameApiClientIntegrationTest {
         assertTrue("expected HttpError, got $result", result is ApiResult.HttpError)
         assertEquals(500, (result as ApiResult.HttpError).code)
     }
+
+    // ---------------------------------------------------------------------------
+    // GET /repertoire — opening list backing AtriumOpenings
+    // ---------------------------------------------------------------------------
+
+    @Test
+    fun `INT_REPERTOIRE_PARSED - 200 returns Success with parsed openings`() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """
+                {
+                  "openings": [
+                    {"eco":"C84","name":"Ruy Lopez","line":"1.e4 e5","mastery":0.78,"is_active":true,"ordinal":0},
+                    {"eco":"B22","name":"Sicilian Alapin","line":"1.e4 c5","mastery":0.55,"is_active":false,"ordinal":1}
+                  ]
+                }
+                """.trimIndent(),
+            ),
+        )
+        val result = client(token = "tok").getRepertoire()
+        assertTrue("expected Success, got $result", result is ApiResult.Success<*>)
+        @Suppress("UNCHECKED_CAST")
+        val openings = (result as ApiResult.Success<*>).data as List<RepertoireOpeningDto>
+        assertEquals(2, openings.size)
+        assertEquals("C84", openings[0].eco)
+        assertEquals(0.78f, openings[0].mastery, 0.001f)
+        assertTrue(openings[0].isActive)
+        assertFalse(openings[1].isActive)
+        assertEquals(1, openings[1].ordinal)
+    }
+
+    @Test
+    fun `INT_REPERTOIRE_BEARER - Authorization Bearer sent`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"openings":[]}"""))
+        client(token = "bearer-rep-tok").getRepertoire()
+        val req = server.takeRequest(10, TimeUnit.SECONDS)!!
+        assertEquals("Bearer bearer-rep-tok", req.getHeader("Authorization"))
+        assertEquals("/repertoire", req.path)
+    }
+
+    @Test
+    fun `INT_REPERTOIRE_EMPTY_OPENINGS - empty list parses cleanly`() = runBlocking {
+        // Defensive: server contract says it never returns empty (it
+        // substitutes defaults), but client must not crash if it ever
+        // does — emptyList() is the right floor, NOT NullPointerException.
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"openings":[]}"""))
+        val result = client(token = "tok").getRepertoire()
+        assertTrue(result is ApiResult.Success<*>)
+        @Suppress("UNCHECKED_CAST")
+        assertTrue(((result as ApiResult.Success<*>).data as List<*>).isEmpty())
+    }
+
+    @Test
+    fun `INT_REPERTOIRE_HTTP_ERROR - non-200 maps to HttpError`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(500).setBody("""{"detail":"oops"}"""))
+        val result = client(token = "tok").getRepertoire()
+        assertTrue("expected HttpError, got $result", result is ApiResult.HttpError)
+        assertEquals(500, (result as ApiResult.HttpError).code)
+    }
 }

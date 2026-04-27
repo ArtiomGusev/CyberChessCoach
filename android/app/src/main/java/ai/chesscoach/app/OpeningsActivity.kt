@@ -1,6 +1,7 @@
 package ai.chesscoach.app
 
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -10,7 +11,9 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 /**
  * Cereveon · Atrium · Openings · Repertoire (handoff screen #7).
@@ -35,16 +38,36 @@ import kotlin.math.roundToInt
  */
 class OpeningsActivity : AppCompatActivity() {
 
+    /** Currently-rendered list — DEFAULT_REPERTOIRE until /repertoire returns. */
+    private var currentRepertoire: List<OpeningEntry> = DEFAULT_REPERTOIRE
+
+    private val authRepo: AuthRepository by lazy {
+        AuthRepository(EncryptedTokenStorage(this))
+    }
+
+    private val gameApiClient: GameApiClient by lazy {
+        HttpGameApiClient(
+            baseUrl = BuildConfig.COACH_API_BASE,
+            apiKey = BuildConfig.COACH_API_KEY,
+            tokenProvider = { authRepo.getToken() },
+            tokenSink = { newToken -> authRepo.saveToken(newToken) },
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_openings)
 
         val container = findViewById<LinearLayout>(R.id.openingsCardContainer)
+        // Render the canonical defaults synchronously so the screen
+        // never reads empty during the network round-trip; the fetch
+        // below replaces the list when the server response arrives.
         renderRepertoire(container, DEFAULT_REPERTOIRE)
         renderStats(DEFAULT_REPERTOIRE)
+        fetchRepertoire(container)
 
         findViewById<Button>(R.id.btnOpeningsDrill).setOnClickListener {
-            val active = DEFAULT_REPERTOIRE.firstOrNull { it.isActive }
+            val active = currentRepertoire.firstOrNull { it.isActive }
             val label = active?.let { "${it.eco} · ${it.name}" } ?: "your active line"
             Toast.makeText(
                 this,
@@ -54,6 +77,46 @@ class OpeningsActivity : AppCompatActivity() {
         }
         findViewById<Button>(R.id.btnOpeningsAdd).setOnClickListener {
             Toast.makeText(this, "Add opening — coming soon", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /**
+     * Fetch the player's repertoire from GET /repertoire and re-render.
+     * On failure (transport error / non-200) the activity stays on the
+     * synchronously-rendered DEFAULT_REPERTOIRE — the user sees a
+     * populated screen either way.
+     */
+    private fun fetchRepertoire(container: LinearLayout) {
+        lifecycleScope.launch {
+            when (val r = gameApiClient.getRepertoire()) {
+                is ApiResult.Success -> {
+                    val openings = r.data
+                    if (openings.isEmpty()) {
+                        // Server returned an empty list (shouldn't
+                        // happen — the endpoint substitutes defaults
+                        // server-side — but defensive against contract
+                        // drift).  Keep the local defaults.
+                        return@launch
+                    }
+                    val mapped = openings
+                        .sortedBy { it.ordinal }
+                        .map { dto ->
+                            OpeningEntry(
+                                eco = dto.eco,
+                                name = dto.name,
+                                line = dto.line,
+                                mastery = dto.mastery,
+                                isActive = dto.isActive,
+                            )
+                        }
+                    currentRepertoire = mapped
+                    renderRepertoire(container, mapped)
+                    renderStats(mapped)
+                }
+                is ApiResult.HttpError -> Log.d("OPENINGS", "GET /repertoire HTTP ${r.code}")
+                is ApiResult.NetworkError -> Log.d("OPENINGS", "network error", r.cause)
+                ApiResult.Timeout -> Log.d("OPENINGS", "timed out")
+            }
         }
     }
 
