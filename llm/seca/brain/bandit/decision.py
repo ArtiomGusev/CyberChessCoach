@@ -30,11 +30,16 @@ v1 adaptation.
 
 Status
 ------
-Substrate landed; not yet wired into the live ``/game/finish``
-request path.  PostGameCoachController still picks actions
-deterministically; this module's ``select_action`` is callable from
-tests and ready for an integration commit that swaps it in behind a
-feature flag.
+Wired into the live ``/game/finish`` path via
+``llm/seca/events/router._apply_bandit_decision``.  Default mode is
+warm-up shadow learning: ``record_observation`` runs every game so
+the LinUCB weights update from real reward signals, while the user
+still sees the deterministic ``PostGameCoachController`` action.
+When ``SECA_USE_BANDIT_COACH=1`` is set, ``select_action`` becomes
+the user-visible action source and the bandit's UCB1 pick replaces
+the controller's.  The integration is warm-up-then-flip rather than
+a hard cutover, so the policy has been calibrated against real games
+by the time anyone enables it.
 """
 
 from __future__ import annotations

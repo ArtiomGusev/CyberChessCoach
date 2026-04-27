@@ -89,19 +89,22 @@ defers others.  Mapping each step against the canonical algorithm:
 | Step | What v1 prescribes | What this codebase ships |
 |------|-------------------|--------------------------|
 | **1. Input** | State + user profile (rating, confidence, embedding) | **Live.**  `seca/auth/models.Player` carries `rating`, `confidence`, `skill_vector_json`, `player_embedding`.  `seca/brain/bandit/context_builder.build_context_vector()` assembles a 6-element feature vector from rating + confidence + accuracy + weaknesses. |
-| **2. Action selection** | Contextual bandit over a domain action space | **Deferred.**  Live runtime uses a *deterministic* `PostGameCoachController` (rule-based action selection from a small fixed action set), not a bandit.  Per CLAUDE.md rule #3 the project chose to ship the bandit-driven decision step only after the deterministic baseline is well understood; the bandit code under `seca/brain/bandit/contextual_bandit.py` exists but is dormant. |
+| **2. Action selection** | Contextual bandit over a domain action space | **Live in shadow-warm-up mode by default; user-visible when `SECA_USE_BANDIT_COACH=1`.**  The LinUCB decision head in `seca/brain/bandit/decision.py` is wired into `/game/finish` via `seca/events/router._apply_bandit_decision`.  By default its `record_observation` runs every game (LinUCB weights warm up from real reward signals) but the user sees the deterministic `PostGameCoachController`'s pick.  When the env flag is set, `select_action`'s UCB1 choice replaces the controller's choice in the response.  The older pickle-based substrate at `seca/brain/bandit/contextual_bandit.py` remains dormant and is kept only for regression tests. |
 | **3. Output** | Action + context → user-facing response | **Live.**  `seca/coach/executor.CoachExecutor` renders the chosen action into a `coach_content` payload returned by `/game/finish`. |
 | **4. Feedback signal** | Numerical reward from the interaction | **Live.**  Per-game `accuracy`, `weaknesses`, and the rating delta from `SkillUpdater` together form the reward signal logged to `bandit_experiences`. |
-| **5. Online update** | Bandit + auxiliary refresh; no retraining | **Live (auxiliary side).**  `seca/skills/updater.SkillUpdater` refreshes rating, confidence, skill vector, and player embedding (`PlayerEmbeddingEncoder`) per game.  `seca/brain/bandit/experience_store.ExperienceStore` writes the (context, action, reward) tuple for the bandit.  **Bandit weight update itself: dormant** — the live system logs experiences but doesn't fit a policy from them. |
+| **5. Online update** | Bandit + auxiliary refresh; no retraining | **Live, including the bandit weights.**  `seca/skills/updater.SkillUpdater` refreshes rating, confidence, skill vector, and player embedding (`PlayerEmbeddingEncoder`) per game.  `seca/brain/bandit/decision.record_observation` updates the LinUCB sufficient statistics (closed form `A ← A + xxᵀ`, `b ← b + r·x` — no gradient step, no optimiser state) per game.  `seca/brain/bandit/experience_store.ExperienceStore` logs the same (context, action, reward) tuple to the `bandit_experiences` table for offline analysis. |
 | **6. Loop repeats** | Next interaction picks up the refreshed profile | **Live.**  Subsequent `/game/finish` calls read the updated player row; `/auth/me` returns the current state to the client. |
 
-In short: this codebase ships the **half of the loop that doesn't
-need a learned policy** (state assembly, deterministic action,
-output rendering, reward extraction, lightweight profile refresh,
-experience logging) and defers the **bandit-as-decision-maker**
-half.  The framework calls this "SECA v1 with deferred decision
-layer" — a valid configuration, since the framework's invariants
-hold either way.
+In short: every step of the loop is implemented.  The bandit-as-
+decision-maker is in **shadow-warm-up** mode by default — its LinUCB
+weights update from real games but the user sees the deterministic
+controller's action — and becomes user-visible when
+`SECA_USE_BANDIT_COACH=1` is set.  The warm-up-then-flip design
+means that by the time someone enables the bandit's selection in
+production, the policy has already been calibrated against real
+reward signals.  Both modes sit inside SECA v1's "lightweight
+decision-layer adaptation" envelope (closed-form weight update, no
+gradient descent over a learned model).
 
 There is one further self-imposed constraint specific to this
 project: **no continuous-feedback retraining of any neural model**,
@@ -124,10 +127,10 @@ request path:
 | **storage** | `seca/storage/` | Raw-sqlite tables for `games`, `moves`, `explanations`, `repertoire`. |
 | **skills** | `seca/skills/` | `SkillUpdater` — translates a finished GameEvent into rating / confidence / skill-vector / embedding deltas (step 5 of the loop, auxiliary side). |
 | **adaptation** | `seca/adaptation/` | Per-session ELO drift for skill-assessment games — fixed quality-delta table, in-memory state per player.  Deterministic. |
-| **coach** | `seca/coach/` | `PostGameCoachController` (live action selection — currently rule-based, not bandit-driven) + `CoachExecutor` (renders the action). |
+| **coach** | `seca/coach/` | `PostGameCoachController` (deterministic baseline action — user-visible by default; overridden by `bandit/decision` when `SECA_USE_BANDIT_COACH=1`) + `CoachExecutor` (renders the chosen action). |
 | **analytics** | `seca/analytics/` | `AnalyticsLogger` (event log) + training recommendations derived from accumulated weakness counts. |
 | **analysis** | `seca/analysis/` | `HistoricalAnalysisPipeline` — deterministic per-player roll-up over recent games.  Read-only. |
-| **brain** (allowlisted only) | `seca/brain/bandit/{context_builder,experience_store}` | The two helpers participate in the loop today.  Everything else under `brain/` is dormant. |
+| **brain** (allowlisted only) | `seca/brain/bandit/{context_builder,experience_store,decision}` | These three modules participate in the loop today: `context_builder` assembles the feature vector, `decision` is the LinUCB head (warm-up by default, selection behind `SECA_USE_BANDIT_COACH`), `experience_store` logs each tuple for offline analysis.  Everything else under `brain/` is dormant. |
 | **learning** (allowlisted only) | `seca/learning/player_embedding` | Embedding encoder + JSON serialisation, used by SkillUpdater. |
 | **api** | `seca/api/` | Routers + middleware (X-API-Key, shared rate limiter). |
 | **safety** | `seca/safety/` | Freeze guard — single runtime enforcement of the no-retraining rule. |
@@ -140,16 +143,19 @@ request path:
 Several `seca/` directories are *not* in the live path: `world_model/`,
 `world/`, `henm/`, `closed_loop/`, `optim/`, `evolution/`, `policy/`,
 `memory/`, plus most of `brain/` (everything not in the allowlist).
-These hold research code for the **deferred decision layer** + the
+These hold research code for **earlier substrates of the decision
+layer** (now superseded by `bandit/decision.py`) plus
 **not-permitted-in-v1 self-improving variants** beyond the framework's
 constraints:
 
 - `seca/world_model/model.SkillDynamicsModel` — a 2-layer MLP that
   predicts `skill_t+1` from `(skill, action)`.  Would be the dynamics
   model for a counterfactual planner.
-- `seca/brain/bandit/contextual_bandit` — the bandit decision step
-  (step 2 in the loop above), dormant pending the deterministic
-  baseline being well understood.
+- `seca/brain/bandit/contextual_bandit` — an earlier pickle-backed
+  LinUCB substrate that pre-dates the SQLite-backed
+  `bandit/decision.py`.  Not on the freeze allowlist; referenced
+  only by `test_bug_regressions.py` for legacy-class regression
+  coverage.
 - `seca/brain/bandit/online_update`, `seca/learning/online_learner` —
   the gradient steps that would refit the bandit / embedding
   encoder online.  These are what the framework's "no gradient
@@ -174,8 +180,11 @@ Three independent checks:
 
 1. **Brain-tree allowlist.**  Anything under `llm.seca.brain.*` not
    on the allowlist is forbidden.  Allowlist is intentionally tiny:
-   schema modules + the two helpers (`context_builder`,
-   `experience_store`) the live loop actually uses.
+   schema modules + the three modules (`context_builder`,
+   `experience_store`, `decision`) the live loop actually uses.
+   `decision` is permitted on the strength of its closed-form
+   LinUCB update (no gradient step) — see the inline comment in
+   `freeze.py:ALLOWED_BRAIN_MODULES` for the policy boundary.
 2. **Forbidden module-name parts.**  Substring matches against names
    used by historical adaptive components (e.g. `brain.rl`,
    `brain.bandit.online`).
@@ -198,9 +207,11 @@ intentional violations.
 
 What the guard *doesn't* block: the lightweight updates v1 permits.
 `SkillUpdater`'s rating / confidence / embedding refresh runs every
-game; the bandit experience store writes every game.  The framework
-v1 explicitly distinguishes "incremental decision-layer update"
-(allowed) from "gradient descent on a learned model" (not allowed),
+game; `bandit/decision.record_observation` updates the LinUCB
+sufficient statistics (`A`, `b`) every game; the bandit experience
+store writes every game.  The framework v1 explicitly distinguishes
+"incremental decision-layer update" (allowed) from "gradient descent
+on a learned model" (not allowed),
 and the guard's keyword list is calibrated against the latter.
 
 ---
