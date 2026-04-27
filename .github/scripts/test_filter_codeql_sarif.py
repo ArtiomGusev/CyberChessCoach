@@ -147,6 +147,117 @@ class TestSarifFilter(unittest.TestCase):
             "The hashing.py weak-crypto-hash alert was kept — filter is broken.",
         )
 
+    def test_drops_renamed_query_id(self):
+        """A future CodeQL release could rename
+        py/weak-cryptographic-hash to py/weak-sensitive-data-hashing or
+        the older py/insecure-cryptographic-hash without changing the
+        underlying check.  The filter must suppress all known IDs for
+        the same vulnerability class on the same file — otherwise a
+        rename silently reopens alert #3."""
+        for rule_id in (
+            "py/weak-sensitive-data-hashing",
+            "py/insecure-cryptographic-hash",
+        ):
+            with self.subTest(rule_id=rule_id):
+                sarif = _wrap_run([
+                    _realistic_codeql_alert(rule_id, "llm/seca/auth/hashing.py"),
+                ])
+                out, _, rc = self._run_filter(sarif)
+                self.assertEqual(rc, 0)
+                self.assertEqual(
+                    len(out["runs"][0]["results"]), 0,
+                    f"Filter did not drop renamed rule id {rule_id}",
+                )
+
+    def test_drops_when_ruleid_only_in_rule_object(self):
+        """SARIF allows result.rule.id instead of result.ruleId.  A
+        previous filter version checked only the flat field and missed
+        alerts emitted under the embedded shape — that is the exact
+        mode in which alert #3 has reopened in past scans."""
+        sarif = _wrap_run([{
+            # Note: NO 'ruleId' top-level field.
+            "rule": {"id": "py/weak-cryptographic-hash", "index": 0},
+            "message": {"text": "Weak hash."},
+            "locations": [{
+                "physicalLocation": {
+                    "artifactLocation": {"uri": "llm/seca/auth/hashing.py", "uriBaseId": "%SRCROOT%"},
+                    "region": {"startLine": 43, "startColumn": 12},
+                }
+            }],
+        }])
+        out, _, rc = self._run_filter(sarif)
+        self.assertEqual(rc, 0)
+        self.assertEqual(
+            len(out["runs"][0]["results"]), 0,
+            "Filter ignored embedded rule.id — alert leaks through.",
+        )
+
+    def test_drops_when_ruleid_only_via_index(self):
+        """SARIF can carry just ruleIndex pointing into
+        runs[].tool.driver.rules[].  CodeQL's modern emitter sometimes
+        uses this shape; the filter must resolve through the driver's
+        rules array."""
+        sarif = {
+            "version": "2.1.0",
+            "runs": [{
+                "tool": {
+                    "driver": {
+                        "name": "CodeQL",
+                        "rules": [
+                            {"id": "py/weak-cryptographic-hash"},
+                            {"id": "py/sql-injection"},
+                        ],
+                    },
+                },
+                "results": [{
+                    # Only ruleIndex; no ruleId, no rule.id.
+                    "ruleIndex": 0,
+                    "message": {"text": "Weak hash."},
+                    "locations": [{
+                        "physicalLocation": {
+                            "artifactLocation": {"uri": "llm/seca/auth/hashing.py", "uriBaseId": "%SRCROOT%"},
+                            "region": {"startLine": 43, "startColumn": 12},
+                        }
+                    }],
+                }],
+            }],
+        }
+        out, _, rc = self._run_filter(sarif)
+        self.assertEqual(rc, 0)
+        self.assertEqual(
+            len(out["runs"][0]["results"]), 0,
+            "Filter ignored ruleIndex — alert leaks through when CodeQL "
+            "emits results referencing the driver rules array.",
+        )
+
+    def test_handles_malformed_rule_index_gracefully(self):
+        """A bogus ruleIndex (out of range, missing rules array,
+        non-int) must not crash the filter — just fall back to the
+        other lookups and process normally."""
+        sarif = {
+            "version": "2.1.0",
+            "runs": [{
+                "tool": {"driver": {"name": "CodeQL"}},  # no rules array
+                "results": [{
+                    "ruleId": "py/weak-cryptographic-hash",
+                    "ruleIndex": 99,  # out-of-range; should be ignored
+                    "message": {"text": "Weak hash."},
+                    "locations": [{
+                        "physicalLocation": {
+                            "artifactLocation": {"uri": "llm/seca/auth/hashing.py", "uriBaseId": "%SRCROOT%"},
+                            "region": {"startLine": 43},
+                        }
+                    }],
+                }],
+            }],
+        }
+        out, _, rc = self._run_filter(sarif)
+        self.assertEqual(rc, 0)
+        self.assertEqual(
+            len(out["runs"][0]["results"]), 0,
+            "Malformed ruleIndex broke fallback to flat ruleId lookup.",
+        )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
