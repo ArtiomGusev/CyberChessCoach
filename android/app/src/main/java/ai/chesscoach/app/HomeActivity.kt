@@ -68,6 +68,7 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var resumeBlock: View
     private lateinit var resumeTitle: TextView
     private lateinit var resumeSub: TextView
+    private lateinit var syncIndicator: View
 
     private val authRepo: AuthRepository by lazy {
         AuthRepository(EncryptedTokenStorage(this))
@@ -104,16 +105,23 @@ class HomeActivity : AppCompatActivity() {
 
         setContentView(R.layout.activity_home)
 
-        avatar       = findViewById(R.id.homeAvatar)
-        dateKicker   = findViewById(R.id.homeDateKicker)
-        resumeBlock  = findViewById(R.id.homeResumeBlock)
-        resumeTitle  = findViewById(R.id.homeResumeTitle)
-        resumeSub    = findViewById(R.id.homeResumeSub)
+        avatar        = findViewById(R.id.homeAvatar)
+        dateKicker    = findViewById(R.id.homeDateKicker)
+        resumeBlock   = findViewById(R.id.homeResumeBlock)
+        resumeTitle   = findViewById(R.id.homeResumeTitle)
+        resumeSub     = findViewById(R.id.homeResumeSub)
+        syncIndicator = findViewById(R.id.homeSyncIndicator)
 
         val playerId = (authRepo.authState() as? AuthState.Authenticated)?.playerId
         avatar.text = initialsFor(playerId)
 
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+        // Surface any pending offline /game/finish payload BEFORE
+        // firing the retry so the user sees the indicator even if
+        // the network is fast enough that the retry succeeds in a
+        // few hundred ms.
+        refreshSyncIndicator(prefs)
 
         // If a previous /game/finish failed offline (timeout / 5xx /
         // network), the payload is in prefs.  Try again from here in
@@ -130,6 +138,8 @@ class HomeActivity : AppCompatActivity() {
                     "Synced your offline game",
                     Toast.LENGTH_SHORT,
                 ).show()
+                // Slot was cleared inside the helper; reflect it here.
+                refreshSyncIndicator(prefs)
             },
             onSessionExpired = {
                 // Token lapsed between save and retry — kick back to
@@ -199,6 +209,27 @@ class HomeActivity : AppCompatActivity() {
             intent.putExtra(MainActivity.EXTRA_OPEN_SHEET, sheet)
         }
         startActivity(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // MainActivity may have synced the pending payload while Home
+        // was off-screen.  Re-evaluate so the indicator hides without
+        // requiring a full Home re-enter.  Cheap: a single
+        // SharedPreferences.contains() lookup.
+        if (::syncIndicator.isInitialized) {
+            refreshSyncIndicator(getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE))
+        }
+    }
+
+    /**
+     * Show the amber pending-sync row iff there's an unsynced
+     * /game/finish payload in [prefs].  Called from onCreate, from
+     * the post-retry success callback, and from onResume.
+     */
+    private fun refreshSyncIndicator(prefs: SharedPreferences) {
+        val pending = prefs.contains(PendingGameFinish.PREF_PENDING_FINISH_PAYLOAD)
+        syncIndicator.visibility = if (pending) View.VISIBLE else View.GONE
     }
 
     /**

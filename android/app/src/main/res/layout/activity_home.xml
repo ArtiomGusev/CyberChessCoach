@@ -96,6 +96,44 @@
                 android:text="—"
                 tools:text="Tuesday · Day 047" />
 
+            <!--
+                Pending-sync indicator — surfaces an unsynced
+                /game/finish payload that's waiting in prefs.  Amber to
+                read as "attention needed" without escalating to error
+                red.  Hidden by default; shown by HomeActivity when
+                PendingGameFinish.PREF_PENDING_FINISH_PAYLOAD is set,
+                hidden after a successful background retry.
+            -->
+            <LinearLayout
+                android:id="@+id/homeSyncIndicator"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/atrium_space_4"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:visibility="gone"
+                tools:visibility="visible">
+
+                <View
+                    android:layout_width="6dp"
+                    android:layout_height="6dp"
+                    android:layout_marginEnd="@dimen/atrium_space_8"
+                    android:background="@drawable/rail_dot_amber" />
+
+                <TextView
+                    android:id="@+id/homeSyncIndicatorText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/jetbrains_mono"
+                    android:textSize="9sp"
+                    android:letterSpacing="0.222"
+                    android:textAllCaps="true"
+                    android:textColor="@color/atrium_accent_amber"
+                    android:text="1 game pending sync"
+                    tools:text="1 game pending sync" />
+
+            </LinearLayout>
+
             <!-- Italic display title. -->
             <TextView
                 android:layout_width="wrap_content"

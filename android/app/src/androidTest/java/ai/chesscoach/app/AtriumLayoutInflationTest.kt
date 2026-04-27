@@ -81,6 +81,8 @@ class AtriumLayoutInflationTest {
         val v = inflate(R.layout.activity_home)
         assertNotNull(v.findViewById<View>(R.id.homeAvatar))
         assertNotNull(v.findViewById<View>(R.id.homeDateKicker))
+        assertNotNull(v.findViewById<View>(R.id.homeSyncIndicator))
+        assertNotNull(v.findViewById<View>(R.id.homeSyncIndicatorText))
         assertNotNull(v.findViewById<View>(R.id.homeResumeBlock))
         assertNotNull(v.findViewById<View>(R.id.homeRowNewGame))
         assertNotNull(v.findViewById<View>(R.id.homeRowLessons))
