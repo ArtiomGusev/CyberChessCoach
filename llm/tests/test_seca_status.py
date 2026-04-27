@@ -56,6 +56,30 @@ class TestSafeModeConstant:
         # Must not raise
         assert_safe()
 
+    def test_safe_mode_default_when_env_unset(self):
+        """SAFE_MODE_DEFAULT_TRUE: with SECA_SAFE_MODE unset, the resolver
+        returns True.  Pins the safe-by-default contract — production runs
+        without setting the env var, and SAFE_MODE must still be True."""
+        import os
+        from unittest.mock import patch
+        from llm.seca.runtime import safe_mode as safe_mode_module
+
+        env = {k: v for k, v in os.environ.items() if k != "SECA_SAFE_MODE"}
+        with patch.dict(os.environ, env, clear=True):
+            assert safe_mode_module._resolve_safe_mode() is True
+
+    def test_safe_mode_env_var_can_disable_in_dev(self):
+        """SAFE_MODE_ENV_DRIVEN: SECA_SAFE_MODE=false resolves to False so
+        developers can exercise the dormant `if not SAFE_MODE:` branches
+        under test.  The freeze guard separately enforces SAFE_MODE=True
+        in production (see test_safety_freeze.FreezeSafeModeLockTest)."""
+        import os
+        from unittest.mock import patch
+        from llm.seca.runtime import safe_mode as safe_mode_module
+
+        with patch.dict(os.environ, {"SECA_SAFE_MODE": "false"}):
+            assert safe_mode_module._resolve_safe_mode() is False
+
 
 # ---------------------------------------------------------------------------
 # Tier 2 — /seca/status endpoint shape (minimal stub, no server.py import)

@@ -194,15 +194,24 @@ Three independent checks:
    in the seca tree even if a module is renamed around the
    allowlist.
 
-Plus two defensive guards:
+Plus three defensive guards:
 
 - `assert_safe_world_model(world_model)` — only the `SafeWorldModel`
   stub (a no-op `predict_next` that returns the input state
   unchanged) is allowed to be the live world model.
+- `assert_safe_mode_locked()` — `SAFE_MODE` (in
+  `seca/runtime/safe_mode.py`) is resolved from the `SECA_SAFE_MODE`
+  env var with a default of `True`.  At startup, `SAFE_MODE=False`
+  with `SECA_ENV=prod` is a hard crash; with `SECA_ENV != prod` it
+  is allowed but logged as a warning so the dev configuration cannot
+  be mistaken for normal operation.  The guard is needed because
+  the dormant adaptive code paths gated by `if not SAFE_MODE:` use
+  *lazy* imports inside route handlers — they don't show up in the
+  startup module scan.
 - `assert_no_background_tasks()` — `SECA_ENABLE_ONLINE_LEARNING=1`
   is treated as a deliberate bypass attempt and crashes the process.
 
-`test_safety_freeze.py` (16 cases) pins every check against
+`test_safety_freeze.py` (24 cases) pins every check against
 intentional violations.
 
 What the guard *doesn't* block: the lightweight updates v1 permits.

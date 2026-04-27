@@ -269,6 +269,110 @@ class FreezeBackgroundTasksTest(unittest.TestCase):
                 freeze._assert_no_background_tasks()  # no raise
 
 
+class FreezeSafeModeLockTest(unittest.TestCase):
+    """Layer 3c: SAFE_MODE must be True at startup, with the prod/dev
+    branching the audit promised.
+
+    The inner ``from llm.seca.runtime.safe_mode import SAFE_MODE`` inside
+    ``_assert_safe_mode_locked`` resolves against the live module
+    object, so ``patch.object(safe_mode_module, "SAFE_MODE", ...)``
+    works for these tests without needing to reload the module.
+    """
+
+    def test_safe_mode_true_passes_in_any_env(self):
+        """Default safe_mode=True is a no-op, regardless of SECA_ENV."""
+        from llm.seca.runtime import safe_mode as safe_mode_module
+
+        for env_value in ("prod", "dev", "staging", ""):
+            with patch.object(safe_mode_module, "SAFE_MODE", True):
+                with patch.dict(os.environ, {"SECA_ENV": env_value}):
+                    with patch.object(freeze, "_crash", _raise):
+                        freeze._assert_safe_mode_locked()  # no raise
+
+    def test_safe_mode_false_in_prod_crashes(self):
+        """SAFE_MODE=False with SECA_ENV=prod is a hard production stop."""
+        from llm.seca.runtime import safe_mode as safe_mode_module
+
+        with patch.object(safe_mode_module, "SAFE_MODE", False):
+            with patch.dict(os.environ, {"SECA_ENV": "prod"}):
+                with patch.object(freeze, "_crash", _raise):
+                    with self.assertRaises(_Crash) as cm:
+                        freeze._assert_safe_mode_locked()
+                    self.assertIn("SAFE_MODE", str(cm.exception))
+                    self.assertIn("prod", str(cm.exception))
+
+    def test_safe_mode_false_in_prod_case_insensitive(self):
+        """SECA_ENV value is normalised — 'PROD' / 'Prod' must trip the
+        production crash too, since deployment configs vary."""
+        from llm.seca.runtime import safe_mode as safe_mode_module
+
+        for env_value in ("PROD", "Prod", "  prod  "):
+            with patch.object(safe_mode_module, "SAFE_MODE", False):
+                with patch.dict(os.environ, {"SECA_ENV": env_value}):
+                    with patch.object(freeze, "_crash", _raise):
+                        with self.assertRaises(_Crash):
+                            freeze._assert_safe_mode_locked()
+
+    def test_safe_mode_false_in_dev_warns_no_crash(self):
+        """SAFE_MODE=False with SECA_ENV=dev is allowed (with a logged
+        warning) so dev tests of the dormant code paths still work."""
+        from llm.seca.runtime import safe_mode as safe_mode_module
+
+        with patch.object(safe_mode_module, "SAFE_MODE", False):
+            with patch.dict(os.environ, {"SECA_ENV": "dev"}):
+                with patch.object(freeze, "_crash", _raise):
+                    with self.assertLogs(freeze.logger, level="WARNING") as cm:
+                        freeze._assert_safe_mode_locked()
+                    self.assertTrue(
+                        any("SAFE_MODE is False" in line for line in cm.output),
+                        f"expected a SAFE_MODE=False warning, got {cm.output!r}",
+                    )
+
+    def test_safe_mode_false_with_unset_env_treated_as_dev(self):
+        """SECA_ENV unset must default to dev — no crash, just a warning.
+        (The startup-time SECA_API_KEY check in server.py is the
+        authoritative guard against running unconfigured in prod.)"""
+        from llm.seca.runtime import safe_mode as safe_mode_module
+
+        env = {k: v for k, v in os.environ.items() if k != "SECA_ENV"}
+        with patch.object(safe_mode_module, "SAFE_MODE", False):
+            with patch.dict(os.environ, env, clear=True):
+                with patch.object(freeze, "_crash", _raise):
+                    with self.assertLogs(freeze.logger, level="WARNING"):
+                        freeze._assert_safe_mode_locked()  # no raise
+
+    def test_resolve_safe_mode_default_true(self):
+        """Module-level resolution: no env var → True."""
+        from llm.seca.runtime import safe_mode as safe_mode_module
+
+        env = {k: v for k, v in os.environ.items() if k != "SECA_SAFE_MODE"}
+        with patch.dict(os.environ, env, clear=True):
+            self.assertTrue(safe_mode_module._resolve_safe_mode())
+
+    def test_resolve_safe_mode_false_values(self):
+        """Module-level resolution: 'false' / '0' / 'no' (any case) → False."""
+        from llm.seca.runtime import safe_mode as safe_mode_module
+
+        for value in ("false", "FALSE", "False", "0", "no", "NO", "  false  "):
+            with patch.dict(os.environ, {"SECA_SAFE_MODE": value}):
+                self.assertFalse(
+                    safe_mode_module._resolve_safe_mode(),
+                    f"value {value!r} must resolve to False",
+                )
+
+    def test_resolve_safe_mode_unrecognised_defaults_to_true(self):
+        """Module-level resolution: typos / empty / anything-else → True
+        (failure mode of a misconfigured env var is 'stay safe')."""
+        from llm.seca.runtime import safe_mode as safe_mode_module
+
+        for value in ("", "true", "1", "yes", "falce", "off", "disabled"):
+            with patch.dict(os.environ, {"SECA_SAFE_MODE": value}):
+                self.assertTrue(
+                    safe_mode_module._resolve_safe_mode(),
+                    f"unrecognised value {value!r} must default to True",
+                )
+
+
 # ---------------------------------------------------------------------------
 # End-to-end lifespan integration
 # ---------------------------------------------------------------------------

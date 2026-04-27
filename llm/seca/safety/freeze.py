@@ -178,6 +178,48 @@ def _assert_no_background_tasks():
         _crash("Online learning explicitly enabled via env")
 
 
+def _assert_safe_mode_locked():
+    """Validate that ``SAFE_MODE`` is True at startup, or that the
+    process is in a non-prod environment where a False value is a
+    deliberate dev opt-in.
+
+    The bool lives in ``seca.runtime.safe_mode`` and gates the dormant
+    adaptive code paths in ``events/router.py``, ``skills/trainer.py``,
+    and ``learning/trainer.py``.  Those imports are lazy — they happen
+    inside ``if not SAFE_MODE:`` blocks at request time, NOT at module
+    import — so the startup ``_scan_loaded_modules`` pass cannot see
+    them.  This guard exists to catch the underlying flag flip itself
+    rather than waiting for the first request to import a forbidden
+    module.
+
+    Resolution:
+    - ``SAFE_MODE=True`` (default, any env): no-op.
+    - ``SAFE_MODE=False`` with ``SECA_ENV=prod``: hard crash.
+    - ``SAFE_MODE=False`` with ``SECA_ENV != prod``: warning, no crash —
+      developers may legitimately need to exercise the dormant paths
+      under test, but the warning makes the configuration audible.
+    """
+    from llm.seca.runtime.safe_mode import SAFE_MODE
+
+    if SAFE_MODE:
+        return
+
+    env = os.getenv("SECA_ENV", "dev").strip().lower()
+    if env == "prod":
+        _crash(
+            f"SAFE_MODE is False with SECA_ENV={env!r}.  Production "
+            f"must run with the SECA adaptive layer locked.  Disable "
+            f"SECA_SAFE_MODE only in non-prod environments."
+        )
+
+    logger.warning(
+        "SAFE_MODE is False (SECA_ENV=%s).  The dormant adaptive code "
+        "paths gated by `if not SAFE_MODE:` are now LIVE.  This must "
+        "never happen in production.",
+        env,
+    )
+
+
 def _crash(reason: str):
     """Immediate hard stop."""
     logger.critical("=" * 60)
@@ -202,6 +244,7 @@ def enforce(world_model):
         enforce(world_model)
     """
     _assert_safe_world_model(world_model)
+    _assert_safe_mode_locked()
     _assert_no_background_tasks()
     _scan_loaded_modules()
 
