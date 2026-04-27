@@ -150,8 +150,18 @@ class AtriumLayoutInflationTest {
         assertNotNull(v.findViewById<View>(R.id.boardFlatDot))
         assertNotNull(v.findViewById<View>(R.id.switchSound))
         assertNotNull(v.findViewById<View>(R.id.switchNotifications))
+        assertNotNull(v.findViewById<View>(R.id.rowEditRating))
+        assertNotNull(v.findViewById<View>(R.id.rowEditRatingValue))
+        assertNotNull(v.findViewById<View>(R.id.rowUpgrade))
         assertNotNull(v.findViewById<View>(R.id.rowChangePassword))
         assertNotNull(v.findViewById<View>(R.id.rowSignOut))
+    }
+
+    @Test
+    fun dialog_edit_rating_inflates() {
+        val v = inflate(R.layout.dialog_edit_rating)
+        assertNotNull(v.findViewById<View>(R.id.dialogRatingValue))
+        assertNotNull(v.findViewById<View>(R.id.dialogRatingSlider))
     }
 
     @Test

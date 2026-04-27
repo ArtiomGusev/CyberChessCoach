@@ -242,6 +242,48 @@
         <View
             style="@style/Atrium.SettingsDivider" />
 
+        <!-- ── Profile ──────────────────────────────────────────────── -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAppearance="@style/Atrium.Kicker"
+            android:text="Profile"
+            android:paddingStart="@dimen/atrium_space_24"
+            android:paddingEnd="@dimen/atrium_space_24"
+            android:paddingTop="@dimen/atrium_space_16"
+            android:paddingBottom="@dimen/atrium_space_8" />
+
+        <LinearLayout
+            android:id="@+id/rowEditRating"
+            style="@style/Atrium.SettingsRow.Trailing">
+
+            <TextView
+                style="@style/Atrium.SettingsRow.Title"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:text="Skill rating" />
+
+            <TextView
+                android:id="@+id/rowEditRatingValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/cormorant_garamond"
+                android:textStyle="italic"
+                android:textSize="17sp"
+                android:textColor="@color/atrium_accent_cyan"
+                android:layout_marginEnd="@dimen/atrium_space_12"
+                android:text="—"
+                tools:text="1720" />
+
+            <TextView
+                style="@style/Atrium.SettingsRow.Chevron"
+                android:text="›" />
+
+        </LinearLayout>
+
+        <View
+            style="@style/Atrium.SettingsDivider" />
+
         <!-- ── Premium ──────────────────────────────────────────────── -->
         <LinearLayout
             android:id="@+id/rowUpgrade"
