@@ -248,6 +248,75 @@ def seed_default_repertoire(player_id: str, defaults: list[dict]) -> int:
         conn.close()
 
 
+def load_bandit_weights(player_id: str, action: str) -> dict | None:
+    """Read a single (player, action) row from `bandit_weights`.
+
+    Returns None when the player+action pair has never been recorded
+    — caller (decision module) initialises a fresh identity-A,
+    zero-b in that case.
+
+    Schema:
+        {n_features: int, A_json: str, b_json: str, alpha: float}
+    A and b are returned as JSON-encoded strings; the decision
+    module deserialises them via numpy.
+    """
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            """
+            SELECT n_features, A_json, b_json, alpha
+              FROM bandit_weights
+             WHERE player_id = ? AND action = ?
+            """,
+            (player_id, action),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return None
+    return {
+        "n_features": int(row[0]),
+        "A_json": row[1],
+        "b_json": row[2],
+        "alpha": float(row[3]),
+    }
+
+
+def save_bandit_weights(
+    player_id: str,
+    action: str,
+    n_features: int,
+    A_json: str,
+    b_json: str,
+    alpha: float,
+) -> None:
+    """Upsert one (player, action) row into `bandit_weights`.
+
+    The UNIQUE(player_id, action) constraint means re-saving an
+    existing pair updates the existing row; the row count grows
+    only with new actions or new players.
+    """
+    conn = get_conn()
+    try:
+        conn.execute(
+            """
+            INSERT INTO bandit_weights
+                (player_id, action, n_features, A_json, b_json, alpha, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(player_id, action) DO UPDATE SET
+                n_features = excluded.n_features,
+                A_json = excluded.A_json,
+                b_json = excluded.b_json,
+                alpha = excluded.alpha,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (player_id, action, n_features, A_json, b_json, alpha),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def list_repertoire(player_id: str) -> list[dict]:
     """Return the player's opening repertoire ordered by `ordinal`,
     or an empty list when nothing is stored.

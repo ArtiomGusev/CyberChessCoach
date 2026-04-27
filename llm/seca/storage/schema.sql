@@ -69,6 +69,28 @@ CREATE TABLE IF NOT EXISTS explanations (
     FOREIGN KEY(game_id) REFERENCES games(id)
 );
 
+-- Per-player LinUCB weights — backs the deferred bandit decision step
+-- in seca/brain/bandit/decision.py.  Each row is one player × one
+-- action: A is an n×n matrix (sufficient statistic for the design
+-- matrix), b is an n×1 vector (sufficient statistic for the
+-- context-weighted reward).  Stored as JSON list-of-lists for A and
+-- list for b so SQLite stays portable; numpy round-trips at read.
+--
+-- Updated incrementally per game (no gradient descent, no neural
+-- retraining); SECA v1 explicitly permits this kind of lightweight
+-- decision-layer adaptation.  See docs/SECA.md for the boundary.
+CREATE TABLE IF NOT EXISTS bandit_weights (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    n_features INTEGER NOT NULL,
+    A_json TEXT NOT NULL,
+    b_json TEXT NOT NULL,
+    alpha REAL NOT NULL DEFAULT 1.0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(player_id, action)
+);
+
 -- Per-player opening repertoire — backs AtriumOpenings.  Each row is
 -- one opening line the player has committed to studying.  GET
 -- /repertoire returns the list ordered by ordinal; if a player has

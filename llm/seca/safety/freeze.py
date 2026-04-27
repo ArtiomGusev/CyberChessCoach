@@ -90,6 +90,12 @@ ALLOWED_BRAIN_MODULES = frozenset({
     "llm.seca.brain.bandit",
     "llm.seca.brain.bandit.experience_store",
     "llm.seca.brain.bandit.context_builder",
+    # Decision-layer LinUCB substrate.  SECA v1 explicitly permits
+    # the "lightweight online update of decision-layer components"
+    # this module performs (closed-form A ← A+xxᵀ, b ← b+rx — no
+    # gradient step, no optimiser state).  See module-level kdoc +
+    # docs/SECA.md for the policy boundary.
+    "llm.seca.brain.bandit.decision",
 })
 
 FORBIDDEN_KEYWORDS = [
