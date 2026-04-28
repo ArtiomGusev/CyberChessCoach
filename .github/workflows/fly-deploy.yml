@@ -684,7 +684,7 @@ jobs:
       #      Automatic rollback, no manual intervention required.
       - name: Deploy to Hetzner via SSH
         if: steps.hetzner-check.outputs.available == 'true'
-        uses: appleboy/ssh-action@v1.2.0
+        uses: appleboy/ssh-action@v1.2.5
         env:
           DEPLOY_IMAGE: ghcr.io/${{ needs.docker-images.outputs.image_owner }}/${{ env.API_IMAGE_NAME }}@${{ needs.docker-images.outputs.api_digest }}
         with:
