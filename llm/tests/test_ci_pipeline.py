@@ -817,6 +817,71 @@ def test_fly_deploy_does_not_share_hetzner_concurrency_group():
     )
 
 
+def test_android_instrumented_workflow_pins_topology():
+    """The nightly instrumented Android workflow must:
+    - run on a schedule (not on push) + accept manual workflow_dispatch
+    - use a real Android emulator (reactivecircus/android-emulator-runner@v2)
+      with KVM enabled
+    - run the connectedAndroidTest gradle target on the :app module
+    - upload both HTML and XML test reports as artefacts (so a failed
+      nightly run is debuggable without a re-run)
+    """
+    workflow = _load_workflow("android-instrumented.yml")
+
+    # PyYAML parses the `on:` key as boolean True (YAML 1.1)
+    triggers = workflow[True]
+    assert "schedule" in triggers, "instrumented suite must run on a schedule, not on push"
+    assert "workflow_dispatch" in triggers, "must also accept manual triggers"
+    schedule = triggers["schedule"]
+    assert isinstance(schedule, list) and schedule, "schedule must be a non-empty list of cron entries"
+    assert "cron" in schedule[0], "schedule entry must have a cron expression"
+
+    # Push-trigger must be absent — adding the suite to every push would
+    # dominate PR latency.
+    assert "push" not in triggers, (
+        "instrumented suite must not run on push (15-30 min boot+test cost)"
+    )
+    assert "pull_request" not in triggers, "same reason — must not run on PRs"
+
+    assert workflow["permissions"] == {"contents": "read"}
+    assert workflow["concurrency"]["group"] == "android-instrumented"
+    assert workflow["concurrency"]["cancel-in-progress"] is False
+
+    job = workflow["jobs"]["connected-tests"]
+    assert job["timeout-minutes"] >= 30, (
+        "connectedAndroidTest needs ample time (boot + tests); >= 30 min"
+    )
+
+    # KVM must be enabled — without it the emulator boots in ~5 min instead
+    # of <60 s.  The `udev` rule below is the only way to get /dev/kvm
+    # writable on GitHub-hosted Ubuntu runners.
+    kvm_step = _step_named(job, "Enable KVM")
+    assert "/dev/kvm" in kvm_step["run"] or "kvm" in kvm_step["run"].lower()
+
+    checkout = _step_named(job, "Checkout repository")
+    assert checkout["uses"] == "actions/checkout@v4"
+    assert checkout["with"]["persist-credentials"] is False
+
+    # The actual test invocation must hit the :app module's connectedAndroidTest.
+    test_step = _step_named(job, "Run connectedAndroidTest")
+    assert test_step["uses"].startswith("reactivecircus/android-emulator-runner@")
+    assert test_step["with"]["working-directory"] == "android"
+    assert "connectedAndroidTest" in test_step["with"]["script"]
+    assert ":app:connectedAndroidTest" in test_step["with"]["script"], (
+        "must scope to the :app module, matching scripts/run_connected_android_tests.sh"
+    )
+
+    # Reports must be uploaded on every run (success and failure) so a
+    # failed nightly is debuggable from the Actions UI alone.
+    html_step = _step_named(job, "Upload HTML test report")
+    assert html_step["if"] == "always()"
+    assert "androidTests/connected" in html_step["with"]["path"]
+
+    xml_step = _step_named(job, "Upload XML test results")
+    assert xml_step["if"] == "always()"
+    assert "androidTest-results/connected" in xml_step["with"]["path"]
+
+
 def test_docker_compose_prod_health_and_immutable_image():
     """Production compose must: pull a pre-built image (not build from source),
     expose api internally only, gate Caddy startup on api health, and rotate logs.

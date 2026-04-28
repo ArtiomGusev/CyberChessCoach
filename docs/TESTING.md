@@ -383,4 +383,12 @@ One-time prerequisite: install **Android SDK Command-line Tools (latest)** via A
 
 Override knobs (env vars): `AVD_NAME`, `SYSTEM_IMAGE`, `DEVICE_PROFILE`, `BOOT_TIMEOUT_SECONDS`. Use `--keep-running` to leave the emulator up after tests for iterative debugging.
 
+CI cadence
+
+The instrumented suite runs nightly (03:00 UTC) on GitHub-hosted Ubuntu runners with KVM acceleration via the `.github/workflows/android-instrumented.yml` workflow.  Boots a Pixel 5 AVD on API 36 / x86_64 / google_apis, runs `./gradlew :app:connectedAndroidTest`, and uploads HTML + XML reports as artifacts on every run.  AVD snapshots are cached so the per-run boot cost stays under a minute after the first run on a given cache key.
+
+The workflow also accepts `workflow_dispatch` — a developer iterating on JNI or theme code can trigger an ad-hoc CI run from the Actions tab without waiting for the schedule.
+
+The instrumented suite is **not** part of the per-push pipeline: connectedAndroidTest takes 15-30 minutes end-to-end, and adding it to every push would dominate PR latency for a relatively small marginal coverage win (the host-JVM suite catches most regressions).
+
 End of TESTING.md
