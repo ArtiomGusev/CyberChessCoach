@@ -745,6 +745,78 @@ def test_automated_and_manual_deploy_share_concurrency_group():
     )
 
 
+def test_fly_deploy_job_pins_topology():
+    """The Fly.io edge deploy job must:
+    - run only on push to main, gated on the Hetzner deploy succeeding
+      (sequential lockstep — backend's new contract goes live first)
+    - guard on FLY_API_TOKEN before doing anything (skip-with-warning)
+    - use a distinct concurrency group from the Hetzner deploy (`fly-production`)
+    - deploy by digest from the same docker-images job that fed Hetzner,
+      using the APP_IMAGE_NAME (the Node edge), not the API_IMAGE_NAME
+    - share the `production` GitHub environment with the Hetzner deploy
+    """
+    workflow = _load_workflow("fly-deploy.yml")
+    fly_deploy = workflow["jobs"]["fly-deploy"]
+
+    # Sequential ordering: must wait for image build, scan, AND Hetzner deploy.
+    needs = set(fly_deploy["needs"])
+    assert {"docker-images", "image-security", "deploy"}.issubset(needs), (
+        f"fly-deploy must wait for docker-images + image-security + deploy; got {needs}"
+    )
+
+    # Trigger gate identical to the Hetzner deploy.
+    assert fly_deploy["if"] == "github.event_name == 'push' && github.ref == 'refs/heads/main'"
+
+    # Concurrency: distinct from Hetzner so unrelated pushes don't serialise
+    # across tiers, but still serialised within Fly itself.
+    assert fly_deploy["concurrency"]["group"] == "fly-production"
+    assert fly_deploy["concurrency"]["cancel-in-progress"] is False
+
+    # Same production GitHub environment, same minimal permissions.
+    assert fly_deploy["environment"] == {"name": "production"}
+    assert fly_deploy["permissions"] == {"contents": "read"}
+
+    # Secret-presence guard runs first; downstream steps gated on it.
+    check_step = _step_named(fly_deploy, "Check Fly secret availability")
+    assert check_step["env"] == {"FLY_API_TOKEN": "${{ secrets.FLY_API_TOKEN }}"}
+    assert check_step["id"] == "fly-check"
+
+    # Checkout hardening matches the rest of the workflow.
+    checkout = _step_named(fly_deploy, "Checkout repository")
+    assert checkout["uses"] == "actions/checkout@v4"
+    assert checkout["with"]["persist-credentials"] is False
+    assert checkout["if"] == "steps.fly-check.outputs.available == 'true'"
+
+    # The deploy step must reference the APP image (Node edge), not the API
+    # image (Python backend that lives on Hetzner).
+    deploy_step = _step_named(fly_deploy, "Deploy edge image to Fly.io")
+    assert deploy_step["if"] == "steps.fly-check.outputs.available == 'true'"
+    image_ref = deploy_step["env"]["DEPLOY_IMAGE"]
+    assert "APP_IMAGE_NAME" in image_ref, (
+        f"fly-deploy must use APP_IMAGE_NAME (Node edge), not API_IMAGE_NAME; got {image_ref!r}"
+    )
+    assert "app_digest" in image_ref, (
+        "fly-deploy must pin to the APP image digest from docker-images outputs"
+    )
+    assert deploy_step["env"]["FLY_API_TOKEN"] == "${{ secrets.FLY_API_TOKEN }}"
+    assert "flyctl deploy --image" in deploy_step["run"]
+    assert "--app chesscoach" in deploy_step["run"]
+
+
+def test_fly_deploy_does_not_share_hetzner_concurrency_group():
+    """Sanity check: the Fly deploy must NOT share the Hetzner concurrency
+    group, otherwise it would be serialised against unrelated Hetzner
+    deploys (e.g. a hotfix triggered from production-deploy.yml)."""
+    workflow = _load_workflow("fly-deploy.yml")
+    hetzner_group = workflow["jobs"]["deploy"]["concurrency"]["group"]
+    fly_group = workflow["jobs"]["fly-deploy"]["concurrency"]["group"]
+    assert hetzner_group != fly_group, (
+        f"Hetzner and Fly deploys must use distinct concurrency groups; "
+        f"both are using {hetzner_group!r}.  This would unnecessarily "
+        f"serialise edge deploys against backend hotfixes."
+    )
+
+
 def test_docker_compose_prod_health_and_immutable_image():
     """Production compose must: pull a pre-built image (not build from source),
     expose api internally only, gate Caddy startup on api health, and rotate logs.

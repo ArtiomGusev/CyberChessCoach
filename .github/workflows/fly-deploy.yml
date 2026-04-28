@@ -1,3 +1,20 @@
+# CI/CD pipeline for ChessCoach.
+#
+# Despite the historical filename, this workflow deploys to TWO production
+# tiers built from this monorepo:
+#
+#   1. Hetzner heavy backend  — `cyberchesscoach-llm-api` image (Python
+#      FastAPI + Stockfish + full SECA pipeline, port 8000).  Updated by
+#      the `deploy` job below via SSH + docker compose.
+#   2. Fly.io edge            — `cyberchesscoach` image (Node.js Express
+#      front, port 3000, global regional distribution).  Updated by the
+#      `fly-deploy` job below via flyctl, sequenced after Hetzner so the
+#      backend's new contract is live before the edge calls it.
+#
+# See docs/DEPLOYMENT.md for the topology + how each tier gets its
+# secrets.  The workflow's filename is preserved for URL stability across
+# external bookmarks; the workflow's `name:` field (CI/CD) is the
+# authoritative description.
 name: CI/CD
 
 on:
@@ -743,6 +760,68 @@ jobs:
             docker rm  "$NEW_CONTAINER" 2>/dev/null || true
             echo "Rolled back — ${PREV_IMAGE:-original container} still running."
             exit 1
+
+  fly-deploy:
+    name: Deploy Fly edge
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs:
+      - docker-images
+      - image-security
+      - deploy
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+    environment:
+      name: production
+    # Distinct from `hetzner-production` — Hetzner and Fly each get their own
+    # concurrency group so the Fly deploy is not serialised against the
+    # Hetzner deploy of an unrelated push.  Within Fly, deploys still
+    # serialise (cancel-in-progress: false).
+    concurrency:
+      group: fly-production
+      cancel-in-progress: false
+    steps:
+      - name: Check Fly secret availability
+        id: fly-check
+        shell: bash
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "${FLY_API_TOKEN}" ]; then
+            echo "::warning::FLY_API_TOKEN not configured. Skipping Fly deploy."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout repository
+        if: steps.fly-check.outputs.available == 'true'
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up flyctl
+        if: steps.fly-check.outputs.available == 'true'
+        uses: superfly/flyctl-actions/setup-flyctl@1.5
+
+      # Deploy the digest-pinned edge image built and signed earlier in the
+      # pipeline.  flyctl reads fly.toml from the working directory for app
+      # config (vm size, region, http_service); --image overrides the
+      # registry reference so we never re-build on a Fly remote builder.
+      #
+      # The image lives in GHCR — Fly machines must be able to pull it.
+      # Either make ghcr.io/${owner}/cyberchesscoach public, or run
+      # `flyctl auth docker` on the Fly side once with a GHCR PAT.  See
+      # docs/DEPLOYMENT.md §"Fly.io edge" for the one-time setup.
+      - name: Deploy edge image to Fly.io
+        if: steps.fly-check.outputs.available == 'true'
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          DEPLOY_IMAGE: ghcr.io/${{ needs.docker-images.outputs.image_owner }}/${{ env.APP_IMAGE_NAME }}@${{ needs.docker-images.outputs.app_digest }}
+        run: |
+          echo "Deploying $DEPLOY_IMAGE to fly.io app 'chesscoach'"
+          flyctl deploy --image "$DEPLOY_IMAGE" --app chesscoach
 
   llm-regression:
     name: LLM regression and smoke tests (Ollama)

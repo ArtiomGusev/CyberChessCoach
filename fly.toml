@@ -1,7 +1,16 @@
-# fly.toml app configuration file generated for chesscoach on 2026-02-23T17:41:02+02:00
+# fly.toml app configuration file for the ChessCoach Fly.io edge tier.
 #
-# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+# Deploys the `cyberchesscoach` image (root Dockerfile, llm/server.js — a
+# small Node/Express front, port 3000) as the public-facing entry point
+# distributed across Fly's regional edge.  The heavy Python FastAPI
+# backend (`cyberchesscoach-llm-api`, port 8000) runs on Hetzner — see
+# docs/DEPLOYMENT.md for the two-tier topology.
 #
+# CI updates this app via the `fly-deploy` job in
+# .github/workflows/fly-deploy.yml on every push to main; manual deploys
+# work the same way (`flyctl deploy --image <ghcr-ref>`).
+#
+# See https://fly.io/docs/reference/configuration/ for the full schema.
 
 app = 'chesscoach'
 primary_region = 'fra'
