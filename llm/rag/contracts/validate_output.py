@@ -15,6 +15,12 @@ REQUIRED_ON_MISSING = [
 REQUIRED_ON_MATE = [
     "cannot be avoided",
     "inevitable",
+    # "unavoidable" is the adjective form of "cannot be avoided" — accepting
+    # it broadens the contract without weakening the safety claim.  Models
+    # naturally produce phrases like "decisive and unavoidable disadvantage"
+    # when prompted on a forced mate; without this entry the contract test
+    # rejected semantically-correct output.
+    "unavoidable",
 ]
 
 
