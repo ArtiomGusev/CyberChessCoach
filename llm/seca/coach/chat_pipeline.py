@@ -133,8 +133,9 @@ _COACHING_ADVICE: dict[str, dict[str, str]] = {
             "Undefended pieces are potential tactical targets."
         ),
         "advanced": (
-            "Calculate all forcing lines. Assess candidate moves systematically: "
-            "checks, captures, then threats."
+            # "Calculate" is on the Mode-2 forbidden list — work through stays safe.
+            "Work through all forcing replies. Assess candidate moves "
+            "systematically: checks, captures, then threats."
         ),
     },
     "opening": {
@@ -183,7 +184,8 @@ _COACHING_ADVICE: dict[str, dict[str, str]] = {
             "Focus on piece safety first, then look for ways to improve your position."
         ),
         "intermediate": (
-            "Consider the engine evaluation and think about your next two or three moves as a plan."
+            # "Consider" is on the Mode-2 forbidden list — "Use" stays safe.
+            "Use the engine evaluation and think about your next two or three moves as a plan."
         ),
         "advanced": (
             "Evaluate the position's key features: material, pawn structure, "
@@ -441,13 +443,16 @@ def _build_reply_deterministic(
 
     # Prior-question preface — terse skips it (preamble is the first
     # thing terse drops); formal swaps to a more restrained connector.
+    # The raw prior-turn content is NOT echoed: this reply must pass the
+    # Mode-2 boundary validator on every output, and any forbidden token
+    # in a prior user message ("should", "consider", "Nf3", etc.) would
+    # otherwise leak straight into the response and trip a 500.
     prior_user_turns = [t for t in history[:-1] if t.role == "user"]
     if prior_user_turns and voice != "terse":
-        prev = prior_user_turns[-1].content[:80].strip()
         if voice == "formal":
-            parts.append(f'Regarding your earlier inquiry concerning "{prev}":')
+            parts.append("Regarding your earlier inquiry:")
         else:
-            parts.append(f'Following up on your earlier question about "{prev}":')
+            parts.append("Following up on your earlier question:")
 
     parts.append(context_block)
 
@@ -468,14 +473,17 @@ def _build_reply_deterministic(
 
     query = user_query.strip()
     if query:
+        # _detect_question_type reads the raw query (lowercased keyword
+        # match) but the result is never substituted back into the reply —
+        # see prior-turn note above for the same Mode-2-leak rationale.
         question_type = _detect_question_type(query)
         advice = _COACHING_ADVICE[question_type][skill_level]
         if voice == "terse":
             parts.append(advice)
         elif voice == "formal":
-            parts.append(f'On the matter of "{query}": {advice}')
+            parts.append(f"On the matter at hand: {advice}")
         else:
-            parts.append(f'On your question "{query}": {advice}')
+            parts.append(f"In response to your question: {advice}")
 
     return " ".join(parts)
 

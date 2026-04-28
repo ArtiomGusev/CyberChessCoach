@@ -167,7 +167,11 @@ class TestChatLevelDifferentiation:
 
         The context block includes the raw skill_estimate label, so the full reply
         strings differ by that label ("club" vs "intermediate"). We compare only
-        the coaching advice portion that follows 'On your question'.
+        the coaching advice portion that follows the question-response preface.
+        The preface text changed from `On your question "...":` to
+        `In response to your question:` when the deterministic fallback stopped
+        echoing raw user text into replies (Mode-2 boundary safety) — this test
+        uses the new connector as its slice marker.
         """
         query = "What is the plan here?"
         club_reply = self._reply("club", query)
@@ -175,7 +179,7 @@ class TestChatLevelDifferentiation:
         intermediate_reply = self._reply("intermediate", query)
 
         def _advice_part(reply: str) -> str:
-            marker = "On your question"
+            marker = "In response to your question:"
             idx = reply.find(marker)
             return reply[idx:] if idx != -1 else reply
 

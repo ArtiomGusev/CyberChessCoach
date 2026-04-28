@@ -1218,6 +1218,141 @@ class TestLiveMoveResponseValidation:
         assert validated.mode == "LIVE_V1"
 
 
+class TestDeterministicFallbacksPassBoundaryValidator:
+    """Regression: the deterministic chat / live-move fallback prose must
+    pass the new Mode-2 boundary validators on every shape of input.
+
+    Pre-deploy probe for #2 caught two real bugs that this test pins:
+      - _COACHING_ADVICE entries containing forbidden words ("Calculate",
+        "Consider") would have 500'd every chat call when Ollama was down.
+      - _build_reply_deterministic echoed the user's raw query into the
+        reply via f-string, propagating any "should" / "consider" / "Nf3"
+        the user typed into the response, which the validator then rejects.
+
+    Both paths run unconditionally when the LLM is unavailable, so this
+    has to hold on every (fen, messages, voice) combination — not just
+    the happy path.
+    """
+
+    _FENS = [
+        "startpos",
+        "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+        "r1bqkbnr/pp2pppp/2n5/2pp4/3P4/2N2N2/PPP1PPPP/R1BQKB1R w KQkq - 0 4",
+        "8/8/8/4k3/8/4K3/4P3/8 w - - 0 1",
+        "6k1/5ppp/8/8/8/8/r7/2K5 w - - 0 1",
+        "rnbqkb1r/pppppppp/5n2/8/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 2 2",
+    ]
+
+    _ADVERSARIAL_QUERIES = [
+        # Plain queries
+        "What's happening here?",
+        "How should I think about this position?",
+        "Is this position good or bad for me?",
+        "Explain the imbalances.",
+        # Adversarial: the user's text contains MULTIPLE forbidden Mode-2
+        # tokens.  If the deterministic fallback echoes any of these into
+        # the reply, the boundary validator rejects → 500.  Pinning this
+        # explicitly so a future "let's just put the user's question in
+        # the reply for context" refactor can't quietly re-break it.
+        "Should I consider Nf3 here?",
+        "Calculate the variation Qh5 — what's the line?",
+        "Is checkmate forced after Nf3?",
+    ]
+
+    _VOICES = [None, "formal", "conversational", "terse"]
+
+    def test_chat_deterministic_fallback_passes_validator(self):
+        from unittest.mock import patch
+        import llm.seca.coach.chat_pipeline as chat_mod
+        from llm.seca.coach.chat_pipeline import generate_chat_reply, ChatTurn
+        from llm.rag.validators.explain_response_schema import (
+            validate_chat_response,
+        )
+
+        with patch.object(chat_mod, "_LLM_AVAILABLE", False):
+            for fen in self._FENS:
+                for query in self._ADVERSARIAL_QUERIES:
+                    messages = [ChatTurn(role="user", content=query)]
+                    for voice in self._VOICES:
+                        result = generate_chat_reply(
+                            fen=fen, messages=messages, coach_voice=voice
+                        )
+                        validate_chat_response(
+                            {
+                                "reply": result.reply,
+                                "engine_signal": result.engine_signal,
+                                "mode": result.mode,
+                            }
+                        )
+
+    def test_chat_deterministic_fallback_passes_with_prior_history(self):
+        """Multi-turn case: prior user-turn content is also no longer
+        echoed verbatim, so adversarial tokens in earlier messages don't
+        leak into the current reply either."""
+        from unittest.mock import patch
+        import llm.seca.coach.chat_pipeline as chat_mod
+        from llm.seca.coach.chat_pipeline import generate_chat_reply, ChatTurn
+        from llm.rag.validators.explain_response_schema import (
+            validate_chat_response,
+        )
+
+        history = [
+            ChatTurn(role="user", content="Should I calculate every variation?"),
+            ChatTurn(role="assistant", content="Some advice"),
+            ChatTurn(role="user", content="What about pawn breaks?"),
+        ]
+        with patch.object(chat_mod, "_LLM_AVAILABLE", False):
+            for voice in self._VOICES:
+                result = generate_chat_reply(
+                    fen="startpos", messages=history, coach_voice=voice
+                )
+                validate_chat_response(
+                    {
+                        "reply": result.reply,
+                        "engine_signal": result.engine_signal,
+                        "mode": result.mode,
+                    }
+                )
+
+    def test_live_deterministic_fallback_passes_validator(self):
+        from unittest.mock import patch
+        import llm.seca.coach.live_move_pipeline as live_mod
+        from llm.seca.coach.live_move_pipeline import generate_live_reply
+        from llm.rag.validators.explain_response_schema import (
+            validate_live_move_response,
+        )
+
+        moves = ["e2e4", "g1f3", "b1c3", "f7f6", "d2d4"]
+        with patch.object(live_mod, "_LLM_AVAILABLE", False):
+            for fen in self._FENS:
+                for uci in moves:
+                    for style in (None, "simple", "intermediate", "advanced"):
+                        result = generate_live_reply(
+                            fen=fen, uci=uci, explanation_style=style
+                        )
+                        validate_live_move_response(
+                            {
+                                "status": "ok",
+                                "hint": result.hint,
+                                "engine_signal": result.engine_signal,
+                                "move_quality": result.move_quality,
+                                "mode": result.mode,
+                            }
+                        )
+
+    def test_coaching_advice_table_is_mode2_clean(self):
+        """Every entry in _COACHING_ADVICE must independently pass
+        validate_mode_2_negative — pins the table itself rather than
+        relying on the integration test above to find a regression
+        through (fen × query × voice) coverage."""
+        from llm.seca.coach.chat_pipeline import _COACHING_ADVICE
+        from llm.rag.validators.mode_2_negative import validate_mode_2_negative
+
+        for question_type, by_skill in _COACHING_ADVICE.items():
+            for skill_level, advice in by_skill.items():
+                validate_mode_2_negative(advice)
+
+
 class TestChatStreamBoundaryValidation:
     """The /chat/stream endpoint validates BEFORE any bytes are streamed.
 
