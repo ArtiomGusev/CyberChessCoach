@@ -760,9 +760,9 @@ def test_fly_deploy_job_pins_topology():
 
     # Sequential ordering: must wait for image build, scan, AND Hetzner deploy.
     needs = set(fly_deploy["needs"])
-    assert {"docker-images", "image-security", "deploy"}.issubset(needs), (
-        f"fly-deploy must wait for docker-images + image-security + deploy; got {needs}"
-    )
+    assert {"docker-images", "image-security", "deploy"}.issubset(
+        needs
+    ), f"fly-deploy must wait for docker-images + image-security + deploy; got {needs}"
 
     # Trigger gate identical to the Hetzner deploy.
     assert fly_deploy["if"] == "github.event_name == 'push' && github.ref == 'refs/heads/main'"
@@ -792,12 +792,12 @@ def test_fly_deploy_job_pins_topology():
     deploy_step = _step_named(fly_deploy, "Deploy edge image to Fly.io")
     assert deploy_step["if"] == "steps.fly-check.outputs.available == 'true'"
     image_ref = deploy_step["env"]["DEPLOY_IMAGE"]
-    assert "APP_IMAGE_NAME" in image_ref, (
-        f"fly-deploy must use APP_IMAGE_NAME (Node edge), not API_IMAGE_NAME; got {image_ref!r}"
-    )
-    assert "app_digest" in image_ref, (
-        "fly-deploy must pin to the APP image digest from docker-images outputs"
-    )
+    assert (
+        "APP_IMAGE_NAME" in image_ref
+    ), f"fly-deploy must use APP_IMAGE_NAME (Node edge), not API_IMAGE_NAME; got {image_ref!r}"
+    assert (
+        "app_digest" in image_ref
+    ), "fly-deploy must pin to the APP image digest from docker-images outputs"
     assert deploy_step["env"]["FLY_API_TOKEN"] == "${{ secrets.FLY_API_TOKEN }}"
     assert "flyctl deploy --image" in deploy_step["run"]
     assert "--app chesscoach" in deploy_step["run"]
@@ -833,14 +833,16 @@ def test_android_instrumented_workflow_pins_topology():
     assert "schedule" in triggers, "instrumented suite must run on a schedule, not on push"
     assert "workflow_dispatch" in triggers, "must also accept manual triggers"
     schedule = triggers["schedule"]
-    assert isinstance(schedule, list) and schedule, "schedule must be a non-empty list of cron entries"
+    assert (
+        isinstance(schedule, list) and schedule
+    ), "schedule must be a non-empty list of cron entries"
     assert "cron" in schedule[0], "schedule entry must have a cron expression"
 
     # Push-trigger must be absent — adding the suite to every push would
     # dominate PR latency.
-    assert "push" not in triggers, (
-        "instrumented suite must not run on push (15-30 min boot+test cost)"
-    )
+    assert (
+        "push" not in triggers
+    ), "instrumented suite must not run on push (15-30 min boot+test cost)"
     assert "pull_request" not in triggers, "same reason — must not run on PRs"
 
     assert workflow["permissions"] == {"contents": "read"}
@@ -848,9 +850,9 @@ def test_android_instrumented_workflow_pins_topology():
     assert workflow["concurrency"]["cancel-in-progress"] is False
 
     job = workflow["jobs"]["connected-tests"]
-    assert job["timeout-minutes"] >= 30, (
-        "connectedAndroidTest needs ample time (boot + tests); >= 30 min"
-    )
+    assert (
+        job["timeout-minutes"] >= 30
+    ), "connectedAndroidTest needs ample time (boot + tests); >= 30 min"
 
     # KVM must be enabled — without it the emulator boots in ~5 min instead
     # of <60 s.  The `udev` rule below is the only way to get /dev/kvm
@@ -867,9 +869,9 @@ def test_android_instrumented_workflow_pins_topology():
     assert test_step["uses"].startswith("reactivecircus/android-emulator-runner@")
     assert test_step["with"]["working-directory"] == "android"
     assert "connectedAndroidTest" in test_step["with"]["script"]
-    assert ":app:connectedAndroidTest" in test_step["with"]["script"], (
-        "must scope to the :app module, matching scripts/run_connected_android_tests.sh"
-    )
+    assert (
+        ":app:connectedAndroidTest" in test_step["with"]["script"]
+    ), "must scope to the :app module, matching scripts/run_connected_android_tests.sh"
 
     # Reports must be uploaded on every run (success and failure) so a
     # failed nightly is debuggable from the Actions UI alone.
