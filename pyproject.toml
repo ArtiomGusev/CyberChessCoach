@@ -1,6 +1,21 @@
 [tool.black]
 line-length = 100
 target-version = ["py313"]
+# Exclude scratch / archive dirs at repo root, plus dormant SECA research
+# subtrees whose contents are deliberately non-parseable Python stubs (per
+# the freeze-guard policy in seca/safety/freeze.py — "RL/ML research code
+# remains in the tree for future study, but MUST NOT be loaded into the
+# live runtime").  CI runs Black via run_quality_gate.py which uses an
+# explicit FORMAT_TARGETS whitelist, so this `extend-exclude` only affects
+# bare `black .` invocations.  Mirrors the dormant-subtree list in
+# docs/SECA.md.
+extend-exclude = '''
+^/(
+    chesscoach
+  | chesscoach-purge\.git
+  | llm/seca/(data|engines|planning|world_model|world|henm|closed_loop|optim|evolution|policy|memory)
+)/
+'''
 
 [tool.mypy]
 python_version = "3.13"
