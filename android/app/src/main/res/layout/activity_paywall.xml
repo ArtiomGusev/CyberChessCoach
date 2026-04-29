@@ -185,7 +185,9 @@
                         android:padding="@dimen/atrium_space_12">
 
                         <TextView
-                            style="@style/Atrium.Kicker"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textAppearance="@style/Atrium.Kicker"
                             android:text="Monthly" />
 
                         <TextView
@@ -224,7 +226,9 @@
                         android:padding="@dimen/atrium_space_12">
 
                         <TextView
-                            style="@style/Atrium.Kicker"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textAppearance="@style/Atrium.Kicker"
                             android:text="Yearly" />
 
                         <TextView

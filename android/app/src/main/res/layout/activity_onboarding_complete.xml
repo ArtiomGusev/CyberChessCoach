@@ -105,9 +105,10 @@
                 android:baselineAligned="false">
 
                 <TextView
-                    style="@style/Atrium.Kicker"
                     android:layout_width="0dp"
+                    android:layout_height="wrap_content"
                     android:layout_weight="1"
+                    android:textAppearance="@style/Atrium.Kicker"
                     android:text="Rating" />
 
                 <TextView
@@ -139,9 +140,10 @@
                 android:baselineAligned="false">
 
                 <TextView
-                    style="@style/Atrium.Kicker"
                     android:layout_width="0dp"
+                    android:layout_height="wrap_content"
                     android:layout_weight="1"
+                    android:textAppearance="@style/Atrium.Kicker"
                     android:text="Confidence" />
 
                 <TextView
@@ -173,9 +175,10 @@
                 android:baselineAligned="false">
 
                 <TextView
-                    style="@style/Atrium.Kicker"
                     android:layout_width="0dp"
+                    android:layout_height="wrap_content"
                     android:layout_weight="1"
+                    android:textAppearance="@style/Atrium.Kicker"
                     android:text="First opponent" />
 
                 <TextView
