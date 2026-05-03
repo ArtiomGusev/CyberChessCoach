@@ -72,7 +72,7 @@ jobs:
           cache: gradle
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       # Cache the AVD + system image so subsequent runs reuse the cold-boot
       # snapshot.  Cuts ~3 min off every run after the first.
