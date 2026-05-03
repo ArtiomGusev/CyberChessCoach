@@ -36,7 +36,7 @@ Embedded deployment (rag.deploy.embedded)
 
 Local / on-device / private backend usage
 
-Closed-source operation
+Source-available operation (see ../LICENSE.md)
 
 It assumes:
 

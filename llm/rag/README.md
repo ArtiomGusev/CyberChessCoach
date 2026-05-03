@@ -13,10 +13,10 @@ No self-modification
 
 Installation
 pip install -r requirements.txt
-python setup_stockfish.py
+python scripts/setup_stockfish.py
 
 Safety Verification
-python verify_safety.py
+python scripts/verify_safety.py
 
 Run Server
 uvicorn app.server:app --reload

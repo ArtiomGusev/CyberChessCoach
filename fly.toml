@@ -1,9 +1,9 @@
 # fly.toml app configuration file for the ChessCoach Fly.io edge tier.
 #
-# Deploys the `cyberchesscoach` image (root Dockerfile, llm/server.js — a
+# Deploys the `cereveon` image (root Dockerfile, llm/server.js — a
 # small Node/Express front, port 3000) as the public-facing entry point
 # distributed across Fly's regional edge.  The heavy Python FastAPI
-# backend (`cyberchesscoach-llm-api`, port 8000) runs on Hetzner — see
+# backend (`cereveon-llm-api`, port 8000) runs on Hetzner — see
 # docs/DEPLOYMENT.md for the two-tier topology.
 #
 # CI updates this app via the `fly-deploy` job in

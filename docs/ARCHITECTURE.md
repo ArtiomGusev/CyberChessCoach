@@ -38,6 +38,9 @@ explore variations
 override engine evaluations
 
 High-Level Data Flow
+
+![Cereveon Mode-2 pipeline — vertical flow from Android client through deterministic preprocessing across the LLM trust boundary into the output validators](architecture-diagram.svg)
+
 Stockfish JSON (ground truth)
         ↓
 Engine Signal Extraction (ESV)

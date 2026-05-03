@@ -60,7 +60,7 @@ else
     _yellow "      SECA_API_KEY     — must match COACH_API_KEY in the Android APK"
     _yellow "      POSTGRES_PASSWORD / DATABASE_URL — use the same password in both"
     _yellow "      DOMAIN           — your public domain for Caddy TLS (e.g. api.example.com)"
-    _yellow "      GHCR_IMAGE       — full GHCR image ref (e.g. ghcr.io/owner/cyberchesscoach-llm-api:latest)"
+    _yellow "      GHCR_IMAGE       — full GHCR image ref (e.g. ghcr.io/owner/cereveon-llm-api:latest)"
     echo ""
     read -r -p "  Press Enter after editing $ENV_FILE, or Ctrl-C to abort: "
 fi

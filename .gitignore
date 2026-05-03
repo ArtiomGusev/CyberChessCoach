@@ -30,6 +30,9 @@ android/**/*.jks
 android/**/*.keystore
 android/**/.cxx/
 android/**/.externalNativeBuild/
+# Android emulator's ANDROID_USER_HOME — created when the test runner
+# points ANDROID_USER_HOME at a workspace-local directory.
+tmp_android_home/
 
 # ========= C++ =========
 engine/build/

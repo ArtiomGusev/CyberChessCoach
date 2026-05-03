@@ -3,10 +3,10 @@
 # Despite the historical filename, this workflow deploys to TWO production
 # tiers built from this monorepo:
 #
-#   1. Hetzner heavy backend  — `cyberchesscoach-llm-api` image (Python
+#   1. Hetzner heavy backend  — `cereveon-llm-api` image (Python
 #      FastAPI + Stockfish + full SECA pipeline, port 8000).  Updated by
 #      the `deploy` job below via SSH + docker compose.
-#   2. Fly.io edge            — `cyberchesscoach` image (Node.js Express
+#   2. Fly.io edge            — `cereveon` image (Node.js Express
 #      front, port 3000, global regional distribution).  Updated by the
 #      `fly-deploy` job below via flyctl, sequenced after Hetzner so the
 #      backend's new contract is live before the edge calls it.
@@ -30,8 +30,8 @@ permissions:
   contents: read
 
 env:
-  APP_IMAGE_NAME: cyberchesscoach
-  API_IMAGE_NAME: cyberchesscoach-llm-api
+  APP_IMAGE_NAME: cereveon
+  API_IMAGE_NAME: cereveon-llm-api
 
 concurrency:
   group: ci-cd-${{ github.workflow }}-${{ github.ref }}
@@ -811,7 +811,7 @@ jobs:
       # registry reference so we never re-build on a Fly remote builder.
       #
       # The image lives in GHCR — Fly machines must be able to pull it.
-      # Either make ghcr.io/${owner}/cyberchesscoach public, or run
+      # Either make ghcr.io/${owner}/cereveon public, or run
       # `flyctl auth docker` on the Fly side once with a GHCR PAT.  See
       # docs/DEPLOYMENT.md §"Fly.io edge" for the one-time setup.
       - name: Deploy edge image to Fly.io

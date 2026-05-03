@@ -5,7 +5,7 @@ This document defines the mandatory release procedure for the ChessCoach-AI Mode
 
 A release is considered valid only if all requirements in this document are satisfied.
 
-This project is closed-source.
+This project is source-available under a custom license; see [LICENSE.md](LICENSE.md).
 This document is intended for internal use only.
 
 Release Definition
@@ -166,9 +166,9 @@ git push --tags
 Tags must correspond exactly to the released version.
 Pushing a `vX.Y.Z` tag automatically publishes the GitHub Release and the GHCR images for:
 
-`ghcr.io/<owner>/cyberchesscoach:vX.Y.Z`
+`ghcr.io/<owner>/cereveon:vX.Y.Z`
 
-`ghcr.io/<owner>/cyberchesscoach-llm-api:vX.Y.Z`
+`ghcr.io/<owner>/cereveon-llm-api:vX.Y.Z`
 
 2️⃣ Record Release Metadata (RECOMMENDED)
 

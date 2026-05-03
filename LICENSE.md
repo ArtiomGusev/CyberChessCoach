@@ -1,4 +1,4 @@
-# License Agreement for CyberChessCoach
+# License Agreement for Cereveon
 
 ## Grant of License  
 The author of this software grants you a non-exclusive, non-transferable license to use, copy, modify, and distribute this software, provided that any copies include this license agreement.

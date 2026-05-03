@@ -10,8 +10,8 @@ Production runs in two tiers, both built and signed by the same CI pipeline:
 
 | Tier | Image | Source | Port | Role |
 |---|---|---|---|---|
-| **Fly.io edge** | `cyberchesscoach` | root [`Dockerfile`](../Dockerfile) → [`llm/server.js`](../llm/server.js) (Node + Express) | 3000 | Public entry point, security middleware, regionally distributed for global scalability |
-| **Hetzner backend** | `cyberchesscoach-llm-api` | [`llm/Dockerfile.api`](../llm/Dockerfile.api) (Python + Stockfish + full SECA pipeline) | 8000 | Heavy compute: engine pool, RAG, validators, auth, Postgres/Ollama/Redis stack from [`docker-compose.prod.yml`](../docker-compose.prod.yml) |
+| **Fly.io edge** | `cereveon` | root [`Dockerfile`](../Dockerfile) → [`llm/server.js`](../llm/server.js) (Node + Express) | 3000 | Public entry point, security middleware, regionally distributed for global scalability |
+| **Hetzner backend** | `cereveon-llm-api` | [`llm/Dockerfile.api`](../llm/Dockerfile.api) (Python + Stockfish + full SECA pipeline) | 8000 | Heavy compute: engine pool, RAG, validators, auth, Postgres/Ollama/Redis stack from [`docker-compose.prod.yml`](../docker-compose.prod.yml) |
 
 **Both tiers are auto-deployed by [`.github/workflows/fly-deploy.yml`](../.github/workflows/fly-deploy.yml)** on push to `main`:
 
@@ -29,7 +29,7 @@ Fly.io provides regional distribution + low-latency public ingress; the Node edg
 Both tiers can be deployed manually from a workstation:
 
 - Hetzner: `gh workflow run "Production Deploy" -f api_digest=sha256:...` (the [`production-deploy.yml`](../.github/workflows/production-deploy.yml) workflow shares the same `hetzner-production` concurrency group as the auto deploy, so the two cannot race).
-- Fly.io: `flyctl deploy --image ghcr.io/<owner>/cyberchesscoach@sha256:... --app chesscoach` from a checkout of `main`.
+- Fly.io: `flyctl deploy --image ghcr.io/<owner>/cereveon@sha256:... --app chesscoach` from a checkout of `main`.
 
 ---
 
@@ -159,7 +159,7 @@ run. Go to **Settings → Secrets and variables → Actions**.
 | `KEY_PASSWORD` | Android release APK signing | The key password chosen when running `keytool -genkey` |
 | `STORE_PASSWORD` | Android release APK signing | The store password chosen when running `keytool -genkey` |
 
-> **Fly.io edge — one-time GHCR auth.** The `fly-deploy` job tells Fly to pull `ghcr.io/<owner>/cyberchesscoach@sha256:...`.  Fly's machines need to be able to pull that image.  Either make the GHCR package public (Settings → Packages → cyberchesscoach → Change visibility), or run `flyctl auth docker` once on a workstation that has a GHCR PAT in `~/.docker/config.json` so Fly captures the credentials.  The Hetzner deploy is unaffected — it pulls via the workflow's own `GITHUB_TOKEN`.
+> **Fly.io edge — one-time GHCR auth.** The `fly-deploy` job tells Fly to pull `ghcr.io/<owner>/cereveon@sha256:...`.  Fly's machines need to be able to pull that image.  Either make the GHCR package public (Settings → Packages → cereveon → Change visibility), or run `flyctl auth docker` once on a workstation that has a GHCR PAT in `~/.docker/config.json` so Fly captures the credentials.  The Hetzner deploy is unaffected — it pulls via the workflow's own `GITHUB_TOKEN`.
 
 > `GITHUB_TOKEN` is auto-provisioned by Actions. It is used for GHCR push,
 > image attestation, and Trivy scanning. No configuration required.
@@ -177,7 +177,7 @@ These are not GitHub secrets — they live on the server itself:
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `DOMAIN` | yes | Domain Caddy uses for TLS (e.g. `api.yourdomain.com`) |
-| `GHCR_IMAGE` | yes | Full GHCR reference for the api container (e.g. `ghcr.io/owner/cyberchesscoach-llm-api:latest`); referenced by `docker-compose.prod.yml` |
+| `GHCR_IMAGE` | yes | Full GHCR reference for the api container (e.g. `ghcr.io/owner/cereveon-llm-api:latest`); referenced by `docker-compose.prod.yml` |
 
 All other backend variables (`SECA_API_KEY`, `SECRET_KEY`, `DATABASE_URL`,
 `POSTGRES_*`, etc.) go into `/opt/chesscoach/.env.prod` — see section 1 and

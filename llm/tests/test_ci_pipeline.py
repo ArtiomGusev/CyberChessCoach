@@ -34,8 +34,8 @@ def test_ci_workflow_includes_required_gates():
 
     assert workflow["permissions"] == {"contents": "read"}
     assert workflow["env"] == {
-        "APP_IMAGE_NAME": "cyberchesscoach",
-        "API_IMAGE_NAME": "cyberchesscoach-llm-api",
+        "APP_IMAGE_NAME": "cereveon",
+        "API_IMAGE_NAME": "cereveon-llm-api",
     }
     assert workflow["concurrency"] == {
         "group": "ci-cd-${{ github.workflow }}-${{ github.ref }}",

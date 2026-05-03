@@ -4,7 +4,7 @@ AI-powered chess coaching system enforcing strict architectural separation betwe
 
 ## System Overview
 
-Cereveon is a closed-source mono-repository containing four integrated layers:
+Cereveon is a source-available mono-repository (see [LICENSE.md](LICENSE.md)) containing four integrated layers:
 
 - **Android App** — UI, gameplay orchestration, and coaching display
 - **C++ Opponent Engine** — ~1800 Elo search via JNI bridge
@@ -38,6 +38,10 @@ No component is allowed to blur these roles.
 ## Mode-2 Pipeline
 
 The explanation subsystem is designated **Mode-2**: a non-calculating chess explainer. No step may be skipped or reordered.
+
+![Cereveon Mode-2 pipeline — Android client → API → engine truth → ESV → RAG → prompt → LLM (untrusted, amber) → validators → response. Trust boundaries are dashed amber lines.](docs/architecture-diagram.svg)
+
+For the formal specification of each layer and its invariants, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ```
 Stockfish JSON (ground truth)
@@ -417,7 +421,7 @@ Jobs:
 1. **actionlint** — workflow YAML validation
 2. **python-tests** — golden tests, contract tests, API contract validation, pipeline regression, explain schema validation, full CI suite, Black/Pylint/Mypy gates, coverage ≥ 80%, pip-audit, Trivy
 3. **android-build** — Gradle build and host JVM test suite
-4. **docker-build** — builds `cyberchesscoach` (Android) and `cyberchesscoach-llm-api` (backend) images
+4. **docker-build** — builds `cereveon` (Fly.io edge / Node) and `cereveon-llm-api` (Hetzner backend / Python) images
 5. **deploy** — triggered on `v*.*.*` tag; publishes to GHCR and deploys to production
 
 CI never runs real LLM inference, never requires Ollama, and never depends on telemetry.
@@ -436,7 +440,7 @@ Pre-release checklist (non-negotiable):
 4. Real LLM smoke test passes (`test_ollama_smoke.py`)
 5. Manual output sanity review (no engine mentions, no move suggestions, correct tone)
 
-Pushing a `vX.Y.Z` tag publishes the GitHub Release and GHCR images for both `cyberchesscoach:vX.Y.Z` and `cyberchesscoach-llm-api:vX.Y.Z`.
+Pushing a `vX.Y.Z` tag publishes the GitHub Release and GHCR images for both `cereveon:vX.Y.Z` and `cereveon-llm-api:vX.Y.Z`.
 
 ## Architecture Constraints
 
