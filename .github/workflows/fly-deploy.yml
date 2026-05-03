@@ -803,7 +803,7 @@ jobs:
 
       - name: Set up flyctl
         if: steps.fly-check.outputs.available == 'true'
-        uses: superfly/flyctl-actions/setup-flyctl@1.5
+        uses: superfly/flyctl-actions/setup-flyctl@1.6
 
       # Deploy the digest-pinned edge image built and signed earlier in the
       # pipeline.  flyctl reads fly.toml from the working directory for app
