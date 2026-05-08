@@ -98,7 +98,9 @@ def _deserialize_state(A_json: str, b_json: str) -> tuple[np.ndarray, np.ndarray
     return np.array(json.loads(A_json), dtype=float), np.array(json.loads(b_json), dtype=float)
 
 
-def _load_or_init(player_id: str, action: str, n_features: int, alpha: float) -> tuple[np.ndarray, np.ndarray, float]:
+def _load_or_init(
+    player_id: str, action: str, n_features: int, alpha: float
+) -> tuple[np.ndarray, np.ndarray, float]:
     """Load (A, b, alpha) from SQLite, or initialise if absent.  Also
     re-initialises when the stored n_features doesn't match the
     caller's — defensive against a feature-vector schema change."""
@@ -188,35 +190,13 @@ def reset_player(player_id: str, action: str | None = None) -> None:
 
     Not used in the live request path; provided for tests + the
     /seca-doctor command-line tool that ops use during incident
-    response."""
-    if action is None:
-        # Whole-player reset: list distinct actions known to the table
-        # for this player and clear them one at a time.  Avoids
-        # leaving rows the caller can't see via load_bandit_weights.
-        from llm.seca.storage.db import get_conn
-        conn = get_conn()
-        try:
-            rows = conn.execute(
-                "SELECT DISTINCT action FROM bandit_weights WHERE player_id = ?",
-                (player_id,),
-            ).fetchall()
-            for (a,) in rows:
-                conn.execute(
-                    "DELETE FROM bandit_weights WHERE player_id = ? AND action = ?",
-                    (player_id, a),
-                )
-            conn.commit()
-        finally:
-            conn.close()
-        return
+    response.
 
-    from llm.seca.storage.db import get_conn
-    conn = get_conn()
-    try:
-        conn.execute(
-            "DELETE FROM bandit_weights WHERE player_id = ? AND action = ?",
-            (player_id, action),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    Post-2026-05-09 SQLAlchemy migration: delegates to
+    ``repo.reset_bandit_weights`` instead of running raw SQL through
+    a sqlite3 connection.  Behaviour is preserved — single-action
+    delete when ``action`` is given, full-player wipe when ``None``.
+    """
+    from llm.seca.storage.repo import reset_bandit_weights
+
+    reset_bandit_weights(player_id, action)

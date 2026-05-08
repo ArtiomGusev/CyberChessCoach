@@ -29,7 +29,6 @@ Pinned invariants
 from __future__ import annotations
 
 import os
-import sqlite3
 
 import numpy as np
 import pytest
@@ -41,13 +40,16 @@ os.environ.setdefault("SECRET_KEY", "ci-secret-key-that-is-32-chars-long!!")
 
 @pytest.fixture()
 def temp_db(tmp_path, monkeypatch):
-    """Same temp-db pattern as test_game_checkpoint /
-    test_repertoire_endpoint."""
-    db_file = tmp_path / "seca-bandit-test.db"
-    monkeypatch.setattr("llm.seca.storage.db.DB_PATH", db_file)
-    from llm.seca.storage.db import init_db
-    init_db()
-    yield db_file
+    """Bind the project SQLAlchemy engine to a per-test SQLite file.
+
+    Post-2026-05-09 the bandit_weights table is a SQLAlchemy model on
+    the auth-side engine; this fixture swaps the engine for the test's
+    lifetime.  See ``_storage_test_helpers.bind_temp_database`` for the
+    mechanics.
+    """
+    from llm.tests._storage_test_helpers import bind_temp_database
+
+    return bind_temp_database(tmp_path, monkeypatch)
 
 
 # ---------------------------------------------------------------------------

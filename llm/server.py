@@ -1361,20 +1361,15 @@ def checkpoint_game_state(
     active = get_active_game(str(player.id))
     if active is None or active["game_id"] != game_id:
         # Look up by id directly to distinguish "wrong owner" (403)
-        # from "doesn't exist / already finished" (404).
-        from llm.seca.storage.db import get_conn
+        # from "doesn't exist / already finished" (404).  The repo
+        # helper centralises the SQLAlchemy read so the endpoint
+        # doesn't have to reach into the storage layer's session.
+        from llm.seca.storage.repo import get_game_owner_status
 
-        conn = get_conn()
-        try:
-            row = conn.execute(
-                "SELECT player_id, finished_at FROM games WHERE id = ?",
-                (game_id,),
-            ).fetchone()
-        finally:
-            conn.close()
-        if row is None:
+        status = get_game_owner_status(game_id)
+        if status is None:
             raise HTTPException(status_code=404, detail="game not found")
-        owner_id, finished_at = row
+        owner_id, finished_at = status
         if owner_id != str(player.id):
             raise HTTPException(status_code=403, detail="not your game")
         if finished_at is not None:

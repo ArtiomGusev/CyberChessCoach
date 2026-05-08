@@ -9,12 +9,14 @@ try:
     import llm.seca.brain.models  # noqa: F401
     import llm.seca.brain.training.models  # noqa: F401
     import llm.seca.analytics.models  # noqa: F401
+    import llm.seca.storage.models  # noqa: F401
 except ModuleNotFoundError:
     from seca.auth.models import Base
     import seca.events.models  # noqa: F401
     import seca.brain.models  # noqa: F401
     import seca.brain.training.models  # noqa: F401
     import seca.analytics.models  # noqa: F401
+    import seca.storage.models  # noqa: F401
 
 
 DATABASE_URL = "sqlite:///data/seca.db"

@@ -2,123 +2,144 @@
 
 Background
 ----------
-``data/seca.db`` is initialised by two paths during FastAPI lifespan:
+Pre-2026-05-09 ``data/seca.db`` was initialised by two separate paths:
 
-  1.  ``llm/seca/storage/db.py:init_db()`` executes
-      ``llm/seca/storage/schema.sql`` via raw sqlite3.
-  2.  ``llm/seca/auth/router.py:init_schema()`` runs
-      ``Base.metadata.create_all()`` for every SQLAlchemy model that has
-      been imported into the auth Base (auth, events, brain,
-      brain.training, analytics).
+  1.  ``llm/seca/storage/db.py:init_db()`` ran
+      ``llm/seca/storage/schema.sql`` via raw sqlite3 to create
+      ``games`` / ``moves`` / ``explanations`` / ``repertoire`` /
+      ``bandit_weights``.
+  2.  ``llm/seca/auth/router.py:init_schema()`` ran
+      ``Base.metadata.create_all()`` for the auth / events / brain /
+      brain.training / analytics tables.
 
-Both paths target the same physical file.  Until commit 19d71cfd they
-overlapped on three tables (``players``, ``training_decisions``,
-``training_outcomes``) with intentionally-incomplete column lists in
-``schema.sql``: that file ran first under lifespan, the partial tables
-were created, then ``create_all`` saw the tables already existed and
-skipped the missing columns entirely.  Fresh-SQLite deployments shipped
-without ``email`` / ``password_hash`` on ``players`` and auth/register
-would have crashed.
+That split was an explicit, documented boundary — but it broke under
+production once auth flipped to Postgres via ``DATABASE_URL``.  The
+games table stayed in SQLite (because ``schema.sql`` is dialect-locked
+and the helpers used raw ``sqlite3``) while the players table moved to
+Postgres.  Every ``/game/start`` thereafter raised
+``sqlite3.IntegrityError: FOREIGN KEY constraint failed`` — the
+``games.player_id`` FK couldn't reach the player row in a different
+physical database.
 
-The fix split ownership cleanly: SQLAlchemy owns auth/analytics/training
-state, schema.sql owns the per-game raw-sqlite tables (``games``,
-``moves``, ``explanations``).  See the header comment in schema.sql for
-the canonical ownership map.
+The fix removed the boundary: ``games`` / ``moves`` / ``explanations`` /
+``repertoire`` / ``bandit_weights`` are now SQLAlchemy models in
+``llm/seca/storage/models.py`` and live wherever ``DATABASE_URL``
+points.  ``schema.sql`` is gone.
 
-This test pins the boundary so any regression — re-adding a duplicate
-``CREATE TABLE`` to schema.sql, or adding a SQLAlchemy model for a
-table that schema.sql already owns — fails loud at CI time rather than
-being discovered at fresh-SQLite deployment time.
+This test pins the new invariant: every legacy raw-sqlite table is now
+present in ``Base.metadata.tables``, ``schema.sql`` is no longer on
+disk, and ``repo.py`` no longer imports or calls ``sqlite3``.
+Reintroducing any of those would fail this test loud at CI time rather
+than at fresh-Postgres deployment time.
 """
 
 from __future__ import annotations
 
 import pathlib
-import re
 import unittest
 
 
-# Tables that schema.sql legitimately owns and that no SQLAlchemy model
-# may shadow.  Update this list together with the schema.sql header
-# comment if the boundary is ever moved.
-EXPECTED_RAW_TABLES = frozenset({
-    "games", "moves", "explanations", "repertoire", "bandit_weights",
+# Tables that, prior to the migration, schema.sql owned exclusively.
+# Post-migration they all must appear in SQLAlchemy's metadata so a
+# single ``create_all`` covers the full schema.  Update this set if
+# any table is intentionally renamed or removed (and document why in
+# the commit).
+EXPECTED_MIGRATED_TABLES = frozenset({
+    "games",
+    "moves",
+    "explanations",
+    "repertoire",
+    "bandit_weights",
 })
 
 
-def _read_schema_sql() -> str:
-    repo_root = pathlib.Path(__file__).resolve().parents[2]
-    schema = repo_root / "llm" / "seca" / "storage" / "schema.sql"
-    return schema.read_text(encoding="utf-8")
-
-
-def _raw_table_names(schema_text: str) -> set[str]:
-    """Extract table names from ``CREATE TABLE [IF NOT EXISTS] <name>``."""
-    pattern = re.compile(
-        r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)",
-        re.IGNORECASE,
-    )
-    return {m.group(1) for m in pattern.finditer(schema_text)}
+def _repo_root() -> pathlib.Path:
+    return pathlib.Path(__file__).resolve().parents[2]
 
 
 class SchemaBoundaryTest(unittest.TestCase):
 
-    def test_no_overlap_between_schema_sql_and_sqlalchemy(self):
-        """schema.sql and Base.metadata must not redefine the same table.
+    def test_schema_sql_is_gone(self):
+        """schema.sql must NOT exist on disk.
 
-        This is the regression-prevention guarantee.  If the assertion
-        fails, fresh-SQLite deployments will silently ship with the
-        first-runner's incomplete schema (whichever path of init_db /
-        init_auth_schema runs first wins).
+        It was the source of truth for the raw-sqlite path that broke
+        the games-on-Postgres FK.  After the migration every table is
+        a SQLAlchemy model; reintroducing schema.sql would silently
+        re-create a separate raw-sqlite DB next to the SQLAlchemy one
+        and reopen the same FK-violation failure mode.
+        """
+        schema_path = _repo_root() / "llm" / "seca" / "storage" / "schema.sql"
+        self.assertFalse(
+            schema_path.exists(),
+            f"{schema_path} must not exist post-migration. "
+            "If you re-added it, you've split the schema across two "
+            "different databases again — see the commit that removed it.",
+        )
+
+    def test_all_migrated_tables_are_in_sqlalchemy_metadata(self):
+        """Every previously-raw table must now live in Base.metadata.
 
         Implementation note: ``llm/conftest.py:_backend_schema_init`` is
         a session-scoped autouse fixture that calls
         ``auth/router.init_schema()`` before any test runs, which
-        cascades into the side-effect imports (``from
-        llm.seca.brain.models import *`` etc.) that populate Base.
-        Trust ``Base.metadata`` as-is rather than re-importing the model
-        modules here — re-importing through ``llm.seca.X.models`` after
-        the codebase has already loaded ``seca.X.models`` via the
-        try/except fallback in ``seca/db.py`` creates a second module
-        object and trips SQLAlchemy's "Table already defined" guard
-        when the duplicate ``class TrainingDecision(Base)`` runs.
+        cascades into the side-effect imports
+        (``from llm.seca.storage.models import *`` etc.) that populate
+        Base.  Trust ``Base.metadata`` as-is rather than re-importing
+        the model modules here — re-importing through the alternate
+        ``seca.X.models`` fallback path defined in ``seca/db.py``
+        creates a second module object and trips SQLAlchemy's
+        "Table already defined" guard.
         """
         from llm.seca.auth.models import Base
 
         sqlalchemy_tables = set(Base.metadata.tables.keys())
-        raw_tables = _raw_table_names(_read_schema_sql())
-
-        overlap = sqlalchemy_tables & raw_tables
-        self.assertFalse(
-            overlap,
-            f"schema.sql redefines SQLAlchemy-owned tables: {sorted(overlap)}. "
-            f"See the header of llm/seca/storage/schema.sql for the canonical "
-            f"ownership map.  SQLAlchemy currently owns "
-            f"{sorted(sqlalchemy_tables)}.",
-        )
-
-    def test_schema_sql_owns_only_expected_raw_tables(self):
-        """schema.sql must define exactly the documented raw-owned tables.
-
-        Adding a new raw-sqlite table here is allowed but must update
-        EXPECTED_RAW_TABLES in this test file (and the schema.sql
-        header) in the same commit so the boundary stays explicit.
-        """
-        raw_tables = _raw_table_names(_read_schema_sql())
-        unexpected = raw_tables - EXPECTED_RAW_TABLES
-        missing = EXPECTED_RAW_TABLES - raw_tables
-        self.assertFalse(
-            unexpected,
-            f"schema.sql defines tables not on the expected-raw allowlist: "
-            f"{sorted(unexpected)}.  Either model the table in SQLAlchemy or "
-            f"update EXPECTED_RAW_TABLES + the schema.sql header.",
-        )
+        missing = EXPECTED_MIGRATED_TABLES - sqlalchemy_tables
         self.assertFalse(
             missing,
-            f"schema.sql is missing tables on the expected-raw allowlist: "
-            f"{sorted(missing)}.  If you intended to remove one, update "
-            f"EXPECTED_RAW_TABLES too.",
+            f"SQLAlchemy metadata is missing migrated tables: {sorted(missing)}. "
+            f"They are present in the codebase as ``llm/seca/storage/models.py`` "
+            f"declarations, but Base.metadata only tracks classes whose modules "
+            f"have actually been imported.  Confirm that "
+            f"``llm/seca/auth/router.py`` still includes "
+            f"``from llm.seca.storage.models import *`` so create_all picks them up.",
         )
+
+    def test_repo_module_does_not_use_sqlite3(self):
+        """``llm/seca/storage/repo.py`` must not import or call sqlite3.
+
+        Post-migration the repo helpers are SQLAlchemy-only.  A grep is
+        a deliberately coarse signal — it will fire on a comment too —
+        but that's the right tradeoff: any reference to ``sqlite3`` in
+        repo.py is something a reviewer should look at, not silently
+        accept.  The signature-preservation guarantee in the migration
+        means there should be exactly zero reasons to reach for raw
+        sqlite3 here.
+        """
+        repo_path = _repo_root() / "llm" / "seca" / "storage" / "repo.py"
+        text = repo_path.read_text(encoding="utf-8")
+        self.assertNotIn(
+            "import sqlite3",
+            text,
+            "repo.py imports sqlite3 — the SQLAlchemy migration removed all "
+            "raw sqlite3 access from this layer.  Either revert to a SQLAlchemy "
+            "helper or update this test (and document why) in the same commit.",
+        )
+
+    def test_legacy_get_conn_raises(self):
+        """The legacy ``get_conn`` entrypoint must raise loudly.
+
+        This guards against a forgotten caller: any code path that
+        still calls ``get_conn()`` after the migration would silently
+        open a stale ``data/seca.db`` and write rows that the rest of
+        the system cannot see.  The replacement in
+        ``llm/seca/storage/db.py`` raises ``RuntimeError`` so that case
+        fails at import / call time rather than silently corrupting
+        production state.
+        """
+        from llm.seca.storage.db import get_conn
+
+        with self.assertRaises(RuntimeError):
+            get_conn()
 
 
 if __name__ == "__main__":

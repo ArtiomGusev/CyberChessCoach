@@ -12,6 +12,7 @@ from llm.seca.auth.models import *  # noqa: F401,F403
 from llm.seca.events.models import *  # noqa: F401,F403
 from llm.seca.brain.models import *  # noqa: F401,F403
 from llm.seca.analytics.models import *  # noqa: F401,F403
+from llm.seca.storage.models import *  # noqa: F401,F403
 from .service import AuthService
 from .tokens import create_access_token, decode_token
 
