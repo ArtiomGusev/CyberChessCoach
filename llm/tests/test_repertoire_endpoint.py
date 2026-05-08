@@ -28,7 +28,6 @@ Pinned invariants
 from __future__ import annotations
 
 import os
-import sqlite3
 
 import pytest
 from fastapi import HTTPException
@@ -40,16 +39,16 @@ os.environ.setdefault("SECRET_KEY", "ci-secret-key-that-is-32-chars-long!!")
 
 @pytest.fixture()
 def temp_db(tmp_path, monkeypatch):
-    """Same temp-db pattern as test_game_checkpoint."""
-    db_file = tmp_path / "seca-test.db"
-    monkeypatch.setattr("llm.seca.storage.db.DB_PATH", db_file)
-    from llm.seca.storage.db import init_db
-    init_db()
-    conn = sqlite3.connect(db_file)
-    conn.execute("CREATE TABLE IF NOT EXISTS players (id TEXT PRIMARY KEY, email TEXT)")
-    conn.commit()
-    conn.close()
-    yield db_file
+    """Bind the project SQLAlchemy engine to a per-test SQLite file.
+
+    Post-2026-05-09 the repertoire / games / moves / explanations
+    tables are SQLAlchemy models on the auth-side engine; this fixture
+    swaps the engine to a tmp file for the test's lifetime.  See
+    ``_storage_test_helpers.bind_temp_database`` for the mechanics.
+    """
+    from llm.tests._storage_test_helpers import bind_temp_database
+
+    return bind_temp_database(tmp_path, monkeypatch)
 
 
 def _ensure_player(player_id: str = "player-rep") -> str:
@@ -139,8 +138,12 @@ class TestRepertoireDefaults:
 
 class TestRepertoireStorage:
     def _insert(self, db_file, **fields):
-        """Direct SQL insert — bypasses repo (no insert helper yet) so
-        these tests can exercise the read path against known state."""
+        """Direct ORM insert — bypasses the upsert helper so these
+        tests can exercise the read path against precisely-shaped
+        state.  Uses the same SQLAlchemy session the repo helpers
+        do, so the row is visible through ``list_repertoire`` etc.
+        without committing twice over the same DB file.
+        """
         defaults = {
             "player_id": "player-rep",
             "eco": "C84",
@@ -151,16 +154,16 @@ class TestRepertoireStorage:
             "ordinal": 0,
         }
         defaults.update(fields)
-        conn = sqlite3.connect(db_file)
-        conn.execute(
-            """
-            INSERT INTO repertoire (player_id, eco, name, line, mastery, is_active, ordinal)
-            VALUES (:player_id, :eco, :name, :line, :mastery, :is_active, :ordinal)
-            """,
-            defaults,
-        )
-        conn.commit()
-        conn.close()
+
+        from llm.seca.auth.router import SessionLocal
+        from llm.seca.storage.models import Repertoire
+
+        sess = SessionLocal()
+        try:
+            sess.add(Repertoire(**defaults))
+            sess.commit()
+        finally:
+            sess.close()
 
     def test_saved_overrides_defaults(self, temp_db):
         """REP_SAVED_OVERRIDES_DEFAULTS — once the player has even one

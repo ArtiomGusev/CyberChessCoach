@@ -33,8 +33,6 @@ Pinned invariants
 from __future__ import annotations
 
 import os
-import sqlite3
-from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
@@ -48,23 +46,19 @@ os.environ.setdefault("SECRET_KEY", "ci-secret-key-that-is-32-chars-long!!")
 
 @pytest.fixture()
 def temp_db(tmp_path, monkeypatch):
-    """Point storage.db / repo at a temp SQLite file so tests don't
-    pollute data/seca.db; tear it down between tests."""
-    db_file = tmp_path / "seca-test.db"
-    monkeypatch.setattr("llm.seca.storage.db.DB_PATH", db_file)
-    # Initialise both raw-sqlite schema (games/moves/explanations) and
-    # the SQLAlchemy auth tables we need (players for the FK).
-    from llm.seca.storage.db import init_db
-    init_db()
-    # Players FK target — auth tables aren't created by init_db; add
-    # a minimal players row directly so the games FK is satisfied.
-    conn = sqlite3.connect(db_file)
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS players (id TEXT PRIMARY KEY, email TEXT)"
-    )
-    conn.commit()
-    conn.close()
-    yield db_file
+    """Bind the project SQLAlchemy engine to a per-test SQLite file so
+    tests don't pollute ``data/seca.db``; teardown via monkeypatch.
+
+    Post-2026-05-09 every storage table (games/moves/explanations/
+    repertoire/bandit_weights) is a SQLAlchemy model living in the
+    auth-side engine, so creating the schema is one ``create_all``
+    call.  ``ensure_player`` (called by the test helpers) now goes
+    through the real SQLAlchemy ``Player`` model — no more raw-sqlite
+    placeholder players table needed.
+    """
+    from llm.tests._storage_test_helpers import bind_temp_database
+
+    return bind_temp_database(tmp_path, monkeypatch)
 
 
 def _ensure_player(player_id: str = "player-checkpoint") -> str:

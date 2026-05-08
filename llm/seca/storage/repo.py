@@ -1,21 +1,126 @@
+"""SQLAlchemy-backed storage helpers for games, moves, explanations,
+repertoire, and bandit weights.
+
+History
+-------
+Pre-2026-05-09 these helpers used raw ``sqlite3`` against a hardcoded
+``data/seca.db`` while the auth tables (``players`` / ``sessions``)
+lived in SQLAlchemy and could be backed by Postgres in production via
+``DATABASE_URL``.  The two paths drifted into different physical
+databases under the production deployment, breaking the
+``games.player_id → players.id`` foreign key:
+
+    sqlite3.IntegrityError: FOREIGN KEY constraint failed
+
+at the start of every ``/game/start`` request because Postgres held
+the player rows but SQLite held the games table.
+
+The migration (this file + ``llm/seca/storage/models.py``) unifies
+ownership: every table is now declared in SQLAlchemy and lives in
+whatever database ``DATABASE_URL`` points at — SQLite in dev/tests,
+Postgres in production.
+
+Public function signatures are preserved so callers don't need to
+change.  Internally, every function obtains a short-lived
+``SessionLocal`` session, performs the work in a single transaction,
+commits on success, and closes the session.  This mirrors the prior
+"open conn / do work / commit / close" shape and keeps each helper
+self-contained without forcing the call site to manage a session.
+"""
+
+from __future__ import annotations
+
 import uuid
-from .db import get_conn
+from datetime import datetime
+from typing import Any, Iterable
+
+from sqlalchemy import and_, asc, desc, func, select
+from sqlalchemy.orm import Session
+
+from llm.seca.storage.models import (
+    BanditWeights,
+    Explanation,
+    Game,
+    Move,
+    Repertoire,
+)
+
+# -------------------------------------------------
+# Session helper
+# -------------------------------------------------
+
+
+def _session() -> Session:
+    """Open a short-lived ORM session bound to the project-wide engine.
+
+    Resolved lazily so that test fixtures monkey-patching
+    ``llm.seca.auth.router.SessionLocal`` to point at a temp DB
+    actually take effect: a module-level ``from ... import SessionLocal``
+    would bind the original sessionmaker once at import time and the
+    patched value would never be read.
+
+    The import lives inside the function (rather than at module level)
+    for the same reason — Python caches the imported name in the
+    module's namespace at import time, so a later
+    ``monkeypatch.setattr(auth_router, "SessionLocal", new)`` would not
+    touch the cached ``repo.SessionLocal`` reference.  Re-resolving
+    ``auth_router.SessionLocal`` on every call sidesteps that.
+    """
+    from llm.seca.auth import router as auth_router
+
+    return auth_router.SessionLocal()
+
 
 # -------------------------------------------------
 # Player
 # -------------------------------------------------
 
 
-def ensure_player(player_id: str):
-    conn = get_conn()
+def ensure_player(player_id: str) -> None:
+    """Insert a placeholder ``players`` row if one doesn't already exist.
+
+    Pre-migration this used ``INSERT OR IGNORE`` against the raw-sqlite
+    ``players`` table that ``schema.sql`` created.  Post-migration the
+    only ``players`` table is the SQLAlchemy ``Player`` model in
+    ``auth/models.py``, which has ``email`` / ``password_hash``
+    NOT-NULL columns.
+
+    To avoid corrupting real auth state, ``ensure_player`` only inserts
+    a placeholder row when the id doesn't already exist AND no auth
+    record will be later overwritten.  The helper is defensive about
+    nullable columns: it provides synthetic ``email`` / ``password_hash``
+    values that can never collide with a real-user value (the leading
+    ``__placeholder__::`` prefix is reserved).
+
+    Production callers reach this helper only via ``/move`` /
+    ``/explanation_outcome`` for authenticated users — so by the time
+    we get here a real ``players`` row already exists for the JWT subject
+    and the INSERT path is skipped.  The placeholder logic exists for
+    test fixtures that exercise ``create_game(some-fake-id)`` without
+    going through registration.
+    """
+    # Defer the import so the auth.models Base/Player wiring stays
+    # internal to repo.py and never imports auth.models from a model
+    # consumer that just needs ``Game`` / ``Move`` etc.
+    from llm.seca.auth.models import Player
+
+    sess = _session()
     try:
-        conn.execute(
-            "INSERT OR IGNORE INTO players (id) VALUES (?)",
-            (player_id,),
+        existing = sess.get(Player, player_id)
+        if existing is not None:
+            return
+        # Placeholder — production callers don't hit this path because
+        # the JWT-auth dependency materialises a real Player row before
+        # any /move call.
+        placeholder = Player(
+            id=player_id,
+            email=f"__placeholder__::{player_id}",
+            password_hash="__placeholder__",
         )
-        conn.commit()
+        sess.add(placeholder)
+        sess.commit()
     finally:
-        conn.close()
+        sess.close()
 
 
 # -------------------------------------------------
@@ -26,52 +131,51 @@ def ensure_player(player_id: str):
 def get_or_create_auto_game(player_id: str) -> str:
     """Return a stable per-player game ID for non-session move logging.
 
-    Uses a deterministic `auto-{player_id}` key so all moves from the same
-    authenticated player are grouped under one row until a real session system
-    replaces this (see server.py /game/start endpoint).
+    Uses a deterministic ``auto-{player_id}`` key so all moves from the
+    same authenticated player are grouped under one row until a real
+    session system replaces this (see server.py /game/start endpoint).
     """
     ensure_player(player_id)
     game_id = f"auto-{player_id}"
-    conn = get_conn()
+
+    sess = _session()
     try:
-        conn.execute(
-            "INSERT OR IGNORE INTO games (id, player_id) VALUES (?, ?)",
-            (game_id, player_id),
-        )
-        conn.commit()
+        existing = sess.get(Game, game_id)
+        if existing is None:
+            sess.add(Game(id=game_id, player_id=player_id))
+            sess.commit()
     finally:
-        conn.close()
+        sess.close()
     return game_id
 
 
 def create_game(player_id: str) -> str:
+    """Create a new ``games`` row for the player and return its UUID."""
     ensure_player(player_id)
 
     game_id = str(uuid.uuid4())
-
-    conn = get_conn()
+    sess = _session()
     try:
-        conn.execute(
-            "INSERT INTO games (id, player_id) VALUES (?, ?)",
-            (game_id, player_id),
-        )
-        conn.commit()
+        sess.add(Game(id=game_id, player_id=player_id))
+        sess.commit()
     finally:
-        conn.close()
+        sess.close()
 
     return game_id
 
 
-def finish_game(game_id: str, result: str):
-    conn = get_conn()
+def finish_game(game_id: str, result: str) -> None:
+    """Mark a game finished, stamping ``finished_at`` to now (UTC)."""
+    sess = _session()
     try:
-        conn.execute(
-            "UPDATE games SET result = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (result, game_id),
-        )
-        conn.commit()
+        game = sess.get(Game, game_id)
+        if game is None:
+            return
+        game.result = result
+        game.finished_at = datetime.utcnow()
+        sess.commit()
     finally:
-        conn.close()
+        sess.close()
 
 
 # -------------------------------------------------
@@ -80,56 +184,128 @@ def finish_game(game_id: str, result: str):
 
 
 def checkpoint_game(game_id: str, fen: str, uci_history: str) -> bool:
-    """Persist the in-progress state for [game_id].  No-ops (returns
+    """Persist the in-progress state for ``game_id``.  No-ops (returns
     False) when the row is already finished or doesn't exist — sliding
-    a checkpoint onto a closed game would create a phantom resume
-    entry the user couldn't actually pick up.
+    a checkpoint onto a closed game would create a phantom resume entry
+    the user couldn't actually pick up.
 
     Returns True iff the UPDATE touched a row.
     """
-    conn = get_conn()
+    sess = _session()
     try:
-        cur = conn.execute(
-            """
-            UPDATE games
-               SET current_fen = ?,
-                   current_uci_history = ?,
-                   last_checkpoint_at = CURRENT_TIMESTAMP
-             WHERE id = ?
-               AND finished_at IS NULL
-            """,
-            (fen, uci_history, game_id),
-        )
-        conn.commit()
-        return cur.rowcount > 0
+        game = sess.get(Game, game_id)
+        if game is None or game.finished_at is not None:
+            return False
+        game.current_fen = fen
+        game.current_uci_history = uci_history
+        game.last_checkpoint_at = datetime.utcnow()
+        sess.commit()
+        return True
     finally:
-        conn.close()
+        sess.close()
+
+
+def get_active_game(player_id: str) -> dict | None:
+    """Return the player's most recent unfinished game with a non-null
+    checkpoint, or None if there isn't one.
+
+    Shape (when present):
+        {
+          "game_id":             str,
+          "current_fen":         str,
+          "current_uci_history": str,
+          "last_checkpoint_at":  datetime,
+          "started_at":          datetime,
+        }
+
+    Filters:
+      - Same player_id.
+      - finished_at IS NULL  (unfinished).
+      - current_fen IS NOT NULL  (a checkpoint was actually written;
+        avoids returning rows for /game/start calls where the user
+        never played a single move).
+
+    Order: most-recent last_checkpoint_at first.
+    """
+    sess = _session()
+    try:
+        stmt = (
+            select(Game)
+            .where(
+                and_(
+                    Game.player_id == player_id,
+                    Game.finished_at.is_(None),
+                    Game.current_fen.is_not(None),
+                )
+            )
+            .order_by(desc(Game.last_checkpoint_at))
+            .limit(1)
+        )
+        game = sess.execute(stmt).scalar_one_or_none()
+        if game is None:
+            return None
+        return {
+            "game_id": game.id,
+            "current_fen": game.current_fen,
+            "current_uci_history": game.current_uci_history or "",
+            "last_checkpoint_at": game.last_checkpoint_at,
+            "started_at": game.started_at,
+        }
+    finally:
+        sess.close()
+
+
+def get_game_owner_status(game_id: str) -> tuple[str | None, datetime | None] | None:
+    """Look up ``(player_id, finished_at)`` for ``game_id`` directly.
+
+    Returns ``None`` when the row doesn't exist.  Used by the
+    ``/game/{id}/checkpoint`` endpoint to distinguish 404 (no such
+    game) from 403 (wrong owner) from 409 (already finished) without
+    pulling the full row through ``get_active_game``'s checkpoint
+    filters.
+
+    Replaces the inline ``get_conn().execute("SELECT player_id, ...")``
+    that lived in ``server.py`` pre-migration; centralising it here
+    keeps every direct DB read inside the storage layer.
+    """
+    sess = _session()
+    try:
+        game = sess.get(Game, game_id)
+        if game is None:
+            return None
+        return (game.player_id, game.finished_at)
+    finally:
+        sess.close()
+
+
+# -------------------------------------------------
+# Repertoire (opening study)
+# -------------------------------------------------
 
 
 def update_opening_mastery(player_id: str, eco: str, new_mastery: float) -> bool:
-    """Set the mastery of an existing opening row.  Returns True iff
-    a row was actually updated.
+    """Set the mastery of an existing opening row.  Returns True iff a
+    row was actually updated.
 
     Caller is responsible for clamping new_mastery to [0, 1] — this
     helper just writes whatever it's given so the server-side endpoint
     can keep the bounds policy in one place (server.py
     drill_result_endpoint).
     """
-    conn = get_conn()
+    sess = _session()
     try:
-        cur = conn.execute(
-            """
-            UPDATE repertoire
-               SET mastery = ?,
-                   updated_at = CURRENT_TIMESTAMP
-             WHERE player_id = ? AND eco = ?
-            """,
-            (float(new_mastery), player_id, eco),
+        stmt = select(Repertoire).where(
+            and_(Repertoire.player_id == player_id, Repertoire.eco == eco)
         )
-        conn.commit()
-        return cur.rowcount > 0
+        row = sess.execute(stmt).scalar_one_or_none()
+        if row is None:
+            return False
+        row.mastery = float(new_mastery)
+        row.updated_at = datetime.utcnow()
+        sess.commit()
+        return True
     finally:
-        conn.close()
+        sess.close()
 
 
 def upsert_opening(
@@ -144,97 +320,108 @@ def upsert_opening(
     """Insert or update an opening line for the player.
 
     Conflict resolution: the (player_id, eco) UNIQUE constraint means
-    re-inserting an existing eco updates the row in place — name/
-    line/mastery/is_active/ordinal can drift over time without
+    re-inserting an existing eco updates the row in place — name /
+    line / mastery / is_active / ordinal can drift over time without
     creating duplicates.
 
-    When ordinal is None, the new row is appended at the end of
-    the player's list (max(ordinal) + 1).
+    When ordinal is None, the new row is appended at the end of the
+    player's list (max(ordinal) + 1).
     """
-    if ordinal is None:
-        conn = get_conn()
-        try:
-            row = conn.execute(
-                "SELECT COALESCE(MAX(ordinal), -1) FROM repertoire WHERE player_id = ?",
-                (player_id,),
-            ).fetchone()
-            ordinal = (row[0] if row else -1) + 1
-        finally:
-            conn.close()
-
-    conn = get_conn()
+    sess = _session()
     try:
-        conn.execute(
-            """
-            INSERT INTO repertoire
-                (player_id, eco, name, line, mastery, is_active, ordinal, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(player_id, eco) DO UPDATE SET
-                name = excluded.name,
-                line = excluded.line,
-                mastery = excluded.mastery,
-                is_active = excluded.is_active,
-                ordinal = excluded.ordinal,
-                updated_at = CURRENT_TIMESTAMP
-            """,
-            (player_id, eco, name, line, mastery, 1 if is_active else 0, ordinal),
+        if ordinal is None:
+            current_max = sess.execute(
+                select(func.coalesce(func.max(Repertoire.ordinal), -1)).where(
+                    Repertoire.player_id == player_id
+                )
+            ).scalar_one()
+            ordinal = int(current_max) + 1
+
+        stmt = select(Repertoire).where(
+            and_(Repertoire.player_id == player_id, Repertoire.eco == eco)
         )
-        conn.commit()
+        existing = sess.execute(stmt).scalar_one_or_none()
+        now = datetime.utcnow()
+        if existing is None:
+            sess.add(
+                Repertoire(
+                    player_id=player_id,
+                    eco=eco,
+                    name=name,
+                    line=line,
+                    mastery=float(mastery),
+                    is_active=1 if is_active else 0,
+                    ordinal=int(ordinal),
+                    updated_at=now,
+                )
+            )
+        else:
+            existing.name = name
+            existing.line = line
+            existing.mastery = float(mastery)
+            existing.is_active = 1 if is_active else 0
+            existing.ordinal = int(ordinal)
+            existing.updated_at = now
+        sess.commit()
     finally:
-        conn.close()
+        sess.close()
 
 
 def delete_opening(player_id: str, eco: str) -> bool:
-    """Remove an opening from the player's repertoire.  Returns True
-    iff a row was actually deleted (false for a non-existent eco)."""
-    conn = get_conn()
+    """Remove an opening from the player's repertoire.  Returns True iff
+    a row was actually deleted (false for a non-existent eco)."""
+    sess = _session()
     try:
-        cur = conn.execute(
-            "DELETE FROM repertoire WHERE player_id = ? AND eco = ?",
-            (player_id, eco),
+        stmt = select(Repertoire).where(
+            and_(Repertoire.player_id == player_id, Repertoire.eco == eco)
         )
-        conn.commit()
-        return cur.rowcount > 0
+        row = sess.execute(stmt).scalar_one_or_none()
+        if row is None:
+            return False
+        sess.delete(row)
+        sess.commit()
+        return True
     finally:
-        conn.close()
+        sess.close()
 
 
 def set_active_opening(player_id: str, eco: str) -> bool:
-    """Mark [eco] as the player's active line, demoting any other
+    """Mark ``eco`` as the player's active line, demoting any other
     currently-active row to inactive.  Returns True iff a row was
-    successfully promoted (false when the eco doesn't exist for
-    this player)."""
-    conn = get_conn()
+    successfully promoted (false when the eco doesn't exist for this
+    player).
+
+    Two writes in one transaction so the "exactly one active"
+    invariant holds at every observable moment.
+    """
+    sess = _session()
     try:
-        # Verify the target row exists first — otherwise we'd silently
-        # demote the current active row without promoting a replacement.
-        existing = conn.execute(
-            "SELECT 1 FROM repertoire WHERE player_id = ? AND eco = ?",
-            (player_id, eco),
-        ).fetchone()
-        if existing is None:
+        stmt = select(Repertoire).where(
+            and_(Repertoire.player_id == player_id, Repertoire.eco == eco)
+        )
+        target = sess.execute(stmt).scalar_one_or_none()
+        if target is None:
             return False
 
-        # Demote everything else, then promote the target.  Two writes
-        # in one transaction so the "exactly one active" invariant
-        # holds at every observable moment.
-        conn.execute(
-            "UPDATE repertoire SET is_active = 0, updated_at = CURRENT_TIMESTAMP "
-            "WHERE player_id = ? AND eco != ?",
-            (player_id, eco),
+        now = datetime.utcnow()
+        # Demote everything else.
+        others_stmt = select(Repertoire).where(
+            and_(Repertoire.player_id == player_id, Repertoire.eco != eco)
         )
-        conn.execute(
-            "UPDATE repertoire SET is_active = 1, updated_at = CURRENT_TIMESTAMP "
-            "WHERE player_id = ? AND eco = ?",
-            (player_id, eco),
-        )
-        conn.commit()
+        for other in sess.execute(others_stmt).scalars():
+            other.is_active = 0
+            other.updated_at = now
+
+        # Promote the target.
+        target.is_active = 1
+        target.updated_at = now
+        sess.commit()
         return True
     finally:
-        conn.close()
+        sess.close()
 
 
-def seed_default_repertoire(player_id: str, defaults: list[dict]) -> int:
+def seed_default_repertoire(player_id: str, defaults: Iterable[dict]) -> int:
     """Insert the canonical default repertoire for a player who has
     nothing stored.  No-op (returns 0) when the player already has
     at least one row.  Returns the number of rows inserted.
@@ -243,68 +430,95 @@ def seed_default_repertoire(player_id: str, defaults: list[dict]) -> int:
     operate so the user can edit the defaults they see in the GET
     response without an extra "save defaults" step.
     """
-    conn = get_conn()
+    defaults = list(defaults)
+    sess = _session()
     try:
-        existing = conn.execute(
-            "SELECT 1 FROM repertoire WHERE player_id = ? LIMIT 1",
-            (player_id,),
-        ).fetchone()
+        existing = sess.execute(
+            select(Repertoire.id).where(Repertoire.player_id == player_id).limit(1)
+        ).first()
         if existing is not None:
             return 0
         for entry in defaults:
-            conn.execute(
-                """
-                INSERT INTO repertoire
-                    (player_id, eco, name, line, mastery, is_active, ordinal)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    player_id,
-                    entry["eco"],
-                    entry["name"],
-                    entry["line"],
-                    entry["mastery"],
-                    1 if entry["is_active"] else 0,
-                    entry["ordinal"],
-                ),
+            sess.add(
+                Repertoire(
+                    player_id=player_id,
+                    eco=entry["eco"],
+                    name=entry["name"],
+                    line=entry["line"],
+                    mastery=float(entry["mastery"]),
+                    is_active=1 if entry["is_active"] else 0,
+                    ordinal=int(entry["ordinal"]),
+                )
             )
-        conn.commit()
+        sess.commit()
         return len(defaults)
     finally:
-        conn.close()
+        sess.close()
+
+
+def list_repertoire(player_id: str) -> list[dict]:
+    """Return the player's opening repertoire ordered by ``ordinal``,
+    or an empty list when nothing is stored.
+
+    Caller (server.py /repertoire) is responsible for substituting the
+    canonical defaults when the list is empty — the repo doesn't invent
+    rows for an unknown player.
+    """
+    sess = _session()
+    try:
+        stmt = (
+            select(Repertoire)
+            .where(Repertoire.player_id == player_id)
+            .order_by(asc(Repertoire.ordinal), asc(Repertoire.id))
+        )
+        rows = sess.execute(stmt).scalars().all()
+    finally:
+        sess.close()
+    return [
+        {
+            "eco": r.eco,
+            "name": r.name,
+            "line": r.line,
+            "mastery": float(r.mastery),
+            "is_active": bool(r.is_active),
+            "ordinal": int(r.ordinal),
+        }
+        for r in rows
+    ]
+
+
+# -------------------------------------------------
+# Bandit weights (LinUCB sufficient statistics)
+# -------------------------------------------------
 
 
 def load_bandit_weights(player_id: str, action: str) -> dict | None:
-    """Read a single (player, action) row from `bandit_weights`.
+    """Read a single (player, action) row from ``bandit_weights``.
 
     Returns None when the player+action pair has never been recorded
-    — caller (decision module) initialises a fresh identity-A,
-    zero-b in that case.
+    — caller (decision module) initialises a fresh identity-A, zero-b
+    in that case.
 
     Schema:
         {n_features: int, A_json: str, b_json: str, alpha: float}
-    A and b are returned as JSON-encoded strings; the decision
-    module deserialises them via numpy.
+    A and b are returned as JSON-encoded strings; the decision module
+    deserialises them via numpy.
     """
-    conn = get_conn()
+    sess = _session()
     try:
-        row = conn.execute(
-            """
-            SELECT n_features, A_json, b_json, alpha
-              FROM bandit_weights
-             WHERE player_id = ? AND action = ?
-            """,
-            (player_id, action),
-        ).fetchone()
+        stmt = select(BanditWeights).where(
+            and_(BanditWeights.player_id == player_id, BanditWeights.action == action)
+        )
+        row = sess.execute(stmt).scalar_one_or_none()
     finally:
-        conn.close()
+        sess.close()
     if row is None:
         return None
     return {
-        "n_features": int(row[0]),
-        "A_json": row[1],
-        "b_json": row[2],
-        "alpha": float(row[3]),
+        "n_features": int(row.n_features),
+        "A_json": row.A_json,
+        "b_json": row.b_json,
+        "alpha": float(row.alpha),
     }
 
 
@@ -316,121 +530,67 @@ def save_bandit_weights(
     b_json: str,
     alpha: float,
 ) -> None:
-    """Upsert one (player, action) row into `bandit_weights`.
+    """Upsert one (player, action) row into ``bandit_weights``.
 
-    The UNIQUE(player_id, action) constraint means re-saving an
-    existing pair updates the existing row; the row count grows
-    only with new actions or new players.
+    The UNIQUE(player_id, action) constraint means re-saving an existing
+    pair updates the existing row; the row count grows only with new
+    actions or new players.
     """
-    conn = get_conn()
+    sess = _session()
     try:
-        conn.execute(
-            """
-            INSERT INTO bandit_weights
-                (player_id, action, n_features, A_json, b_json, alpha, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(player_id, action) DO UPDATE SET
-                n_features = excluded.n_features,
-                A_json = excluded.A_json,
-                b_json = excluded.b_json,
-                alpha = excluded.alpha,
-                updated_at = CURRENT_TIMESTAMP
-            """,
-            (player_id, action, n_features, A_json, b_json, alpha),
+        stmt = select(BanditWeights).where(
+            and_(BanditWeights.player_id == player_id, BanditWeights.action == action)
         )
-        conn.commit()
+        existing = sess.execute(stmt).scalar_one_or_none()
+        now = datetime.utcnow()
+        if existing is None:
+            sess.add(
+                BanditWeights(
+                    player_id=player_id,
+                    action=action,
+                    n_features=int(n_features),
+                    A_json=A_json,
+                    b_json=b_json,
+                    alpha=float(alpha),
+                    updated_at=now,
+                )
+            )
+        else:
+            existing.n_features = int(n_features)
+            existing.A_json = A_json
+            existing.b_json = b_json
+            existing.alpha = float(alpha)
+            existing.updated_at = now
+        sess.commit()
     finally:
-        conn.close()
+        sess.close()
 
 
-def list_repertoire(player_id: str) -> list[dict]:
-    """Return the player's opening repertoire ordered by `ordinal`,
-    or an empty list when nothing is stored.
+def reset_bandit_weights(player_id: str, action: str | None = None) -> None:
+    """Wipe the player's bandit state.  When ``action`` is given, only
+    that (player, action) row is deleted; when ``None``, every action
+    for the player is cleared.
 
-    Caller (server.py /repertoire) is responsible for substituting
-    the canonical defaults when the list is empty — the repo doesn't
-    invent rows for an unknown player.
+    Provided so ``llm/seca/brain/bandit/decision.reset_player`` can stop
+    reaching directly into the storage layer's connection.  Caller path:
+    diagnostic helper + the /seca-doctor command-line tool.
     """
-    conn = get_conn()
+    sess = _session()
     try:
-        rows = conn.execute(
-            """
-            SELECT eco, name, line, mastery, is_active, ordinal
-              FROM repertoire
-             WHERE player_id = ?
-             ORDER BY ordinal ASC, id ASC
-            """,
-            (player_id,),
-        ).fetchall()
+        if action is None:
+            stmt: Any = select(BanditWeights).where(BanditWeights.player_id == player_id)
+        else:
+            stmt = select(BanditWeights).where(
+                and_(
+                    BanditWeights.player_id == player_id,
+                    BanditWeights.action == action,
+                )
+            )
+        for row in sess.execute(stmt).scalars():
+            sess.delete(row)
+        sess.commit()
     finally:
-        conn.close()
-    return [
-        {
-            "eco": r[0],
-            "name": r[1],
-            "line": r[2],
-            "mastery": float(r[3]),
-            "is_active": bool(r[4]),
-            "ordinal": int(r[5]),
-        }
-        for r in rows
-    ]
-
-
-def get_active_game(player_id: str) -> dict | None:
-    """Return the player's most recent unfinished game with a
-    non-null checkpoint, or None if there isn't one.
-
-    Shape (when present):
-        {
-          "game_id":             str,
-          "current_fen":         str,
-          "current_uci_history": str,
-          "last_checkpoint_at":  str (ISO timestamp),
-          "started_at":          str (ISO timestamp),
-        }
-
-    Filters:
-      - Same player_id.
-      - finished_at IS NULL  (unfinished).
-      - current_fen IS NOT NULL  (a checkpoint was actually written;
-        avoids returning rows for /game/start calls where the user
-        never played a single move).
-
-    Order: most-recent last_checkpoint_at first, so a multi-game
-    history returns the user's last active session, not an ancient
-    one.
-    """
-    conn = get_conn()
-    try:
-        row = conn.execute(
-            """
-            SELECT id,
-                   current_fen,
-                   current_uci_history,
-                   last_checkpoint_at,
-                   started_at
-              FROM games
-             WHERE player_id = ?
-               AND finished_at IS NULL
-               AND current_fen IS NOT NULL
-             ORDER BY last_checkpoint_at DESC
-             LIMIT 1
-            """,
-            (player_id,),
-        ).fetchone()
-    finally:
-        conn.close()
-
-    if row is None:
-        return None
-    return {
-        "game_id": row[0],
-        "current_fen": row[1],
-        "current_uci_history": row[2] or "",
-        "last_checkpoint_at": row[3],
-        "started_at": row[4],
-    }
+        sess.close()
 
 
 # -------------------------------------------------
@@ -438,19 +598,27 @@ def get_active_game(player_id: str) -> dict | None:
 # -------------------------------------------------
 
 
-def log_move(game_id: str, ply: int, fen: str, uci: str, san: str, eval: float | None):
-    conn = get_conn()
+def log_move(game_id: str, ply: int, fen: str, uci: str, san: str, eval: float | None) -> None:
+    """Append a per-ply move row.
+
+    Argument name ``eval`` shadows the Python builtin to preserve the
+    pre-migration signature; the function does not call ``eval``.
+    """
+    sess = _session()
     try:
-        conn.execute(
-            """
-            INSERT INTO moves (game_id, ply, fen, uci, san, eval)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (game_id, ply, fen, uci, san, eval),
+        sess.add(
+            Move(
+                game_id=game_id,
+                ply=ply,
+                fen=fen,
+                uci=uci,
+                san=san,
+                eval=eval,
+            )
         )
-        conn.commit()
+        sess.commit()
     finally:
-        conn.close()
+        sess.close()
 
 
 # -------------------------------------------------
@@ -463,31 +631,38 @@ def log_explanation(
     ply: int,
     explanation_type: str,
     confidence: float,
-):
-    conn = get_conn()
+) -> int | None:
+    """Insert an ``explanations`` row and return its primary key.
+
+    Pre-migration this returned the ``cur.lastrowid`` from raw sqlite3.
+    SQLAlchemy populates the ``id`` attribute on flush, so the
+    semantics carry over identically — same Integer PK, same
+    monotonically-increasing identifier.
+    """
+    sess = _session()
     try:
-        cur = conn.execute(
-            """
-            INSERT INTO explanations (game_id, ply, explanation_type, confidence)
-            VALUES (?, ?, ?, ?)
-            """,
-            (game_id, ply, explanation_type, confidence),
+        explanation = Explanation(
+            game_id=game_id,
+            ply=ply,
+            explanation_type=explanation_type,
+            confidence=float(confidence),
         )
-        conn.commit()
-        explanation_id = cur.lastrowid
+        sess.add(explanation)
+        sess.commit()
+        sess.refresh(explanation)
+        return explanation.id
     finally:
-        conn.close()
-
-    return explanation_id
+        sess.close()
 
 
-def update_learning_score(explanation_id: int, score: float):
-    conn = get_conn()
+def update_learning_score(explanation_id: int, score: float) -> None:
+    """Set the learning_score on an existing explanations row."""
+    sess = _session()
     try:
-        conn.execute(
-            "UPDATE explanations SET learning_score = ? WHERE id = ?",
-            (score, explanation_id),
-        )
-        conn.commit()
+        explanation = sess.get(Explanation, explanation_id)
+        if explanation is None:
+            return
+        explanation.learning_score = float(score)
+        sess.commit()
     finally:
-        conn.close()
+        sess.close()
