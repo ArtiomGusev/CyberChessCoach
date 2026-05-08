@@ -80,7 +80,7 @@ def get_db():
 
 def get_current_player(
     response: Response,
-    authorization: str = Header(...),
+    authorization: str | None = Header(None),
     db: DBSession = Depends(get_db),
 ):
     """Validate the Bearer token and return the matched Player.
@@ -99,7 +99,19 @@ def get_current_player(
     The new token is NOT issued on the failure paths — an attacker
     probing with a stolen-then-revoked token must not receive a
     fresh JWT they could keep using.
+
+    Header semantics
+    ----------------
+    ``authorization`` is declared ``str | None = Header(None)`` rather
+    than ``Header(...)`` so a request without an ``Authorization``
+    header surfaces as a clean 401 from this dependency.  With the
+    ellipsis form, FastAPI/Pydantic raises a 422 ValidationError before
+    the function body runs, which the Android client can't translate
+    into a "log in again" UX (it only special-cases 401).  See
+    AUTH_HDR_01 / AUTH_HDR_02 in test_auth_missing_header.py.
     """
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing token")
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "bearer" or not token:
         raise HTTPException(status_code=401, detail="Invalid token")
@@ -289,9 +301,14 @@ def login(request: Request, req: LoginRequest, db: Session = Depends(get_db)):
 
 @router.post("/logout")
 def logout(
-    authorization: str = Header(...),
+    authorization: str | None = Header(None),
     db: DBSession = Depends(get_db),
 ):
+    # ``Header(None)`` (vs ``Header(...)``) so a missing Authorization
+    # header surfaces as a 401 here rather than a Pydantic 422 before
+    # the body runs — see AUTH_HDR_02 in test_auth_missing_header.py.
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing token")
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "bearer" or not token:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
