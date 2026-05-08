@@ -95,8 +95,17 @@ tools/run_autonomous.sh
 # pre-squash state, deleted in 2026-05-07 cleanup but listed here so
 # any future re-clone into the working tree won't be staged by an
 # accidental `git add -A`.
-chesscoach/
-chesscoach-purge.git/
+#
+# Anchored with a leading slash — without it, gitignore matches any
+# path component called ``chesscoach`` and silently swallows every
+# new file under ``android/app/src/main/java/ai/chesscoach/app/``
+# (the Android package directory).  Existing tracked files surface
+# as modified in ``git status`` regardless, so the symptom only
+# manifests when a new file under that path is added: it never shows
+# up as ``??``, never gets staged, and only surfaces at deploy time
+# when the APK is missing the class.
+/chesscoach/
+/chesscoach-purge.git/
 
 # Gradle scratch directory for the Android wrapper distributions.
 tmp_gradle/
