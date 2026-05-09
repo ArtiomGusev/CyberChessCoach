@@ -709,8 +709,19 @@ def _assert_zero_downtime_ssh_step(ssh_step: dict, *, label: str) -> None:
     assert "DEPLOY_IMAGE" in script, f"{label}: must deploy by pinned digest via DEPLOY_IMAGE"
     assert "DEPLOY_IMAGE" in step_env, f"{label}: DEPLOY_IMAGE must be set on the step env"
     assert "DEPLOY_IMAGE" in step_envs, f"{label}: DEPLOY_IMAGE must be forwarded via envs:"
-    assert "--scale api=2" in script, f"{label}: must scale to 2 for zero-downtime rollout"
-    assert "--no-recreate" in script, f"{label}: must keep existing container alive during scale-up"
+    # Stop-and-replace strategy (PR #70): the 4 GB Hetzner box cannot host two
+    # api containers in parallel without OOM-stalling docker inspect during
+    # the rolling-pair window.  We accept ~5-10 s of Caddy 502s per deploy in
+    # exchange for not hitting the memory ceiling.  The previous --scale api=2
+    # / --no-recreate invariants were intentionally removed; --force-recreate
+    # is now the pinned contract, and the helper name is kept generic
+    # (health-gated, not zero-downtime).
+    assert "--force-recreate" in script, f"{label}: must --force-recreate api for stop-and-replace"
+    assert "--scale api=2" not in script, (
+        f"{label}: --scale api=2 was deliberately removed in PR #70 (4 GB box "
+        "can't host two api containers in parallel — see PR #68/#69 OOM incidents). "
+        "If you're re-introducing rolling deploy, also bump the box to CX22 (8 GB)."
+    )
     assert "Health.Status" in script, f"{label}: must inspect Docker healthcheck on new container"
     assert "PREV_CONTAINER" in script, f"{label}: must record old container ID for removal"
     assert "PREV_IMAGE" in script, f"{label}: must record old image reference for rollback logging"
@@ -718,9 +729,11 @@ def _assert_zero_downtime_ssh_step(ssh_step: dict, *, label: str) -> None:
 
 
 def test_hetzner_deploy_health_gates_rollout():
-    """Deploy script must implement zero-downtime rolling swap:
-    scale to 2 (new alongside old), health-check new container via Docker
-    healthcheck, gracefully drain old on success, rollback new on failure.
+    """Deploy script must implement health-gated stop-and-replace:
+    --force-recreate api (single-container swap), wait for Docker healthcheck
+    to report healthy on the new container, otherwise --force-recreate again
+    with the previously-running image.  See PR #70 for the trade-off
+    rationale (4 GB Hetzner box can't host two api containers in parallel).
     """
     workflow = _load_workflow("fly-deploy.yml")
     deploy = workflow["jobs"]["deploy"]
@@ -739,7 +752,9 @@ def test_production_deploy_workflow_structure():
     - concurrency group matching fly-deploy.yml (prevents races)
     - environment: production and persist-credentials: false checkout
     - key: secrets.HETZNER_SSH_KEY (not written to disk)
-    - full zero-downtime script identical to the automated deploy
+    - same health-gated stop-and-replace SSH script as the automated deploy
+      (the manual hotfix path must use the same strategy or the two will
+      drift; see _assert_zero_downtime_ssh_step + PR #70).
     """
     workflow = _load_workflow("production-deploy.yml")
 
