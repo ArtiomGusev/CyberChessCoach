@@ -1039,3 +1039,62 @@ def test_docker_compose_prod_health_and_immutable_image():
 
     assert "logging" in api
     assert api["logging"]["driver"] == "json-file"
+
+
+def test_compose_fallback_targets_real_ghcr_namespace():
+    """The api.image fallback (when GHCR_IMAGE is not set) must point to a
+    real, pullable GHCR namespace — not the literal ``owner`` placeholder.
+
+    Background: docker-compose.prod.yml previously declared
+    ``image: ${GHCR_IMAGE:-ghcr.io/owner/cereveon-llm-api:latest}``.  Manual
+    operator commands like ``docker compose up --force-recreate api`` (run
+    during the 2026-05-09 recovery from a half-failed PR #69 deploy)
+    triggered the fallback because GHCR_IMAGE wasn't exported in the shell.
+    GHCR returned 404 for the literal ``owner`` namespace, and Docker
+    Compose silently kept the local cached image — leaving the operator
+    convinced they had deployed the latest build when in fact they had
+    re-created the previous one.
+
+    This test pins the fallback to a real namespace so the silent-stale-image
+    failure mode cannot recur.  It is intentionally tolerant of fork-friendly
+    re-naming: any fallback that uses ``ghcr.io/<concrete-owner>/<image>:tag``
+    is accepted, as long as the owner segment is not the literal placeholder.
+    """
+    compose_text = (ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")
+    compose = yaml.safe_load(compose_text)
+
+    api_image = compose["services"]["api"]["image"]
+
+    # Compose env-var-with-default syntax is ``${VAR:-FALLBACK}`` — anything
+    # else means an unconditional reference and the operator-recovery path
+    # would just blow up with "GHCR_IMAGE: variable is not set", which is
+    # also acceptable (fail-loud over silent-stale).
+    if ":-" not in api_image:
+        return  # Unconditional reference — no fallback to validate.
+
+    # Extract the part after ``:-`` and before the closing ``}``.
+    fallback = api_image.split(":-", 1)[1].rstrip("}")
+
+    assert fallback.startswith(
+        "ghcr.io/"
+    ), f"api.image fallback must point to GHCR (where CI publishes), got: {fallback!r}"
+
+    # Reject the literal ``owner`` placeholder that template-cruft tends to
+    # leave behind.  The owner segment is the path component immediately
+    # after ``ghcr.io/``.
+    owner_segment = fallback[len("ghcr.io/") :].split("/", 1)[0]
+    assert owner_segment != "owner", (
+        "api.image fallback uses the literal ``owner`` placeholder — pulls "
+        "404 against GHCR.  Replace with the real GHCR namespace (the same "
+        "one CI publishes to via fly-deploy.yml's docker-images job).  See "
+        "the comment block above the api.image line for the 2026-05-09 "
+        "recovery incident this prevents."
+    )
+
+    # Image name segment must match what CI publishes (cereveon-llm-api).
+    # If you renamed the image, update both ends in the same commit.
+    image_segment = fallback[len("ghcr.io/") :].split("/")[1].split(":")[0]
+    assert image_segment == "cereveon-llm-api", (
+        "api.image fallback image name must match the CI-published name "
+        f"(env API_IMAGE_NAME in fly-deploy.yml), got: {image_segment!r}"
+    )
