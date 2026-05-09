@@ -1072,17 +1072,28 @@ def test_compose_fallback_targets_real_ghcr_namespace():
     if ":-" not in api_image:
         return  # Unconditional reference — no fallback to validate.
 
-    # Extract the part after ``:-`` and before the closing ``}``.
+    # Extract the part after ``:-`` and before the closing ``}``, then split
+    # on ``/`` so each segment can be checked exactly (rather than via a
+    # ``startswith`` substring match — CodeQL's URL-sanitization rule
+    # py/incomplete-url-substring-sanitization fires on the looser shape,
+    # and exact segment equality is the stronger check anyway: an attacker
+    # who could write to docker-compose.prod.yml would not be limited by
+    # whether ``ghcr.io/`` appears at the start of a longer string).
     fallback = api_image.split(":-", 1)[1].rstrip("}")
+    segments = fallback.split("/")
 
-    assert fallback.startswith(
-        "ghcr.io/"
-    ), f"api.image fallback must point to GHCR (where CI publishes), got: {fallback!r}"
+    assert len(segments) >= 3, (
+        "api.image fallback must have the shape "
+        f"``ghcr.io/<owner>/<image>:<tag>``, got: {fallback!r}"
+    )
+    assert segments[0] == "ghcr.io", (
+        "api.image fallback must point to GHCR (where CI publishes), "
+        f"got registry segment: {segments[0]!r}"
+    )
 
-    # Reject the literal ``owner`` placeholder that template-cruft tends to
-    # leave behind.  The owner segment is the path component immediately
-    # after ``ghcr.io/``.
-    owner_segment = fallback[len("ghcr.io/") :].split("/", 1)[0]
+    # Reject the literal ``owner`` placeholder that template-cruft tends
+    # to leave behind.
+    owner_segment = segments[1]
     assert owner_segment != "owner", (
         "api.image fallback uses the literal ``owner`` placeholder — pulls "
         "404 against GHCR.  Replace with the real GHCR namespace (the same "
@@ -1093,7 +1104,7 @@ def test_compose_fallback_targets_real_ghcr_namespace():
 
     # Image name segment must match what CI publishes (cereveon-llm-api).
     # If you renamed the image, update both ends in the same commit.
-    image_segment = fallback[len("ghcr.io/") :].split("/")[1].split(":")[0]
+    image_segment = segments[2].split(":")[0]
     assert image_segment == "cereveon-llm-api", (
         "api.image fallback image name must match the CI-published name "
         f"(env API_IMAGE_NAME in fly-deploy.yml), got: {image_segment!r}"
