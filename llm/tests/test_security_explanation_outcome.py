@@ -52,25 +52,36 @@ class TestTrk01ExplanationOutcomeUnknownId(unittest.TestCase):
     def setUpClass(cls):
         import llm.server as srv
         cls.client = TestClient(srv.app, raise_server_exceptions=False)
+
+    def setUp(self):
         # T3: /explanation_outcome now requires a JWT-authenticated player
-        # session.  Register an ephemeral player and use the issued access
-        # token as a Bearer credential.  A fresh email per run keeps tests
-        # independent under suite-wide ordering.
+        # session.  Register an ephemeral player per-test so the JWT is
+        # always the row-stored token (F-07: rotate_session_token
+        # invalidates prior JWTs on every successful authenticated call,
+        # so a class-level cls.token would 401 on the second test in
+        # the class).
         import uuid
         email = f"trk01-{uuid.uuid4().hex[:8]}@test.example"
         password = "TestPassword!23"
-        r = cls.client.post(
+        r = self.client.post(
             "/auth/register", json={"email": email, "password": password}
         )
-        assert r.status_code == 200, f"setUpClass register failed: {r.status_code} {r.text[:200]}"
-        cls.token = r.json()["access_token"]
+        assert r.status_code == 200, f"setUp register failed: {r.status_code} {r.text[:200]}"
+        self.token = r.json()["access_token"]
 
     def _post(self):
-        return self.client.post(
+        response = self.client.post(
             "/explanation_outcome",
             headers={"Authorization": f"Bearer {self.token}"},
             json=_PAYLOAD,
         )
+        # Mirror the Android client: keep the latest X-Auth-Token so
+        # subsequent calls in the same test don't 401 against the
+        # rotated session.token_hash (F-07).
+        rotated = response.headers.get("x-auth-token")
+        if rotated:
+            self.token = rotated
+        return response
 
     def test_unknown_explanation_id_returns_4xx_not_500(self):
         """A request with an explanation_id the tracker has never seen must

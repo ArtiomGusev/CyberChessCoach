@@ -140,22 +140,22 @@ class TestGetPlayerBySession:
         result = service.get_player_by_session("nonexistent-session-id", "fake-token")
         assert result is None
 
-    def test_token_value_no_longer_checked_against_session_hash(self, db, service):
-        """Pre-AUTH_ROT_01 this test asserted that a wrong token string
-        against a real session_id returned None.  That behaviour came
-        from a sha256(token) ?= session.token_hash check that was
-        incompatible with the X-Auth-Token JWT-rotation feature in
-        [router.get_current_player] — rotation mints a new JWT every
-        request without updating session.token_hash, so the strict
-        check killed every call after the first.  See AUTH_ROT_01 in
-        test_auth_rotation_regression.py.
+    def test_wrong_token_against_real_session_returns_none(self, db, service):
+        """F-07 (per-token revocation): a token whose sha256 does NOT
+        match session.token_hash must fail get_player_by_session even
+        if the session_id is real and unexpired.  This is the lever
+        that revokes a previously-rotated JWT — router.rotate_session_token
+        updates the stored hash after each successful call, so the
+        just-superseded token's hash no longer matches.
 
-        The token-authenticity guarantee now lives in the JWT
-        signature check at the router boundary; this service-layer
-        method only enforces session lifecycle (row exists +
-        not-expired).  A garbage token paired with a real session_id
-        therefore VALIDATES at this layer — the router would have
-        already rejected it via decode_token() before we got here.
+        Lineage:
+          Pre-PR-#66: this check existed (BUG-7 fix).
+          PR-#66 → F-07: check removed because rotation didn't update
+                  token_hash, breaking the second authenticated call.
+          F-07 (2026-05-11): check re-introduced together with
+                  rotate_session_token, which keeps the hash fresh on
+                  every rotation so the rotation feature still works
+                  AND old tokens are immediately revoked.
         """
         service.register("wrong_tok@example.com", "pass1234")
         token, _ = service.login("wrong_tok@example.com", "pass1234")
@@ -163,12 +163,16 @@ class TestGetPlayerBySession:
         from llm.seca.auth.tokens import decode_token
 
         payload = decode_token(token)
+        # F-07: a wrong token against a real session_id is rejected.
         result = service.get_player_by_session(payload["session_id"], "completely-wrong-token")
-        # Post-AUTH_ROT_01: any token value is accepted at this layer
-        # because the JWT signature is the authenticator, checked in
-        # the router before this method runs.
-        assert result is not None
-        assert result.email == "wrong_tok@example.com"
+        assert result is None, (
+            "F-07 violated: wrong token validated against a real "
+            "session_id.  rotate_session_token + per-request hash "
+            "check together provide per-token revocation."
+        )
+
+        # The real token still validates (sanity).
+        assert service.get_player_by_session(payload["session_id"], token) is not None
 
     def test_expired_db_session_returns_none(self, db, service):
         service.register("expired@example.com", "pass1234")

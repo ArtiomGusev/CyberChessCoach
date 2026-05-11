@@ -127,11 +127,17 @@ def get_current_player(
         raise HTTPException(status_code=401, detail="Session invalid")
 
     # Mint a fresh JWT for this session and hand it back so the
-    # client can rotate its stored token transparently.
+    # client can rotate its stored token transparently.  Rotate the
+    # stored hash BEFORE returning so the just-presented token can no
+    # longer validate (F-07 per-token revocation): a stolen copy of
+    # the previous JWT will fail get_player_by_session's hash check
+    # on its next call, even though the JWT signature + exp are still
+    # cryptographically valid.
     new_token = create_access_token(
         player_id=str(player.id),
         session_id=payload["session_id"],
     )
+    service.rotate_session_token(payload["session_id"], new_token)
     response.headers["X-Auth-Token"] = new_token
     return player
 

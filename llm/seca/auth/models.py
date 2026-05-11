@@ -30,6 +30,14 @@ class Session(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     player_id = Column(String, ForeignKey("players.id"), index=True)
 
+    # sha256 of the LATEST JWT issued for this session.  Rotated on
+    # every successful authenticated call (router.get_current_player ->
+    # AuthService.rotate_session_token) so a previously-issued JWT
+    # immediately becomes unusable once a fresher one is minted —
+    # closes the F-07 "stolen JWT lives until exp (24 h)" gap.
+    # Nullable on the column so legacy rows created before this column
+    # existed don't break SELECTs; new rows always populate it on
+    # login(), and rotate_session_token() never writes NULL.
     token_hash = Column(String, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
