@@ -115,9 +115,26 @@ TEST_TARGETS = [
     # curriculum history-driven topic, game finish recommendations, SAFE_MODE gate).
     "llm/tests/test_adaptive_player.py",
     # Auth service and token contract tests (layer-correct: service raises ValueError,
-    # router converts to HTTP; JWT creation/expiry/tamper coverage).
+    # router converts to HTTP; JWT creation/expiry/tamper coverage).  The
+    # rotation / refresh / sliding / missing-header siblings are added below so
+    # the Sprint 5.C (per-token revocation) + 5.D (request_id middleware) work
+    # contributes to the per-module coverage floor on auth/service.py and
+    # auth/router.py — without these listings the suite still passed but their
+    # lines didn't show up under --cov.
     "llm/tests/test_auth_service.py",
     "llm/tests/test_auth_tokens.py",
+    "llm/tests/test_auth_rotation_regression.py",
+    "llm/tests/test_auth_refresh_header.py",
+    "llm/tests/test_auth_sliding_session.py",
+    "llm/tests/test_auth_missing_header.py",
+    # Sprint 6.C — hashing defensive branches (HASH_01..HASH_07) and
+    # events/storage defensive branches (ESTORE_01..ESTORE_04).  Both
+    # were sitting below their per-module floor before these tests
+    # because the only existing coverage came transitively from
+    # happy-path integration tests.
+    "llm/tests/test_auth_hashing.py",
+    "llm/tests/test_auth_tokens_import_guards.py",
+    "llm/tests/test_event_storage.py",
     # Progress dashboard: /player/progress endpoint contract + world-model transparency tests.
     "llm/tests/test_progress_dashboard.py",
     # Bug regression suite: guards the six confirmed fixes (reward ZeroDivision,

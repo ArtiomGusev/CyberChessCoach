@@ -6,7 +6,9 @@ touch the filesystem or a real server.
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import os
 from datetime import datetime, timedelta
 
 import pytest
@@ -14,7 +16,27 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from llm.seca.auth.models import Base, Player, Session
-from llm.seca.auth.service import AuthService
+from llm.seca.auth.service import AuthService, _MAX_SESSIONS
+
+
+def _make_v1_password_hash(password: str, iterations: int = 600_000) -> str:
+    """Build a legacy v1 password hash for the opportunistic-rehash test.
+
+    The v1 scheme used a raw SHA-256 digest as normalisation (vs the
+    current v2 which uses 1-iter PBKDF2).  ``hashing.verify_password``
+    accepts both schemes; ``needs_rehash`` flips on the scheme name and
+    triggers ``login()``'s upgrade branch.  Kept local to this file
+    rather than imported from hashing.py because the production module
+    intentionally only emits v2 — exposing a v1 builder there would
+    invite accidental regressions.
+    """
+    normalized = hashlib.sha256(password.encode("utf-8")).digest()
+    salt = os.urandom(16)
+    dk = hashlib.pbkdf2_hmac("sha256", normalized, salt, iterations)
+    return (
+        f"$pbkdf2-sha256${iterations}${base64.b64encode(salt).decode()}"
+        f"${base64.b64encode(dk).decode()}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -77,6 +99,18 @@ class TestRegister:
         except Exception as exc:
             pytest.fail(f"Expected ValueError, got {type(exc).__name__}: {exc}")
 
+    def test_register_short_password_raises(self, service):
+        """Sprint 6.C — pin the < 8 char rejection in register().  The
+        same rule is enforced at the Pydantic layer for the HTTP path
+        but the service layer must also fail-fast on direct calls."""
+        with pytest.raises(ValueError, match="at least 8 characters"):
+            service.register("short@example.com", "abc")
+
+    def test_register_long_password_raises(self, service):
+        """Sprint 6.C — pin the > 1000 char rejection in register()."""
+        with pytest.raises(ValueError, match="Password too long"):
+            service.register("long@example.com", "x" * 1001)
+
 
 # ---------------------------------------------------------------------------
 # Login
@@ -117,6 +151,54 @@ class TestLogin:
         service.login("device@example.com", "pass1234", device_info="android-v1.2")
         sess = db.query(Session).first()
         assert sess.device_info == "android-v1.2"
+
+    def test_login_with_legacy_hash_triggers_opportunistic_rehash(self, db, service):
+        """Sprint 6.C — pin the H1 opportunistic-upgrade path.  A player
+        whose stored hash uses the v1 scheme (raw SHA-256 normalisation)
+        must have their hash rewritten to v2 on the next successful
+        login.  Without this, legacy users stay on the weaker scheme
+        forever; with it, the population migrates as users authenticate.
+        """
+        password = "legacy-pass-1"
+        legacy_hash = _make_v1_password_hash(password)
+        # Sanity: the legacy hash uses the v1 scheme, not v2.
+        assert "$pbkdf2-sha256$" in legacy_hash
+        assert "$pbkdf2-sha256-v2$" not in legacy_hash
+
+        player = Player(
+            email="legacy@example.com",
+            password_hash=legacy_hash,
+            player_embedding="[]",
+        )
+        db.add(player)
+        db.commit()
+
+        # Successful login on the legacy hash.
+        token, _ = service.login("legacy@example.com", password)
+        assert token is not None
+
+        # The stored hash is now v2 — opportunistic upgrade fired.
+        db.refresh(player)
+        assert player.password_hash != legacy_hash
+        assert "$pbkdf2-sha256-v2$" in player.password_hash
+
+    def test_login_eleventh_session_evicts_oldest(self, db, service):
+        """Sprint 6.C — pin the H3 max-sessions cap.  When a player has
+        ``_MAX_SESSIONS`` (10) active sessions and logs in again, the
+        oldest session is deleted so the cap is preserved.  Without
+        this, a hostile or buggy client could spam logins and balloon
+        the sessions table indefinitely.
+        """
+        service.register("manysess@example.com", "many-pass-1")
+        for _ in range(_MAX_SESSIONS + 2):  # one extra to confirm steady-state
+            service.login("manysess@example.com", "many-pass-1")
+
+        player = db.query(Player).filter_by(email="manysess@example.com").first()
+        assert player is not None
+        active = db.query(Session).filter(Session.player_id == player.id).count()
+        assert active == _MAX_SESSIONS, (
+            f"max-sessions cap violated: expected {_MAX_SESSIONS}, got {active}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -213,6 +295,20 @@ class TestChangePassword:
         player = service.register("short@example.com", "pass1234")
         with pytest.raises(ValueError, match="at least 8 characters"):
             service.change_password(player, "pass1234", "abc")
+
+    def test_change_password_current_too_long_raises(self, service):
+        """Sprint 6.C — the > 1000 char rejection on ``current_password``
+        fires BEFORE the verify_password call, so an attacker can't burn
+        PBKDF2 cycles by submitting a megabyte string."""
+        player = service.register("longcur@example.com", "pass1234")
+        with pytest.raises(ValueError, match="Password too long"):
+            service.change_password(player, "x" * 1001, "newpass1")
+
+    def test_change_password_new_too_long_raises(self, service):
+        """Sprint 6.C — same 1000-char cap on ``new_password``."""
+        player = service.register("longnew@example.com", "pass1234")
+        with pytest.raises(ValueError, match="Password too long"):
+            service.change_password(player, "pass1234", "x" * 1001)
 
     def test_old_password_rejected_after_change(self, service):
         player = service.register("oldpw@example.com", "firstpass")
