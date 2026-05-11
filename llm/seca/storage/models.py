@@ -28,6 +28,13 @@ Postgres and ``INTEGER PRIMARY KEY AUTOINCREMENT`` on SQLite via
 SQLAlchemy's autoincrement handling.  ``DateTime(timezone=False)`` is
 used for timestamp columns to mirror the prior ``CURRENT_TIMESTAMP``
 naive-UTC behaviour without forcing a timezone migration.
+
+Sprint 6.A-followup (2026-05-11): migrated from legacy ``Column(...)``
+class-level assignments to typed ``Mapped[T]`` + ``mapped_column(...)``
+declarations so mypy can see the concrete attribute types at use sites
+(``repo.py`` was failing ~20 ``Column[T]`` vs ``T`` assignments before).
+The wire / schema shape is unchanged — only the Python-side annotation
+moves from class-variable to type-annotated attribute.
 """
 
 from __future__ import annotations
@@ -35,7 +42,6 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import (
-    Column,
     DateTime,
     Float,
     ForeignKey,
@@ -44,6 +50,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy.orm import Mapped, mapped_column
 
 from llm.seca.auth.models import Base
 
@@ -67,16 +74,16 @@ class Game(Base):
 
     __tablename__ = "games"
 
-    id = Column(String, primary_key=True)
-    player_id = Column(String, ForeignKey("players.id"), index=True)
-    result = Column(String)
-    started_at = Column(DateTime, default=datetime.utcnow)
-    finished_at = Column(DateTime)
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    player_id: Mapped[str | None] = mapped_column(String, ForeignKey("players.id"), index=True)
+    result: Mapped[str | None] = mapped_column(String)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, default=datetime.utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     # In-progress checkpoint state for cross-device resume.
-    current_fen = Column(Text)
-    current_uci_history = Column(Text)
-    last_checkpoint_at = Column(DateTime)
+    current_fen: Mapped[str | None] = mapped_column(Text)
+    current_uci_history: Mapped[str | None] = mapped_column(Text)
+    last_checkpoint_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
 class Move(Base):
@@ -89,17 +96,17 @@ class Move(Base):
 
     __tablename__ = "moves"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    game_id = Column(String, ForeignKey("games.id"), index=True)
-    ply = Column(Integer)
-    fen = Column(Text)
-    uci = Column(String)
-    san = Column(String)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    game_id: Mapped[str | None] = mapped_column(String, ForeignKey("games.id"), index=True)
+    ply: Mapped[int | None] = mapped_column(Integer)
+    fen: Mapped[str | None] = mapped_column(Text)
+    uci: Mapped[str | None] = mapped_column(String)
+    san: Mapped[str | None] = mapped_column(String)
     # ``eval`` shadows a Python builtin; column name is preserved (the
     # raw-sqlite schema used it) — the Python attribute on the model is
     # the same since SQLAlchemy column attributes are namespaced inside
     # the model class.
-    eval = Column(Float)
+    eval: Mapped[float | None] = mapped_column(Float)
 
 
 class Explanation(Base):
@@ -108,13 +115,13 @@ class Explanation(Base):
 
     __tablename__ = "explanations"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    game_id = Column(String, ForeignKey("games.id"), index=True)
-    ply = Column(Integer)
-    explanation_type = Column(String)
-    confidence = Column(Float)
-    learning_score = Column(Float)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    game_id: Mapped[str | None] = mapped_column(String, ForeignKey("games.id"), index=True)
+    ply: Mapped[int | None] = mapped_column(Integer)
+    explanation_type: Mapped[str | None] = mapped_column(String)
+    confidence: Mapped[float | None] = mapped_column(Float)
+    learning_score: Mapped[float | None] = mapped_column(Float)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class BanditWeights(Base):
@@ -131,14 +138,16 @@ class BanditWeights(Base):
         UniqueConstraint("player_id", "action", name="uq_bandit_weights_player_action"),
     )
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    player_id = Column(String, nullable=False, index=True)
-    action = Column(String, nullable=False)
-    n_features = Column(Integer, nullable=False)
-    A_json = Column(Text, nullable=False)
-    b_json = Column(Text, nullable=False)
-    alpha = Column(Float, nullable=False, default=1.0)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    player_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    action: Mapped[str] = mapped_column(String, nullable=False)
+    n_features: Mapped[int] = mapped_column(Integer, nullable=False)
+    A_json: Mapped[str] = mapped_column(Text, nullable=False)
+    b_json: Mapped[str] = mapped_column(Text, nullable=False)
+    alpha: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
 
 class Repertoire(Base):
@@ -155,16 +164,20 @@ class Repertoire(Base):
     __tablename__ = "repertoire"
     __table_args__ = (UniqueConstraint("player_id", "eco", name="uq_repertoire_player_eco"),)
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    player_id = Column(String, ForeignKey("players.id"), nullable=False, index=True)
-    eco = Column(String, nullable=False)
-    name = Column(String, nullable=False)
-    line = Column(String, nullable=False)
-    mastery = Column(Float, nullable=False, default=0.0)
-    is_active = Column(Integer, nullable=False, default=0)
-    ordinal = Column(Integer, nullable=False, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    player_id: Mapped[str] = mapped_column(
+        String, ForeignKey("players.id"), nullable=False, index=True
+    )
+    eco: Mapped[str] = mapped_column(String, nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    line: Mapped[str] = mapped_column(String, nullable=False)
+    mastery: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    is_active: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
 
 __all__ = [

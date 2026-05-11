@@ -80,7 +80,7 @@ def get_player_progress(
             {
                 "game_id": str(ev.id),
                 "result": ev.result,
-                "accuracy": float(ev.accuracy),
+                "accuracy": float(ev.accuracy) if ev.accuracy is not None else 0.0,
                 "rating_after": float(rating_update.rating_after) if rating_update else None,
                 "confidence_after": (
                     float(confidence_update.confidence_after) if confidence_update else None

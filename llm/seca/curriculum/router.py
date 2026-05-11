@@ -44,7 +44,7 @@ def next_training(
         "topic": plan.topic,
         "difficulty": plan.difficulty,
         "exercise_type": plan.exercise_type,
-        "payload": json.loads(plan.payload_json),
+        "payload": json.loads(plan.payload_json) if plan.payload_json else {},
         "recommendations": recommendations,
         "dominant_category": dominant_category,
     }
