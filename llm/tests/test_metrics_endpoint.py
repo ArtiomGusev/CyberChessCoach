@@ -249,3 +249,77 @@ def test_met_10_failed_login_increments_counter(client):
         f"expected auth_login_total{{result=invalid_credentials}} to "
         f"increment; got before={before_count} after={after_count}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Direct unit tests on the observability module
+# ---------------------------------------------------------------------------
+#
+# The integration tests above exercise observability.py via the FastAPI
+# app, but that path requires the engine pool to boot — which it can't
+# on hosted CI runners that have no Stockfish binary.  The pool's
+# failure path leaves ``register_engine_pool_provider`` and the
+# success branch of ``_read_pool_stat`` unreachable from integration
+# tests on Linux CI, sinking the per-module coverage floor.
+#
+# These unit tests poke the module's API directly so the success branch
+# (provider registered, returns a dict) and the failure branch
+# (provider raises) are exercised regardless of pool availability.
+
+
+class TestObservabilityProviderRegistration:
+    """Direct unit tests for ``observability.register_engine_pool_provider``
+    and the gauge callback path.  Independent of pool boot state."""
+
+    def _restore_provider(self, original):
+        from llm import observability
+
+        observability.register_engine_pool_provider(original)  # type: ignore[arg-type]
+
+    def test_register_provider_success_branch(self):
+        """Registered provider's return value flows through _read_pool_stat."""
+        from llm import observability
+
+        original = observability._engine_pool_provider  # type: ignore[attr-defined]
+        try:
+            observability.register_engine_pool_provider(
+                lambda: {"size": 7, "available": 3, "in_use": 4}
+            )
+            # Internal helper picks up the registered dict.
+            assert observability._read_pool_stat("size") == 7.0
+            assert observability._read_pool_stat("available") == 3.0
+            assert observability._read_pool_stat("in_use") == 4.0
+            # Missing keys fall back to 0 (the .get default).
+            assert observability._read_pool_stat("unknown") == 0.0
+        finally:
+            self._restore_provider(original)
+
+    def test_provider_exception_is_swallowed(self):
+        """If the provider raises, _read_pool_stat returns 0 and logs.
+        Lifespan correctness depends on /metrics never propagating an
+        exception that the provider made — a flaky pool snapshot must
+        not 500 the scrape."""
+        from llm import observability
+
+        def _raising_provider() -> dict[str, int]:
+            raise RuntimeError("engine pool snapshot blew up")
+
+        original = observability._engine_pool_provider  # type: ignore[attr-defined]
+        try:
+            observability.register_engine_pool_provider(_raising_provider)
+            assert observability._read_pool_stat("size") == 0.0
+            assert observability._read_pool_stat("available") == 0.0
+        finally:
+            self._restore_provider(original)
+
+    def test_unregistered_provider_returns_zero(self):
+        """With no provider registered, every stat is 0."""
+        from llm import observability
+
+        original = observability._engine_pool_provider  # type: ignore[attr-defined]
+        try:
+            observability._engine_pool_provider = None  # type: ignore[attr-defined]
+            assert observability._read_pool_stat("size") == 0.0
+            assert observability._read_pool_stat("in_use") == 0.0
+        finally:
+            self._restore_provider(original)
