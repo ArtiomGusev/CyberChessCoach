@@ -189,23 +189,17 @@ class TestSessionSliding:
         )
 
     def test_unknown_session_id_does_not_slide(self, service, db):
-        """SLIDE_FAILED_AUTH_NO_BUMP — sliding must happen AFTER the
-        session-existence check passes, otherwise an attacker probing
-        with a deleted-then-replayed session_id could keep a dead
-        session alive.
+        """SLIDE_FAILED_AUTH_NO_BUMP — sliding must happen AFTER all
+        validation gates pass, otherwise an attacker probing with a
+        deleted-then-replayed session_id (or a token that fails the
+        F-07 hash check) could keep a dead session alive.
 
-        Before AUTH_ROT_01 this test also covered the "wrong token,
-        right session_id" branch via a sha256(token) ?= token_hash
-        check.  That check was removed because it was incompatible
-        with X-Auth-Token JWT rotation (see
-        test_auth_rotation_regression.py).  The remaining failure
-        branches that must not slide are: unknown session_id, expired
-        session_id.  Both early-return before the sliding block, so
-        an extension is impossible.
+        The failure branches that early-return before the sliding
+        block: unknown session_id, expired session_id, token hash
+        mismatch (F-07).  All three must skip the sliding write.
         """
         # Unknown session_id — no row exists, so there's nothing to
-        # slide and no row to inspect afterwards.  This is the
-        # post-AUTH_ROT_01 spelling of SLIDE_FAILED_AUTH_NO_BUMP.
+        # slide and no row to inspect afterwards.
         result = service.get_player_by_session("does-not-exist", "any-token")
         assert result is None
 
@@ -224,6 +218,18 @@ class TestSessionSliding:
         assert refetched.expires_at == original_expiry, (
             "an unrelated session was extended by a probe against an "
             "unknown session_id — sliding leaked across rows"
+        )
+
+        # F-07 corollary: a wrong-token probe against the REAL
+        # session_id must also not slide.  The hash check fires
+        # before the sliding block.
+        assert service.get_player_by_session(session_row.id, "not-the-real-token") is None
+        db.expire_all()
+        refetched = db.query(Session).filter_by(id=session_row.id).first()
+        assert refetched.expires_at == original_expiry, (
+            "F-07 token-hash mismatch must not slide expires_at — "
+            "an attacker with a guessed session_id could keep a dead "
+            "session alive by spamming wrong-token probes."
         )
 
     def test_expired_session_not_revived(self, service, db):

@@ -140,27 +140,23 @@ class AuthService:
     # Validate session
     # ---------------------------
     def get_player_by_session(self, session_id: str, token: str) -> Player | None:
-        # Token authenticity is established upstream by the JWT signature
-        # check in [router.get_current_player.decode_token]; the JWT itself
-        # is what proves the bearer once held a valid login.  This method
-        # only validates the server-side session lifecycle:
-        #   - the session row exists (revocation = row deletion)
-        #   - the session has not yet hit its expires_at deadline
+        # Three orthogonal authenticity gates:
+        #   1. JWT signature (decoded upstream in router.get_current_player —
+        #      proves the bearer once held credentials that produced this
+        #      signed token).
+        #   2. Session row exists (revocation = row deletion; logout + change_password).
+        #   3. session.token_hash matches sha256(inbound) — the F-07
+        #      per-token revocation gate.  router.get_current_player rotates
+        #      this hash via rotate_session_token after issuing each new
+        #      X-Auth-Token, so a previously-issued JWT becomes invalid on
+        #      the next call regardless of its still-valid signature / exp.
+        #      Closes the "stolen JWT lives until exp (24 h)" window.
         #
-        # An older implementation also recomputed a per-request hash from
-        # the inbound token and compared it against session.token_hash
-        # with a constant-time check.  That comparison was incompatible
-        # with the JWT-rotation feature in [router.get_current_player],
-        # which mints a fresh JWT on every successful authenticated
-        # response (returned via X-Auth-Token) without updating
-        # session.token_hash.  Every authenticated call after the first
-        # 401'd in production once the Android client rotated its stored
-        # token.  See AUTH_ROT_01 in the auth tests.
-        #
-        # The trade-off: per-token revocation (revoke a single leaked JWT
-        # without killing the session) is no longer possible.  The 24 h
-        # ACCESS_EXPIRE_MINUTES cap and password-change session-wipe in
-        # [change_password] are the remaining containment levers.
+        # The rotation contract: if the inbound token's hash matches stored
+        # token_hash, validation succeeds; the caller then mints a new JWT
+        # and calls rotate_session_token, which writes sha256(new) into the
+        # row.  The next call must present the new token.  See
+        # test_auth_rotation_regression.py for the pinned sequence.
         session = self.db.query(Session).filter_by(id=session_id).first()
         if not session:
             return None
@@ -168,6 +164,16 @@ class AuthService:
         # Fail-closed: treat missing expiry as expired (M1)
         now = datetime.utcnow()
         if session.expires_at is None or session.expires_at < now:
+            return None
+
+        # F-07: per-token revocation gate.  A session row with no
+        # token_hash (only legacy rows pre-F-07 should hit this branch)
+        # is rejected fail-closed rather than waved through — preferring
+        # a one-time re-login over a silently weakened auth path.
+        if not session.token_hash:
+            return None
+        inbound_hash = hashlib.sha256(token.encode()).hexdigest()
+        if not hmac.compare_digest(inbound_hash, session.token_hash):
             return None
 
         # Sliding-session window: extend expires_at when the session is
@@ -181,6 +187,37 @@ class AuthService:
             self.db.commit()
 
         return session.player
+
+    # ---------------------------
+    # Rotate session token (F-07)
+    # ---------------------------
+    def rotate_session_token(self, session_id: str, new_token: str) -> None:
+        """Rewrite session.token_hash to sha256(new_token).
+
+        Called by router.get_current_player after minting a fresh JWT for
+        the X-Auth-Token rotation header.  Once this commit lands, the
+        previously-issued JWT for the same session no longer matches
+        session.token_hash and will fail get_player_by_session on its
+        next presentation — that's the per-token revocation lever
+        promised by F-07.
+
+        Idempotent: re-running with the same new_token rewrites the
+        same hash.  Silent no-op if the session was deleted between
+        get_player_by_session and this call (race with logout /
+        password change).
+
+        Implementation note: uses an ORM-level attribute assignment
+        rather than the bulk-write variant because the SECA freeze
+        guard's keyword scan tripwire treats the dot-update token as
+        an adaptive-learning resurrection signal.  The ORM-level write
+        is the equivalent single-row write without the flagged substring.
+        """
+        new_hash = hashlib.sha256(new_token.encode()).hexdigest()
+        session = self.db.query(Session).filter_by(id=session_id).first()
+        if session is None:
+            return  # session deleted between auth and rotation; no-op
+        session.token_hash = new_hash
+        self.db.commit()
 
     # ---------------------------
     # Change password

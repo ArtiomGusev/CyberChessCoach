@@ -1,42 +1,42 @@
 """
-Regression test for the JWT-rotation / session.token_hash mismatch bug
-that silently broke production from the second authenticated call
-onward.
+Regression tests for the JWT-rotation / session.token_hash contract.
 
 Background
 ----------
 [router.get_current_player] mints a fresh JWT on every successful
 authenticated response and returns it via the X-Auth-Token header so
-the Android client can rotate its stored token transparently.  The
-sister method [AuthService.get_player_by_session] used to recompute
-sha256(token) and compare it against session.token_hash with
-hmac.compare_digest — but rotation never updates session.token_hash,
-so the second authenticated call always failed the strict check and
-returned 401.  Production was silently broken from the moment the
-client persisted the rotated token.
+the Android client can rotate its stored token transparently.  In
+production the rotation step ALSO updates session.token_hash to
+sha256(new_token) via [AuthService.rotate_session_token].
 
-Pinned invariant
-----------------
-AUTH_ROT_01 — a JWT minted with the same session_id as the one
-recorded at login() must validate via get_player_by_session even
-though its sha256 hash does NOT match session.token_hash.  This is
-the contract that the rotation feature in get_current_player relies
-on; if a future change re-introduces the strict hash check, the
-rotation feature will break again and this test will catch it
-before it ships.
+Pre-F-07 (closed 2026-05-11) the rotation step did NOT update
+session.token_hash, and [AuthService.get_player_by_session] did NOT
+recompute sha256(token) — both halves were missing.  A stolen JWT
+remained valid for its full 24 h exp window because the only
+revocation lever was the session row itself (logout / change_password).
 
-Why the trade-off is acceptable
--------------------------------
-The JWT signature itself authenticates the bearer (verified at the
-router boundary by decode_token).  Server-side session lifecycle is
-controlled by:
-  - row deletion: logout, password change, expiry-prune in login
-  - expires_at: 7-day sliding window, fail-closed on past-deadline
-  - JWT exp: 24 h hard cap on any individual token
+F-07 reinstates BOTH halves together:
+  - rotate_session_token writes sha256(new_token) into the row
+  - get_player_by_session compares sha256(inbound) against the row
 
-Per-token revocation (revoke a single leaked JWT without killing the
-session) is no longer possible — but it never worked correctly in the
-presence of rotation, so nothing has been lost.
+Together they give per-token revocation: the just-superseded JWT no
+longer validates the moment the rotation commit lands.
+
+Pinned invariants
+-----------------
+AUTH_ROT_01 — rotation flow round-trips:
+  1. login mints JWT_v1, login() stores sha256(JWT_v1) in token_hash
+  2. router validates JWT_v1, mints JWT_v2, rotates → token_hash = sha256(JWT_v2)
+  3. next call with JWT_v2 validates
+
+AUTH_ROT_02 (NEW, F-07) — per-token revocation:
+  After rotation in step 2 above, JWT_v1 no longer validates because
+  its sha256 no longer matches session.token_hash.  This is the
+  per-token revocation lever closed by F-07.
+
+AUTH_ROT_03 — logout still works after rotation.
+
+AUTH_ROT_04 — expired session still rejects rotated tokens.
 """
 
 from __future__ import annotations
@@ -84,119 +84,158 @@ def service(db):
 
 
 # ---------------------------------------------------------------------------
-# AUTH_ROT_01
+# AUTH_ROT_01 — rotation round-trip
 # ---------------------------------------------------------------------------
 
 
-def test_rotated_token_validates_on_next_request(service, db):
-    """AUTH_ROT_01 — pin the contract that JWT rotation depends on.
+def test_rotation_round_trip(service, db):
+    """AUTH_ROT_01 — login -> validate JWT_v1 -> rotate -> validate JWT_v2.
 
     Reproduces the production sequence:
-      1. Client logs in -> AuthService.login mints JWT_v1 and stores
-         sha256(JWT_v1) in session.token_hash.
-      2. Client makes its first authenticated call.  Router runs
-         get_current_player, validates via get_player_by_session
-         (succeeds, hashes match), then mints JWT_v2 and returns it
-         via X-Auth-Token.  Client persists JWT_v2.
-      3. Client makes its NEXT authenticated call with JWT_v2.
-         Router validates via get_player_by_session.  This is the
-         step that used to 401 because sha256(JWT_v2) != token_hash
-         (the row still holds sha256(JWT_v1)).
-
-    The contract pinned here: step 3 MUST succeed.
+      1. login() mints JWT_v1 and stores sha256(JWT_v1) in token_hash.
+      2. Router validates JWT_v1 (succeeds), mints JWT_v2, calls
+         rotate_session_token which writes sha256(JWT_v2) into the row.
+      3. Next call with JWT_v2 must validate.
     """
-    # Step 1: login — produces JWT_v1 + a session row.
+    # Step 1.
     service.register("rotate@example.com", "rotate-pass-1")
     jwt_v1, login_player = service.login("rotate@example.com", "rotate-pass-1")
     session_id = decode_token(jwt_v1)["session_id"]
 
-    # Sanity: the row was actually written.
     session_row = db.query(Session).filter_by(id=session_id).first()
-    assert session_row is not None, "login must create a session row"
-    original_token_hash = session_row.token_hash
-    assert original_token_hash, "login must set session.token_hash for the initial JWT"
+    assert session_row is not None
+    assert session_row.token_hash == hashlib.sha256(jwt_v1.encode()).hexdigest()
 
-    # Step 2: first authenticated call — JWT_v1 still validates.
+    # Step 2: JWT_v1 validates, then rotate to JWT_v2.
     player_v1 = service.get_player_by_session(session_id, jwt_v1)
-    assert player_v1 is not None, "JWT_v1 must validate immediately after login"
-    assert player_v1.email == "rotate@example.com"
+    assert player_v1 is not None
     assert player_v1.id == login_player.id
 
-    # Simulate what router.get_current_player does after a successful
-    # validation: mint a fresh JWT for the SAME session_id.  This is
-    # the rotation step.  Critically, session.token_hash is NOT
-    # updated — the bug was assuming it would be.
-    #
-    # In production, login and the next authenticated request are
-    # separated by hundreds of ms at minimum, so the exp claims of
-    # JWT_v1 and JWT_v2 differ and so do their sha256s.  In a unit
-    # test both calls land in the same second, so we sleep just over
-    # one second to force the exp claim (Unix-second-resolution) to
-    # advance and produce a genuinely different JWT string.  Without
-    # this guard the test would silently pass on a token-equality
-    # accident even if the strict hash check came back.
+    # Sleep to force exp claim to advance so JWT strings differ.
     time.sleep(1.1)
     jwt_v2 = create_access_token(player_id=str(player_v1.id), session_id=session_id)
-    assert jwt_v2 != jwt_v1, (
-        "rotation must produce a different JWT string — sleep window "
-        "wasn't long enough to advance the exp claim"
-    )
-    assert hashlib.sha256(jwt_v2.encode()).hexdigest() != original_token_hash, (
-        "rotated JWT must hash differently from the stored token_hash — "
-        "otherwise the strict-check failure mode this test pins doesn't apply"
-    )
+    assert jwt_v2 != jwt_v1, "rotation must produce a different JWT string"
 
-    # Confirm the row's token_hash was not silently updated by
-    # something else — this test is meaningless if it was.
+    service.rotate_session_token(session_id, jwt_v2)
+
+    # After rotation the stored hash must track JWT_v2.
     db.expire_all()
     session_row = db.query(Session).filter_by(id=session_id).first()
-    assert session_row.token_hash == original_token_hash, (
-        "session.token_hash must NOT track rotated JWTs — if it does, "
-        "this test no longer pins the rotation contract.  Investigate."
+    assert session_row.token_hash == hashlib.sha256(jwt_v2.encode()).hexdigest(), (
+        "rotate_session_token must update session.token_hash to track the "
+        "newly-issued JWT — otherwise the next call with JWT_v2 will 401."
     )
 
-    # Step 3: the regression check.  The rotated JWT, paired with the
-    # ORIGINAL session_id, must validate.  Pre-fix this returned None
-    # (the strict sha256 check failed) and every authenticated call
-    # after the first 401'd in production.
+    # Step 3: JWT_v2 validates on the NEXT request.
     player_v2 = service.get_player_by_session(session_id, jwt_v2)
     assert player_v2 is not None, (
         "AUTH_ROT_01 violated: rotated JWT failed get_player_by_session.  "
-        "If the strict sha256(token) ?= session.token_hash check was "
-        "re-introduced, the rotation feature in router.get_current_player "
-        "will break in production again."
+        "The rotation step in router.get_current_player must call "
+        "rotate_session_token after minting the new JWT."
     )
-    assert player_v2.email == "rotate@example.com"
     assert player_v2.id == login_player.id
 
 
-def test_rotated_token_then_logout_revokes_session(service, db):
-    """AUTH_ROT_01 corollary — dropping the per-token check did NOT
-    break session-level revocation.  Logout still kills any rotated
-    token immediately, because logout deletes the session row and
-    get_player_by_session early-returns when the row is missing."""
+# ---------------------------------------------------------------------------
+# AUTH_ROT_02 — per-token revocation (F-07)
+# ---------------------------------------------------------------------------
+
+
+def test_old_token_revoked_after_rotation(service, db):
+    """AUTH_ROT_02 — closes the F-07 stolen-JWT-lives-until-exp gap.
+
+    After the router rotates token_hash to sha256(JWT_v2), the
+    previously-issued JWT_v1 must no longer validate even though its
+    JWT signature is still cryptographically valid and its exp claim
+    has not yet elapsed.  This is the per-token revocation lever F-07
+    introduces.
+    """
     service.register("revoke@example.com", "revoke-pass-1")
     jwt_v1, player = service.login("revoke@example.com", "revoke-pass-1")
     session_id = decode_token(jwt_v1)["session_id"]
 
-    # Rotate.
+    # JWT_v1 validates immediately after login.
+    assert service.get_player_by_session(session_id, jwt_v1) is not None
+
+    # Rotate — exactly what router.get_current_player does after a
+    # successful validation.
+    time.sleep(1.1)  # advance exp so JWT strings differ
     jwt_v2 = create_access_token(player_id=str(player.id), session_id=session_id)
+    service.rotate_session_token(session_id, jwt_v2)
+
+    # JWT_v1 is now stale and must be rejected.
+    assert service.get_player_by_session(session_id, jwt_v1) is None, (
+        "AUTH_ROT_02 violated: after rotation, the superseded JWT still "
+        "validated.  rotate_session_token must update token_hash and "
+        "get_player_by_session must hash-check the inbound token.  "
+        "Without both halves, the F-07 per-token revocation gap reopens."
+    )
+
+    # JWT_v2 still validates (sanity check).
     assert service.get_player_by_session(session_id, jwt_v2) is not None
 
-    # Logout.
+
+def test_get_player_rejects_tampered_token(service, db):
+    """AUTH_ROT_02 extension — a token that wasn't issued by the
+    server (e.g. attacker-forged garbage that somehow has the right
+    session_id field) must fail the hash check.
+
+    The JWT signature check in router.decode_token would normally
+    catch this upstream, but the service layer is defence-in-depth.
+    """
+    service.register("tamper@example.com", "tamper-pass-1")
+    jwt_v1, _ = service.login("tamper@example.com", "tamper-pass-1")
+    session_id = decode_token(jwt_v1)["session_id"]
+
+    assert service.get_player_by_session(session_id, "garbage-token") is None
+    assert service.get_player_by_session(session_id, jwt_v1 + "-tampered") is None
+
+
+def test_get_player_rejects_session_with_null_token_hash(service, db):
+    """A legacy/manually-poked session row with NULL token_hash must
+    fail closed — the F-07 hash check has no anchor to compare against
+    and we prefer a one-time re-login over a silently-skipped check."""
+    service.register("legacy@example.com", "legacy-pass-1")
+    jwt_v1, _ = service.login("legacy@example.com", "legacy-pass-1")
+    session_id = decode_token(jwt_v1)["session_id"]
+
+    # Manually wipe the hash to simulate a legacy row.
+    session_row = db.query(Session).filter_by(id=session_id).first()
+    session_row.token_hash = None
+    db.commit()
+
+    assert service.get_player_by_session(session_id, jwt_v1) is None, (
+        "session row with NULL token_hash should fail closed; otherwise "
+        "the per-token revocation gate has a bypass for legacy rows."
+    )
+
+
+# ---------------------------------------------------------------------------
+# AUTH_ROT_03 / AUTH_ROT_04 — orthogonal revocation levers still work
+# ---------------------------------------------------------------------------
+
+
+def test_rotated_token_then_logout_revokes_session(service, db):
+    """AUTH_ROT_03 — logout still kills any rotated token immediately."""
+    service.register("logout@example.com", "logout-pass-1")
+    jwt_v1, player = service.login("logout@example.com", "logout-pass-1")
+    session_id = decode_token(jwt_v1)["session_id"]
+
+    time.sleep(1.1)
+    jwt_v2 = create_access_token(player_id=str(player.id), session_id=session_id)
+    service.rotate_session_token(session_id, jwt_v2)
+    assert service.get_player_by_session(session_id, jwt_v2) is not None
+
     service.logout(session_id)
 
-    # Rotated token must no longer validate.
     assert service.get_player_by_session(session_id, jwt_v2) is None, (
-        "logout failed to revoke a rotated token — session-level "
-        "revocation is the only revocation lever left after AUTH_ROT_01."
+        "logout failed to revoke a rotated token — session-row deletion "
+        "is the unconditional revocation lever."
     )
 
 
 def test_rotated_token_after_session_expiry_rejected(service, db):
-    """AUTH_ROT_01 corollary — expires_at still gates rotated tokens.
-    A rotated JWT used against an expired session row must be
-    rejected."""
+    """AUTH_ROT_04 — expires_at still gates rotated tokens."""
     service.register("expire@example.com", "expire-pass-1")
     jwt_v1, player = service.login("expire@example.com", "expire-pass-1")
     session_id = decode_token(jwt_v1)["session_id"]
@@ -206,11 +245,13 @@ def test_rotated_token_after_session_expiry_rejected(service, db):
     session_row.expires_at = datetime.utcnow() - timedelta(seconds=1)
     db.commit()
 
-    # Rotate AFTER expiry — JWT itself is fresh but the session row
-    # is dead.
+    time.sleep(1.1)
     jwt_v2 = create_access_token(player_id=str(player.id), session_id=session_id)
+    # Rotation against an expired row is a no-op-shaped UPDATE (the
+    # WHERE matches the row but the row is dead anyway).
+    service.rotate_session_token(session_id, jwt_v2)
 
     assert service.get_player_by_session(session_id, jwt_v2) is None, (
         "expired session must reject any token, rotated or not — "
-        "expires_at is the staleness lever after AUTH_ROT_01."
+        "expires_at is the staleness lever."
     )

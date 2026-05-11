@@ -228,3 +228,73 @@ class TestNoRefreshOnFailure:
         with pytest.raises(HTTPException) as exc:
             _call_get_current_player(token, db)
         assert exc.value.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# 4. F-07 — per-token revocation through the router
+# ---------------------------------------------------------------------------
+
+
+class TestF07PerTokenRevocation:
+    """End-to-end revocation through the router dependency.
+
+    Pre-F-07 a stolen JWT remained valid until the 24 h exp claim ran out
+    because rotate_session_token didn't exist and get_player_by_session
+    didn't compare hashes.  Post-F-07 the rotation step writes
+    sha256(new_token) into the session row, so any previously-issued JWT
+    for the same session fails its next router call.
+    """
+
+    def test_old_token_rejected_after_rotation(self, db):
+        """F07_OLD_TOKEN_REVOKED — present JWT_v1 once (router rotates
+        to JWT_v2), then present JWT_v1 again.  The second call must
+        401 — that's the per-token revocation lever.
+
+        Sleep between login and the first router call so the rotated
+        JWT genuinely differs as a string.  Without this, login and
+        the router call land in the same Unix second; the exp claim
+        is identical; create_access_token is deterministic; and the
+        "rotation" produces a byte-identical token that the test
+        cannot distinguish.  Production calls are separated by at
+        least the network RTT, so this is a unit-test artefact, not
+        a contract gap.
+        """
+        token_v1 = _login(db)
+        time.sleep(1.1)
+        response, _ = _call_get_current_player(token_v1, db)
+        token_v2 = response.headers["x-auth-token"]
+        assert token_v2 != token_v1, "rotation must mint a different token"
+
+        # Same JWT_v1 presented again — the stored token_hash now
+        # tracks JWT_v2, so this must 401.
+        with pytest.raises(HTTPException) as exc:
+            _call_get_current_player(token_v1, db)
+        assert exc.value.status_code == 401, (
+            "F-07 violated: previously-rotated JWT still validated.  "
+            "router.get_current_player must call rotate_session_token "
+            "after issuing the X-Auth-Token header."
+        )
+
+    def test_rotated_token_validates_then_rotates_again(self, db):
+        """F07_NEW_TOKEN_WORKS — sanity: the freshly-issued JWT_v2
+        validates on the next call AND triggers another rotation to
+        JWT_v3.  The rotation chain keeps advancing as long as the
+        client keeps the latest token."""
+        token_v1 = _login(db)
+        time.sleep(1.1)
+        response1, _ = _call_get_current_player(token_v1, db)
+        token_v2 = response1.headers["x-auth-token"]
+
+        # JWT_v2 validates and produces JWT_v3.
+        time.sleep(1.1)
+        response2, _ = _call_get_current_player(token_v2, db)
+        token_v3 = response2.headers["x-auth-token"]
+        assert token_v3 != token_v2 != token_v1
+
+        # And the chain continues: JWT_v2 is now stale.
+        with pytest.raises(HTTPException) as exc:
+            _call_get_current_player(token_v2, db)
+        assert exc.value.status_code == 401, (
+            "rotation chain broken: a JWT that was just rotated past "
+            "should be rejected on its next presentation."
+        )

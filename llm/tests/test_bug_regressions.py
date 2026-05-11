@@ -380,72 +380,70 @@ class TestEnginePoolStopSetsStartedFirst:
 # BUG-7  auth/service.py — token_hash comparison
 #
 # Originally guarded against a != timing oracle via hmac.compare_digest.
-# Superseded by AUTH_ROT_01 (see test_auth_rotation_regression.py): the
-# strict sha256(token) ?= session.token_hash check was incompatible with
-# the X-Auth-Token JWT-rotation feature (router.get_current_player mints
-# a new JWT every successful response without updating
-# session.token_hash, so the check 401'd every call after the first).
-# The strict check was removed; JWT signature is now the sole token
-# authenticator and lives at the router boundary.
+# Removed in PR #66 because the strict check broke JWT rotation
+# (AUTH_ROT_01).  Reinstated alongside rotate_session_token in F-07
+# (2026-05-11): rotation now ALSO updates session.token_hash, so the
+# check is compatible with rotation AND closes the per-token revocation
+# gap (a stolen JWT no longer survives until exp).
 #
-# This class now pins what BUG-7 morphed into: there is no per-request
-# token_hash comparison in get_player_by_session, so the timing-oracle
-# concern is moot, and the rotation contract is preserved.
+# This class pins both halves of the F-07 contract:
+#   - get_player_by_session re-computes sha256(token) + compare_digest
+#   - the source uses constant-time comparison (no plain '==' / '!=')
 # ---------------------------------------------------------------------------
 
 
 class TestTokenHashConstantTimeComparison:
-    """BUG-7 (post-AUTH_ROT_01): no strict token_hash comparison; JWT
-    signature is the authenticator, checked upstream at the router."""
+    """BUG-7 (post-F-07): get_player_by_session re-computes the hash
+    and compares it against session.token_hash using hmac.compare_digest.
+    Rotation keeps the hash fresh in router.get_current_player, so the
+    check is compatible with the X-Auth-Token rotation feature."""
 
-    def test_service_does_not_strict_compare_token_hash(self):
+    def test_service_strict_compares_token_hash_with_constant_time(self):
         """
-        Source-level pin: get_player_by_session must NOT recompute
-        sha256(token) and compare it against session.token_hash.  That
-        pattern was the original BUG-7 fix's payload, but it also
-        broke JWT rotation in production (AUTH_ROT_01).  If a future
-        change re-introduces the pattern, this test fires.
+        Source-level pin: get_player_by_session must hash the inbound
+        token and compare it against session.token_hash with
+        constant-time hmac.compare_digest.  Removing either side of
+        the check reopens the F-07 per-token revocation gap (a stolen
+        JWT lives until its 24 h exp).
         """
         import inspect
         from llm.seca.auth import service as svc_module
 
-        # Locate the validate-session method and inspect only its source.
         source = inspect.getsource(svc_module.AuthService.get_player_by_session)
-        assert "hashlib.sha256" not in source, (
-            "get_player_by_session must not recompute sha256(token); the "
-            "JWT signature already authenticates the bearer.  See AUTH_ROT_01."
+        assert "hashlib.sha256" in source, (
+            "get_player_by_session must recompute sha256(token) so a "
+            "previously-rotated JWT no longer validates against the "
+            "stored token_hash.  See AUTH_ROT_02 / F-07."
         )
-        assert "compare_digest" not in source, (
-            "get_player_by_session must not compare token_hash with "
-            "compare_digest — that strict check broke JWT rotation in "
-            "production.  See AUTH_ROT_01."
+        assert "compare_digest" in source, (
+            "get_player_by_session must use hmac.compare_digest for "
+            "the hash comparison (constant-time, BUG-7); plain == is a "
+            "timing oracle on the token_hash byte distribution."
         )
 
-    def test_service_still_imports_hashlib_for_login(self):
-        """hashlib is still needed in service.py: login() stores the
-        sha256 of the initial JWT in session.token_hash for forensic
-        attribution / future per-token revocation work.  Removing the
-        import would silently break login()."""
+    def test_service_still_imports_hashlib(self):
+        """hashlib is required for both login() (initial hash) and
+        get_player_by_session (per-request comparison)."""
         import inspect
         from llm.seca.auth import service as svc_module
 
         source = inspect.getsource(svc_module)
         assert "import hashlib" in source, (
-            "auth/service.py must import hashlib for login()'s "
-            "session.token_hash population."
+            "auth/service.py must import hashlib for token_hash "
+            "population (login + rotate_session_token) and per-request "
+            "comparison (get_player_by_session)."
+        )
+        assert "import hmac" in source, (
+            "auth/service.py must import hmac for the constant-time "
+            "compare_digest comparison in get_player_by_session."
         )
 
-    def test_rotated_token_is_accepted_post_rotation(self):
-        """Post-AUTH_ROT_01: a tampered (or rotated) token paired with
-        a valid session_id is accepted at this layer.  The router's
-        decode_token() rejects forgeries upstream via JWT signature
-        verification, so by the time get_player_by_session runs, the
-        token has already been authenticated.  This service-layer
-        method only validates session lifecycle.
-
-        Pre-AUTH_ROT_01 the assertion here was the opposite — a
-        tampered token returned None — but that contract was
-        incompatible with JWT rotation and has been retired."""
+    def test_tampered_token_is_rejected(self):
+        """F-07: a token whose sha256 does not match session.token_hash
+        must be rejected at the service layer, regardless of whether
+        the JWT signature was valid upstream.  This is the per-token
+        revocation lever: rotation updates the stored hash and the
+        old token immediately stops validating."""
         import hashlib
         import uuid
         from sqlalchemy import create_engine
@@ -473,13 +471,12 @@ class TestTokenHashConstantTimeComparison:
         db.commit()
 
         svc = AuthService(db)
-        # Real token still validates.
+        # Token whose hash matches the row validates.
         assert svc.get_player_by_session(session.id, real_token) is not None
-        # Post-AUTH_ROT_01: a token whose hash does NOT match
-        # session.token_hash is now also accepted at this layer
-        # (rotation is the canonical example).  Authentication is
-        # delegated to the JWT signature check upstream.
-        assert svc.get_player_by_session(session.id, "tampered-token") is not None
+        # F-07: a different token (hash mismatch) is REJECTED — this is
+        # the per-token revocation lever closed by re-introducing the
+        # hash check alongside rotate_session_token in router.
+        assert svc.get_player_by_session(session.id, "tampered-token") is None
         db.close()
 
 
