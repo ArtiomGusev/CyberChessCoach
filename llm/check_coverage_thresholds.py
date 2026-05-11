@@ -44,15 +44,22 @@ THRESHOLDS: list[tuple[str, float]] = [
     # Trust boundary — silent-failure-class code.
     ("llm/rag/validators/*.py", 95.0),
     ("llm/rag/safety/*.py", 95.0),
+    # Sprint 6.C — security-critical auth + event-storage paths.  The
+    # five-module surface below was lifted to ≥ 95% in 2026-05-11 after
+    # the Sprint 5.C per-token revocation work surfaced uncovered
+    # branches.  Each module is at 100% as of that pass; the 95% floor
+    # leaves headroom for the kind of small-diff regression that
+    # naturally happens during refactors without paving over a real
+    # uncovered-branch slide.
+    ("llm/seca/auth/hashing.py", 95.0),
+    ("llm/seca/auth/service.py", 95.0),
+    ("llm/seca/auth/tokens.py", 95.0),
+    ("llm/seca/events/storage.py", 95.0),
     # Module-specific exemptions (see comment above).
     # Bandit lives in a dormant SECA research subtree; only the freeze-guard
     # path is exercised in CI.  TODO: drop this exemption when bandit gains
     # full happy-path coverage or is moved out of run_ci_suite COVERAGE_TARGETS.
     ("llm/seca/brain/bandit/contextual_bandit.py", 65.0),
-    # Curriculum spacing's edge-case branches (max-interval clamping,
-    # zero-event guard) are not yet covered.  TODO: add the missing
-    # cases to test_curriculum_next_contract.py.
-    ("llm/seca/curriculum/spacing.py", 70.0),
     # Skills trainer's empty-events / partial-batch branches lack coverage.
     # TODO: extend test_skill_updater_resilience.py.
     ("llm/seca/skills/trainer.py", 65.0),

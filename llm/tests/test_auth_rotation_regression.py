@@ -255,3 +255,34 @@ def test_rotated_token_after_session_expiry_rejected(service, db):
         "expired session must reject any token, rotated or not — "
         "expires_at is the staleness lever."
     )
+
+
+def test_rotate_session_token_on_deleted_session_is_silent_noop(service, db):
+    """AUTH_ROT_05 (Sprint 6.C) — pin the deleted-session race.
+
+    Sequence:
+      1. login mints JWT_v1 and creates the session row.
+      2. Logout deletes the session row before the rotation step lands.
+      3. rotate_session_token(session_id, new_token) must silently
+         no-op rather than raise — the row that would have been
+         updated is gone, but raising would surface a transient 500
+         to the user when the only "wrong" state is "got logged out
+         elsewhere simultaneously."  Documented behaviour in
+         ``AuthService.rotate_session_token``.
+    """
+    service.register("race@example.com", "race-pass-1")
+    jwt_v1, _player = service.login("race@example.com", "race-pass-1")
+    session_id = decode_token(jwt_v1)["session_id"]
+
+    # Confirm the row exists, then delete it via logout.
+    assert db.query(Session).filter_by(id=session_id).first() is not None
+    service.logout(session_id)
+    assert db.query(Session).filter_by(id=session_id).first() is None
+
+    # Rotation against a missing row must not raise — proves the
+    # ``if session is None: return`` early-out fires.
+    service.rotate_session_token(session_id, "would-be-new-token")
+
+    # And the row is still gone — rotation didn't accidentally
+    # resurrect it via the create_or_update pattern.
+    assert db.query(Session).filter_by(id=session_id).first() is None
