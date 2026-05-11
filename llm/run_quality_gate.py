@@ -123,6 +123,21 @@ MYPY_TARGETS = [
     "llm/seca/shared_limiter.py",
     "llm/seca/storage/models.py",
     "llm/seca/world_model/safe_stub.py",
+    # Sprint 6.A follow-up — storage models migrated to Mapped[T], unblocking
+    # repo.py + its downstream routers.  events/router.py is deliberately
+    # excluded: its transitive imports (skills/updater + brain/bandit/*) pull
+    # in dormant adaptive-learning code with ~10 type errors that are out of
+    # scope for the storage cleanup.
+    "llm/seca/analytics/models.py",
+    "llm/seca/analytics/router.py",
+    "llm/seca/curriculum/models.py",
+    "llm/seca/curriculum/router.py",
+    "llm/seca/events/storage.py",
+    "llm/seca/repertoire/router.py",
+    "llm/seca/storage/db.py",
+    "llm/seca/storage/event_storage.py",
+    "llm/seca/storage/event_store.py",
+    "llm/seca/storage/repo.py",
 ]
 
 
