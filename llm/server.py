@@ -97,6 +97,14 @@ ENV = os.getenv("SECA_ENV", "dev")
 IS_PROD = ENV in {"prod", "production"}
 DEBUG = not IS_PROD
 
+# API schema version pin.  Bumping requires a coordinated server +
+# Android release: bump this constant AND ``COACH_API_VERSION`` in
+# ``android/app/src/main/java/ai/chesscoach/app/ApiVersion.kt`` in the
+# same PR (see docs/API_CONTRACTS.md > API schema versioning).  The
+# version gate is Phase 1: lenient on missing, strict on mismatch.
+# Pinned by ``llm/tests/test_api_version_header.py`` (AVH_01..AVH_10).
+API_VERSION = "1"
+
 if IS_PROD and API_KEY is None:
     raise RuntimeError(
         "SECA_API_KEY env var is required in production (SECA_ENV=prod). "
@@ -229,7 +237,11 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
     allow_methods=["GET", "POST"],
-    allow_headers=["Authorization", "Content-Type", "X-Api-Key"],
+    # ``X-API-Version`` is explicitly allowed so browser / WebView clients
+    # can send the schema-version header through a CORS preflight without
+    # tripping the default ``Access-Control-Allow-Headers`` filter.  See
+    # the api_version_gate middleware below for the enforcement semantics.
+    allow_headers=["Authorization", "Content-Type", "X-Api-Key", "X-API-Version"],
 )
 
 # ---- Request body size limit (512 KB) ------------------------------------
@@ -321,9 +333,58 @@ async def http_method_override(request: Request, call_next):
     return await call_next(request)
 
 
+# ---- API schema version gate ---------------------------------------------
+# Stamps ``X-API-Version`` on every response and (Phase 1) gates inbound
+# requests on the matching header:
+#   * Missing  → proceed; INFO log so the operator can watch the rollout
+#                migrate to fully-versioned clients.
+#   * Match    → proceed silently.
+#   * Mismatch → 400 with a JSON ``detail`` naming both versions.
+# Discovery routes (``/``, ``/health``, ``/seca/status``) never reject so
+# an out-of-date client can still read the server version off the same
+# open endpoint it polls for the SECA safety gate.  Pinned by
+# llm/tests/test_api_version_header.py (AVH_01..AVH_10).
+_DISCOVERY_PATHS = frozenset({"/", "/health", "/seca/status"})
+
+
+@app.middleware("http")
+async def api_version_gate(request: Request, call_next):
+    client_version = request.headers.get("x-api-version")
+    is_discovery = request.url.path in _DISCOVERY_PATHS
+
+    if not is_discovery and client_version is not None and client_version != API_VERSION:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "detail": (
+                    f"X-API-Version mismatch: client sent {client_version!r}, "
+                    f"server speaks {API_VERSION!r}.  Update the client to "
+                    f"the matching release."
+                )
+            },
+            headers={"X-API-Version": API_VERSION},
+        )
+
+    if not is_discovery and client_version is None:
+        # Lenient phase-1 mode — log once per request so operators can see
+        # the migration rate without parsing access logs.
+        logger.info(
+            "X-API-Version header missing on %s; proceeding (Phase 1 lenient mode)",
+            request.url.path,
+        )
+
+    response = await call_next(request)
+    response.headers["X-API-Version"] = API_VERSION
+    return response
+
+
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
-    return JSONResponse(status_code=429, content={"error": "Too many requests"})
+    return JSONResponse(
+        status_code=429,
+        content={"error": "Too many requests"},
+        headers={"X-API-Version": API_VERSION},
+    )
 
 
 DEFAULT_PREWARM_FENS = [

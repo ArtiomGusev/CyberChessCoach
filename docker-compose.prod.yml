@@ -48,6 +48,14 @@ services:
       api:
         condition: service_healthy
     restart: unless-stopped
+    # Conservative-tier hardening (CH_10).  Caddy binds privileged ports
+    # 80/443 and chowns the cert volume on first boot — the deeper
+    # read_only + cap_drop recipe needs staging validation per upstream
+    # Caddy version.  no-new-privileges is the universal floor and has
+    # zero functional impact; the aggressive-tier flags come in a
+    # follow-up pass alongside docs/DEPLOYMENT.md > Container Hardening.
+    security_opt:
+      - "no-new-privileges:true"
     logging:
       driver: "json-file"
       options:
@@ -96,6 +104,26 @@ services:
       start_period: 25s
       retries: 3
     restart: unless-stopped
+    # Aggressive-tier hardening (CH_01..CH_05).  Pinned by
+    # llm/tests/test_container_hardening.py.
+    #   - read_only locks the rootfs; everything Python writes goes
+    #     either to the named volume at /app/data (SQLite) or to the
+    #     tmpfs at /tmp (tempfile module, subprocess scratch, Stockfish
+    #     UCI buffers).
+    #   - PYTHONDONTWRITEBYTECODE=1 in the Dockerfile keeps .pyc writes
+    #     out of site-packages, so read_only does not break import.
+    #   - cap_drop ALL: the FastAPI process needs no Linux capabilities;
+    #     uvicorn binds 8000 (unprivileged) and Stockfish is just a
+    #     subprocess.
+    #   - no-new-privileges blocks any future setuid binary shipped in
+    #     the base image from being a privilege-escalation surface.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - "no-new-privileges:true"
     logging:
       driver: "json-file"
       options:
@@ -116,6 +144,13 @@ services:
       start_period: 20s
       retries: 5
     restart: unless-stopped
+    # Conservative-tier hardening (CH_11).  Postgres writes to
+    # /var/lib/postgresql/data (volume-mounted), /var/run/postgresql,
+    # and /tmp; the deeper read_only + cap_drop recipe needs an
+    # explicit tmpfs list and staging validation per Postgres minor.
+    # no-new-privileges is the universal floor.
+    security_opt:
+      - "no-new-privileges:true"
     logging:
       driver: "json-file"
       options:
@@ -136,6 +171,18 @@ services:
       start_period: 5s
       retries: 3
     restart: unless-stopped
+    # Aggressive-tier hardening (CH_06..CH_09).  Persistence is disabled
+    # (--save '' --appendonly no) so /data is never written; read_only
+    # locks the rootfs and the tmpfs at /tmp covers redis-cli scratch.
+    # cap_drop ALL is safe — the in-memory data plane needs no Linux
+    # capabilities at all.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - "no-new-privileges:true"
     logging:
       driver: "json-file"
       options:

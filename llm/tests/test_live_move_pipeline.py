@@ -536,3 +536,106 @@ class TestLLMPath:
         ):
             result = generate_live_reply(_MID_FEN, _UCI_NORMAL)
         assert sentinel not in str(result.engine_signal)
+
+
+# ---------------------------------------------------------------------------
+# 30–33  In-pipeline safety validators on the Mode-1 LLM path
+# ---------------------------------------------------------------------------
+
+
+class TestLLMSafetyValidators:
+    """Regression guard for the output-firewall + Mode-2-negative wiring
+    on the /live/move LLM path.
+
+    Before this wiring, an LLM that returned "I am ChatGPT" or "Stockfish
+    recommends Nf3" would only be caught at the HTTP boundary by
+    ``validate_live_move_response``, which re-runs only the Mode-2
+    negative regex.  The five output-firewall categories (PROMPT_LEAK,
+    IDENTITY, PII_CREDENTIAL, HARMFUL, BYPASS) were entirely bypassed
+    on the live-move path — Mode-1 hints could leak the system prompt,
+    claim alternate identities, emit API-key-shaped strings, or carry
+    jailbreak echoes, all silently.
+
+    These tests patch ``_call_llm`` to return each violation category
+    and pin that the LLM path falls back to the deterministic
+    ``_build_hint`` instead of returning the adversarial text to the
+    client.  ``_LIVE_RETRY_DELAY_SECONDS`` is patched to 0 so the retry
+    loop exhausts quickly (otherwise each test would block 1s on
+    ``time.sleep``).
+    """
+
+    _LLM_MODULE = "llm.seca.coach.live_move_pipeline"
+
+    def test_firewall_identity_violation_falls_back(self):
+        """LIVE_FW_IDENTITY: a Mode-1 hint that claims to be ChatGPT is
+        caught by ``check_output`` (IDENTITY category) and never reaches
+        the response."""
+        adversarial = "Nice move! Honestly, I am ChatGPT, the OpenAI assistant."
+        with (
+            patch(f"{self._LLM_MODULE}._LLM_AVAILABLE", True),
+            patch(f"{self._LLM_MODULE}._LIVE_RETRY_DELAY_SECONDS", 0),
+            patch(f"{self._LLM_MODULE}._call_llm", return_value=adversarial),
+        ):
+            result = generate_live_reply(_MID_FEN, _UCI_NORMAL)
+        assert "ChatGPT" not in result.hint
+        assert "OpenAI" not in result.hint
+        assert result.hint.strip(), "fallback hint must be non-empty"
+        assert result.mode == "LIVE_V1"
+
+    def test_firewall_pii_credential_violation_falls_back(self):
+        """LIVE_FW_PII: a Mode-1 hint containing an API-key-shaped string
+        is caught by ``check_output`` (PII_CREDENTIAL category)."""
+        adversarial = "Good move. By the way, my api_key=sk-abcdef0123456789xyz works."
+        with (
+            patch(f"{self._LLM_MODULE}._LLM_AVAILABLE", True),
+            patch(f"{self._LLM_MODULE}._LIVE_RETRY_DELAY_SECONDS", 0),
+            patch(f"{self._LLM_MODULE}._call_llm", return_value=adversarial),
+        ):
+            result = generate_live_reply(_MID_FEN, _UCI_NORMAL)
+        assert "sk-abcdef" not in result.hint
+        assert "api_key=" not in result.hint
+        assert result.hint.strip()
+
+    def test_mode_2_negative_analysis_vocabulary_falls_back(self):
+        """LIVE_NEG_ANALYSIS: a Mode-1 hint using forbidden Mode-2
+        analysis vocabulary (``calculate``, ``variation``, ``line``,
+        ``the engine wants``) is caught by ``validate_mode_2_negative``.
+
+        Note: ``validate_mode_2_negative.FORBIDDEN_PATTERNS`` does not
+        block the bare word ``Stockfish``; engine-name blocking lives
+        in ``validate_output.FORBIDDEN_PHRASES``, which is not wired
+        into the chat or live-move in-pipeline paths today.  This test
+        therefore exercises a pattern the negative validator actually
+        covers — the analysis-vocabulary block — so that the in-pipeline
+        wiring is what is being asserted, not a layer above it."""
+        adversarial = "The engine wants you to calculate the variation here."
+        with (
+            patch(f"{self._LLM_MODULE}._LLM_AVAILABLE", True),
+            patch(f"{self._LLM_MODULE}._LIVE_RETRY_DELAY_SECONDS", 0),
+            patch(f"{self._LLM_MODULE}._call_llm", return_value=adversarial),
+        ):
+            result = generate_live_reply(_MID_FEN, _UCI_NORMAL)
+        # Match the exact FORBIDDEN_PATTERNS entries: "the engine wants",
+        # "calculate", "variation".
+        lower = result.hint.lower()
+        assert "the engine wants" not in lower
+        assert "calculate" not in lower
+        assert "variation" not in lower
+        assert result.hint.strip()
+
+    def test_mode_2_negative_move_suggestion_falls_back(self):
+        """LIVE_NEG_MOVE: a Mode-1 hint that names an algebraic move
+        ("Qh5", "Nf3") is caught by ``validate_mode_2_negative``."""
+        adversarial = "You should play Qh5 — probably the best continuation."
+        with (
+            patch(f"{self._LLM_MODULE}._LLM_AVAILABLE", True),
+            patch(f"{self._LLM_MODULE}._LIVE_RETRY_DELAY_SECONDS", 0),
+            patch(f"{self._LLM_MODULE}._call_llm", return_value=adversarial),
+        ):
+            result = generate_live_reply(_MID_FEN, _UCI_NORMAL)
+        assert "Qh5" not in result.hint
+        # "should" and "probably" are also Mode-2-forbidden speculative
+        # tokens; the deterministic fallback uses neither.
+        assert " should " not in f" {result.hint} "
+        assert " probably " not in f" {result.hint} "
+        assert result.hint.strip()

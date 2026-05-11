@@ -53,6 +53,17 @@ try:
     from llm.rag.prompts.mode_1.render import render_mode_1_prompt  # type: ignore[import]
     from llm.rag.retriever.retriever import retrieve as _retrieve  # type: ignore[import]
     from llm.rag.documents import ALL_RAG_DOCUMENTS as _DOCS  # type: ignore[import]
+    # Mode-1 hints must satisfy the same in-pipeline safety contract as
+    # Mode-2 chat replies: the output firewall blocks prompt-leak,
+    # role-bypass, identity, PII-credential, and harmful patterns; the
+    # Mode-2 negative validator blocks engine/move/calculation language.
+    # Without these calls, a Mode-1 hint that says "I am ChatGPT" or
+    # "Stockfish recommends Nf3" would only be caught at the HTTP
+    # boundary (validate_live_move_response) — that boundary only re-
+    # runs the negative regex and would still leak firewall-class
+    # content.  Mirrors the chat_pipeline.py pattern.
+    from llm.rag.safety.output_firewall import check_output as _check_output  # type: ignore[import]
+    from llm.rag.validators.mode_2_negative import validate_mode_2_negative as _validate_neg  # type: ignore[import]
     _LLM_AVAILABLE = True
 except Exception as _llm_import_exc:  # noqa: BLE001
     logger.warning("LLM imports unavailable — deterministic path only: %s", _llm_import_exc)
@@ -276,6 +287,16 @@ def _build_hint_llm(
     response = _call_llm(prompt).strip()
     if not response:
         raise ValueError("Empty LLM response")
+
+    # Defense-in-depth: output firewall + Mode-2 negative validator.
+    # check_output raises OutputFirewallError on prompt-leak / bypass /
+    # identity / PII / harmful patterns; validate_mode_2_negative raises
+    # AssertionError on forbidden chess vocabulary (engine mentions,
+    # move suggestions, calculation language).  Either raise breaks
+    # this attempt and is caught by the retry loop in generate_live_reply
+    # — exhausted retries fall through to the deterministic _build_hint.
+    _check_output(response)
+    _validate_neg(response)
     return response
 
 

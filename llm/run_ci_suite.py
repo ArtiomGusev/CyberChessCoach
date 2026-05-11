@@ -69,17 +69,28 @@ TEST_TARGETS = [
     # check on /next-training, dead-router non-inclusion, AUT-01d/e
     # 404 collapse that closes the player-id enumeration oracle.
     "llm/tests/test_security_authz.py",
-    # NOTE: ``test_api_version_header.py`` and ``test_container_hardening.py``
-    # are deliberately NOT enforced in CI yet — they pin spec contracts
-    # for the X-API-Version middleware (server-side) and the
-    # docker-compose.prod.yml runtime-hardening floor (security_opt /
-    # cap_drop / read_only / tmpfs) that have not yet been implemented.
-    # The test files stay in the working tree as WIP and are wired back
-    # into TEST_TARGETS in the same commit that lands the implementation,
-    # alongside the matching server.py / compose changes.  The Android
-    # counterpart (``ApiVersionHeaderTest.kt``) is already enforced from
-    # the Android Gradle suite; the corresponding server enforcement
-    # comes with the middleware itself.
+    # Trusted-proxy-aware rate limiter (TPA_01..TPA_14) — pins that
+    # ``proxy_aware_remote_address`` in ``llm/seca/shared_limiter.py``
+    # walks X-Forwarded-For right-to-left honouring TRUSTED_PROXIES,
+    # so that per-client rate limits behind Caddy actually key on the
+    # real client IP instead of collapsing onto the proxy's container
+    # peer.  Regression guard for the wiring is TPA_14.
+    "llm/tests/test_security_proxy_aware_limiter.py",
+    # Container hardening floor (CH_01..CH_13) — pins the
+    # docker-compose.prod.yml runtime-sandbox contract: api+redis carry
+    # read_only / tmpfs / cap_drop ALL / no-new-privileges; caddy+db
+    # carry no-new-privileges (conservative tier pending per-upstream
+    # validation, see docs/DEPLOYMENT.md > Container Hardening).
+    # CH_12 (ollama) is skipped while the prod stack uses the managed
+    # DeepSeek API rather than a local Ollama sidecar.
+    "llm/tests/test_container_hardening.py",
+    # X-API-Version middleware (AVH_01..AVH_10) — pins the schema-version
+    # gate on the HTTP boundary: every response carries X-API-Version,
+    # coaching paths reject mismatched headers with 400 + both versions
+    # named in the detail, discovery routes (/, /health, /seca/status)
+    # are exempt so an out-of-date client can still discover the server
+    # version, and CORS allow_headers includes the custom header.
+    "llm/tests/test_api_version_header.py",
     # Engine pool crash recovery (CR_01..CR_08) — pins that a Stockfish
     # subprocess crash is detected at release time and the dead handle
     # replaced with a fresh engine.  Without this, a crash mid-request
