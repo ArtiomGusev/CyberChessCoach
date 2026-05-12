@@ -5,7 +5,7 @@ import android.util.Log
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import org.json.JSONObject
+import kotlinx.serialization.encodeToString
 
 /**
  * Helpers for the offline /game/finish retry path.
@@ -59,40 +59,31 @@ object PendingGameFinish {
     /**
      * Serialise a GameFinishRequest into a JSON blob suitable for
      * SharedPreferences.  Schema mirrors the wire format the
-     * HttpGameApiClient sends so the round-trip is loss-free.
+     * HttpGameApiClient sends so the round-trip is loss-free.  Since
+     * Sprint 4.3.C, [GameFinishRequest] itself is @Serializable so
+     * the on-disk format is identical to what the HTTP client posts.
+     * Null ``player_id`` / ``game_id`` are dropped by the shared
+     * [ApiJson] config (``encodeDefaults = false``).
      */
-    fun toJson(req: GameFinishRequest): String {
-        val weaknesses = JSONObject()
-        req.weaknesses.forEach { (k, v) -> weaknesses.put(k, v.toDouble()) }
-        return JSONObject()
-            .put("pgn", req.pgn)
-            .put("result", req.result)
-            .put("accuracy", req.accuracy.toDouble())
-            .put("weaknesses", weaknesses)
-            .apply { req.playerId?.let { put("player_id", it) } }
-            .apply { req.gameId?.let { put("game_id", it) } }
-            .toString()
-    }
+    fun toJson(req: GameFinishRequest): String =
+        ApiJson.encodeToString(req)
 
     /**
      * Inverse of [toJson] — returns null when the blob is malformed
      * (corrupted prefs, partial write, schema drift across upgrades)
      * so the caller can drop the slot and continue rather than crash.
      * Missing optional fields (player_id, game_id) round-trip to null.
+     * An empty-string optional from a legacy payload is normalised
+     * back to null to preserve the pre-Sprint-4.3.C behaviour.
      */
     fun fromJson(json: String): GameFinishRequest? = try {
-        val root = JSONObject(json)
-        val weakObj = root.optJSONObject("weaknesses") ?: JSONObject()
-        val weaknesses = buildMap<String, Float> {
-            weakObj.keys().forEach { k -> put(k, weakObj.optDouble(k, 0.0).toFloat()) }
-        }
-        GameFinishRequest(
-            pgn = root.getString("pgn"),
-            result = root.getString("result"),
-            accuracy = root.getDouble("accuracy").toFloat(),
-            weaknesses = weaknesses,
-            playerId = root.optString("player_id").takeIf { it.isNotEmpty() },
-            gameId   = root.optString("game_id").takeIf { it.isNotEmpty() },
+        val req = ApiJson.decodeFromString<GameFinishRequest>(json)
+        // Legacy parser dropped empty optionals to null via ``takeIf``;
+        // keep that invariant so a fromJson(toJson(req)) round-trip
+        // still maps "" → null for callers that key off nullability.
+        req.copy(
+            playerId = req.playerId?.takeIf { it.isNotEmpty() },
+            gameId = req.gameId?.takeIf { it.isNotEmpty() },
         )
     } catch (_: Exception) {
         null

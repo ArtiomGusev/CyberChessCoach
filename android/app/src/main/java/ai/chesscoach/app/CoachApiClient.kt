@@ -5,8 +5,11 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import org.json.JSONObject
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
 import java.net.URL
@@ -226,29 +229,40 @@ class HttpCoachApiClient(
         }
     }
 
-    private fun parseStreamChunk(json: String): StreamChunk? =
+    /**
+     * Decode one SSE ``data:`` payload from /chat/stream into a
+     * [StreamChunk].  Three discriminator values, all carrying a
+     * top-level ``type`` field:
+     *
+     *   - ``{"type":"chunk","text":"..."}``               → [StreamChunk.Chunk]
+     *   - ``{"type":"done","engine_signal":...,"mode":...}`` → [StreamChunk.Done]
+     *   - ``{"type":"error","message":"..."}``            → [StreamChunk.StreamError]
+     *
+     * Decoded as a generic [kotlinx.serialization.json.JsonObject] so the
+     * type tag can be inspected before committing to a concrete shape —
+     * keeps the parser tolerant of new/unknown event types (returns null,
+     * which the caller drops).
+     */
+    private fun parseStreamChunk(text: String): StreamChunk? =
         try {
-            val root = JSONObject(json)
-            when (root.optString("type")) {
-                "chunk" -> StreamChunk.Chunk(root.optString("text", ""))
+            val root = ApiJson.parseToJsonElement(text).jsonObject
+            when (root["type"]?.jsonPrimitive?.contentOrNull) {
+                "chunk" -> StreamChunk.Chunk(
+                    root["text"]?.jsonPrimitive?.contentOrNull ?: ""
+                )
                 "done" -> {
-                    val signalObj = root.optJSONObject("engine_signal")
-                    val engineSignal = signalObj?.let { sig ->
-                        val evalObj = sig.optJSONObject("evaluation")
-                        val evaluation = evalObj?.let { ev ->
-                            EvaluationDto(
-                                band = ev.optString("band", "").takeIf { it.isNotEmpty() },
-                                side = ev.optString("side", "").takeIf { it.isNotEmpty() },
-                            )
-                        }
-                        EngineSignalDto(
-                            evaluation = evaluation,
-                            phase = sig.optString("phase", "").takeIf { it.isNotEmpty() },
-                        )
+                    val signalEl = root["engine_signal"]?.takeUnless { it is JsonNull }
+                    val engineSignal = signalEl?.let {
+                        ApiJson.decodeFromJsonElement(EngineSignalDto.serializer(), it)
                     }
-                    StreamChunk.Done(engineSignal, root.optString("mode", "CHAT_V1"))
+                    StreamChunk.Done(
+                        engineSignal = engineSignal,
+                        mode = root["mode"]?.jsonPrimitive?.contentOrNull ?: "CHAT_V1",
+                    )
                 }
-                "error" -> StreamChunk.StreamError(root.optString("message", "Server error"))
+                "error" -> StreamChunk.StreamError(
+                    root["message"]?.jsonPrimitive?.contentOrNull ?: "Server error"
+                )
                 else -> null
             }
         } catch (_: Exception) {
@@ -263,10 +277,9 @@ class HttpCoachApiClient(
         path = FEEDBACK_PATH,
         method = "POST",
         headers = authHeaders(extraToken = token),
-        body = JSONObject().apply {
-            put("session_fen", fen)
-            put("is_helpful", isHelpful)
-        }.toString(),
+        body = ApiJson.encodeToString(
+            CoachFeedbackRequest(sessionFen = fen, isHelpful = isHelpful)
+        ),
         onResponse = refreshOnSuccess(),
     )
 
@@ -274,6 +287,15 @@ class HttpCoachApiClient(
     // JSON serialisation / deserialisation (private — not unit tested directly)
     // -----------------------------------------------------------------------
 
+    /**
+     * Encode the /chat (and /chat/stream) request payload.  Null
+     * optional fields are dropped by the shared [ApiJson]
+     * ``encodeDefaults = false`` config so the wire shape matches
+     * the pre-migration ``buildJson`` output (omit-when-null for
+     * ``player_profile`` / ``past_mistakes`` / ``move_count`` /
+     * ``coach_voice``).  ``coachVoice`` is normalised to null when
+     * blank to preserve parity with the prior ``isNotBlank`` guard.
+     */
     private fun buildJson(
         fen: String,
         messages: List<ChatMessageDto>,
@@ -281,66 +303,17 @@ class HttpCoachApiClient(
         pastMistakes: List<String>?,
         moveCount: Int?,
         coachVoice: String?,
-    ): String {
-        val arr = JSONArray()
-        for (msg in messages) {
-            arr.put(
-                JSONObject().apply {
-                    put("role", msg.role)
-                    put("content", msg.content)
-                },
-            )
-        }
-        return JSONObject()
-            .apply {
-                put("fen", fen)
-                put("messages", arr)
-                // Omit player_profile when null so the server uses its own defaults.
-                playerProfile?.let {
-                    put(
-                        "player_profile",
-                        JSONObject().apply {
-                            put("rating", it.rating.toDouble())
-                            put("confidence", it.confidence.toDouble())
-                        },
-                    )
-                }
-                // Omit past_mistakes when null; empty list is sent as [] (valid).
-                pastMistakes?.let {
-                    val arr2 = JSONArray()
-                    for (mistake in it) arr2.put(mistake)
-                    put("past_mistakes", arr2)
-                }
-                // Move count gives the backend phase context during mid-game chat.
-                moveCount?.let { put("move_count", it) }
-                // Coach voice from the user's Settings sheet — omit
-                // when null so the server uses its default tone.
-                coachVoice?.takeIf { it.isNotBlank() }?.let {
-                    put("coach_voice", it)
-                }
-            }
-            .toString()
-    }
+    ): String = ApiJson.encodeToString(
+        ChatRequestBody(
+            fen = fen,
+            messages = messages,
+            playerProfile = playerProfile,
+            pastMistakes = pastMistakes,
+            moveCount = moveCount,
+            coachVoice = coachVoice?.takeIf { it.isNotBlank() },
+        )
+    )
 
-    private fun parseResponse(body: String): ChatResponseBody {
-        val root = JSONObject(body)
-        val reply = root.optString("reply", "")
-        val signalObj = root.optJSONObject("engine_signal")
-        val engineSignal =
-            signalObj?.let { sig ->
-                val evalObj = sig.optJSONObject("evaluation")
-                val evaluation =
-                    evalObj?.let { ev ->
-                        EvaluationDto(
-                            band = ev.optString("band", "").takeIf { it.isNotEmpty() },
-                            side = ev.optString("side", "").takeIf { it.isNotEmpty() },
-                        )
-                    }
-                EngineSignalDto(
-                    evaluation = evaluation,
-                    phase = sig.optString("phase", "").takeIf { it.isNotEmpty() },
-                )
-            }
-        return ChatResponseBody(reply = reply, engineSignal = engineSignal)
-    }
+    private fun parseResponse(body: String): ChatResponseBody =
+        ApiJson.decodeFromString<ChatResponseBody>(body)
 }

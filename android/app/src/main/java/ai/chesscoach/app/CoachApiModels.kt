@@ -1,10 +1,18 @@
 package ai.chesscoach.app
 
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
 /**
  * Typed request/response models for the coach backend API.
  *
  * Pure Kotlin — no Android or org.json dependencies; fully JVM-testable.
- * All JSON serialisation/deserialisation is handled in [HttpCoachApiClient].
+ * Sprint 4.3.C migrated these onto kotlinx-serialization; the shared
+ * [ApiJson] config preserves the snake_case wire format
+ * (``@SerialName("player_profile")`` / ``@SerialName("past_mistakes")``
+ * / etc.).  ``encodeDefaults = false`` ensures optional fields are
+ * absent from the wire payload when they are null, matching the
+ * pre-migration ``buildJson`` behaviour.
  */
 
 /**
@@ -13,6 +21,7 @@ package ai.chesscoach.app
  * [role]    must be "user" or "assistant".
  * [content] is the message text (backend field name is "content", not "text").
  */
+@Serializable
 data class ChatMessageDto(val role: String, val content: String)
 
 /**
@@ -23,39 +32,67 @@ data class ChatMessageDto(val role: String, val content: String)
  *  - [confidence] Rating confidence in the range 0.0–1.0 (backend field: `confidence`).
  *
  * Maps to the `player_profile` dict accepted by chat_pipeline.generate_chat_reply().
- * Null values in the dict are omitted by [HttpCoachApiClient.buildJson].
  */
+@Serializable
 data class PlayerProfileDto(
     val rating: Float,
     val confidence: Float,
 )
 
 /**
- * Request body for POST /chat.
+ * Request body for POST /chat (and /chat/stream — same wire shape).
  *
  * [fen]           current board position in Forsyth-Edwards Notation.
  * [messages]      conversation history (most-recent last).
- * [playerProfile] optional player context for personalised replies; null omits the field.
- * [pastMistakes]  optional list of weakness categories from the last game; null omits the field.
+ * [playerProfile] optional player context for personalised replies; null
+ *                 omits the ``player_profile`` field (``encodeDefaults=false``).
+ * [pastMistakes]  optional list of weakness categories from the last game;
+ *                 null omits the ``past_mistakes`` field.
+ * [moveCount]     optional half-move count for game-phase context during
+ *                 mid-game chat; null omits ``move_count``.
+ * [coachVoice]    optional coach-voice setting from the user's settings sheet
+ *                 (formal / conversational / terse).  Shapes tone, not
+ *                 content.  Null omits ``coach_voice``.
  */
+@Serializable
 data class ChatRequestBody(
     val fen: String,
     val messages: List<ChatMessageDto>,
-    val playerProfile: PlayerProfileDto? = null,
-    val pastMistakes: List<String>? = null,
+    @SerialName("player_profile") val playerProfile: PlayerProfileDto? = null,
+    @SerialName("past_mistakes") val pastMistakes: List<String>? = null,
+    @SerialName("move_count") val moveCount: Int? = null,
+    @SerialName("coach_voice") val coachVoice: String? = null,
+)
+
+/**
+ * Request body for POST /game/coach-feedback.  Fire-and-forget thumbs-up /
+ * thumbs-down for the latest coaching reply at the given position.
+ */
+@Serializable
+data class CoachFeedbackRequest(
+    @SerialName("session_fen") val sessionFen: String,
+    @SerialName("is_helpful") val isHelpful: Boolean,
 )
 
 /**
  * Centipawn evaluation band returned by the engine for display in the context header.
  * Null fields indicate the server omitted the field.
  */
-data class EvaluationDto(val band: String?, val side: String?)
+@Serializable
+data class EvaluationDto(
+    val band: String? = null,
+    val side: String? = null,
+)
 
 /**
  * Engine context signal attached to each /chat response.
  * Null fields indicate the server omitted the field.
  */
-data class EngineSignalDto(val evaluation: EvaluationDto?, val phase: String?)
+@Serializable
+data class EngineSignalDto(
+    val evaluation: EvaluationDto? = null,
+    val phase: String? = null,
+)
 
 /**
  * Typed response from POST /chat.
@@ -63,7 +100,11 @@ data class EngineSignalDto(val evaluation: EvaluationDto?, val phase: String?)
  * [reply]        the coaching text to display in the chat UI.
  * [engineSignal] optional engine context for the context header; null when omitted.
  */
-data class ChatResponseBody(val reply: String, val engineSignal: EngineSignalDto?)
+@Serializable
+data class ChatResponseBody(
+    val reply: String = "",
+    @SerialName("engine_signal") val engineSignal: EngineSignalDto? = null,
+)
 
 /**
  * Discriminated union for all possible outcomes of a [CoachApiClient] call.
