@@ -50,27 +50,41 @@ Three independent checks (defence in depth):
 2.  Forbidden module-name parts.  Substring matches against module names
     used by historical or hypothetical adaptive components.
 
-3.  Forbidden source keywords.  Substring matches against module source
-    text — covers the major training entry points used by the dormant ML
-    code (PyTorch, sklearn online learners, custom bandit save loops).
-    Keywords are deliberately specific to avoid false-positives.
+3.  Forbidden source patterns.  Anchored regex patterns matched against
+    module source text — covers the major training entry points used by
+    the dormant ML code (PyTorch, sklearn online learners, custom bandit
+    save loops, ``def train(...)`` definitions, ML-receiver
+    ``.update(...)`` calls).  Patterns are deliberately specific
+    (``\b...\b`` word boundaries, anchored function-definition matches,
+    explicit ML-receiver allowlist for ``.update``) so the scan covers
+    the full ``llm.*`` tree without false-positive on generic Python
+    idioms (``dict.update``, ``set.update``, helper functions named
+    ``train_*``).
 
 Scan scope
 ----------
-``_scan_loaded_modules`` walks ``llm.seca.*`` only.  The audit's worry
-about top-level ``llm/<rl_thing>.py`` shapes (the original
-``llm/world_model.py``, ``llm/bootstrap_skill_dataset.py``,
-``llm/governor.py`` files) is addressed by their outright deletion in the
-Sprint 2 PR rather than by widening the scan — ``FORBIDDEN_KEYWORDS``
-contains generic substrings (``train(``, ``.update(``) that false-
-positive on legitimate production code outside the SECA tree, so widening
-without first tightening the keywords would mask real safety hits with
-false alarms.  A future revival of the top-level RL-file shape would
-re-trip the audit and warrant a keyword-tightening pass first.
+``_scan_loaded_modules`` walks ``llm.*`` — every module under the
+``llm`` package tree.  Earlier revisions scoped the scan to
+``llm.seca.*`` only because ``FORBIDDEN_KEYWORDS`` carried bare
+substrings (``train(``, ``.update(``) that false-positive on
+legitimate code outside the SECA tree (e.g. ``dict.update(...)``,
+``train_session(...)``).  The 2026-05-13 keyword-tightening pass
+replaced those substrings with anchored regex patterns
+(function-definition match for ``def train(...)``, ML-receiver
+allowlist for ``.update(...)``) so the scan can safely cover
+top-level ``llm/<rl_thing>.py`` shapes (``llm/world_model.py``,
+``llm/governor.py``, etc.) that previously relied on outright file
+deletion plus reviewer vigilance.
+
+``llm.tests.*`` is still excluded — test fixtures deliberately
+include forbidden patterns to exercise this guard.  ``llm.seca.safety``
+is excluded because the guard's own source contains the keyword
+strings (and the regex patterns themselves as code).
 """
 
 import logging
 import os
+import re
 import sys
 import inspect
 
@@ -131,53 +145,86 @@ ALLOWED_BRAIN_MODULES = frozenset(
     }
 )
 
-FORBIDDEN_KEYWORDS = [
-    # Custom adaptive controllers — historical names that flagged the
-    # OnlineSECALearner background loop and the planned RL trainers.
-    # The classes themselves were deleted in the dormant-RL sweeps;
-    # the keywords stay as a re-introduction tripwire so a future
-    # contributor cannot quietly resurrect the same patterns.
-    "OnlineSECALearner",
-    "train_rl",
-    "train_value_model",
-    # Bandit persistence / online-update entry points.  The classes
-    # that historically called these (``OnlineSECALearner``, the dormant
-    # online_update modules) were deleted in earlier sweeps; the
-    # keywords stay as a tripwire so anyone reintroducing a
-    # ``bandit.save()`` / ``bandit.update()`` call anywhere in
-    # ``llm/seca/`` fails the startup scan.  Pinned by
+#: ML-context receiver names for the tightened ``.update(`` pattern.
+#: ``<receiver>.update(`` only counts as a forbidden online-fit call when
+#: the receiver name is one of these — every other ``.update(`` (dict,
+#: set, request headers, config, etc.) is a legitimate Python idiom and
+#: must not trip the guard.  Keep the list narrow: adding a generic noun
+#: like ``state`` would re-introduce false-positives on dict-style state
+#: updates throughout the codebase.
+_ML_UPDATE_RECEIVERS = (
+    "bandit",
+    "model",
+    "policy",
+    "theta",
+    "weights",
+    "agent",
+    "learner",
+    "trainer",
+    "value_fn",
+    "value_function",
+    "predictor",
+)
+
+#: Anchored regex patterns for the source-keyword scan.  Each entry is
+#: a (label, compiled-pattern) pair; the label is used in crash
+#: messages.  Patterns use ``\b`` word boundaries and explicit context
+#: so the scan can run across the full ``llm.*`` tree without
+#: false-positive on legitimate Python idioms.
+#:
+#: When extending: keep patterns specific to ML training entry points.
+#: A new bare-substring entry would re-introduce the false-positive
+#: pressure that forced the scan to be SECA-scoped in earlier
+#: revisions.
+FORBIDDEN_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    # Custom adaptive controllers — historical class names that flagged
+    # the OnlineSECALearner background loop and the planned RL trainers.
+    # The classes themselves were deleted in the dormant-RL sweeps; the
+    # patterns stay as a re-introduction tripwire so a future contributor
+    # cannot quietly resurrect the same shape.
+    ("OnlineSECALearner", re.compile(r"\bOnlineSECALearner\b")),
+    ("train_rl", re.compile(r"\btrain_rl\b")),
+    ("train_value_model", re.compile(r"\btrain_value_model\b")),
+    # Bandit persistence / online-update entry points.  ``\b...\b``
+    # boundaries prevent matching ``my_bandit_update_helper`` etc.
+    # Pinned by
     # ``test_safety_freeze.FreezeKeywordScanTest::test_bandit_save_keyword_blocked``.
-    "bandit.update",
-    "bandit.save",
-    # Generic in-place training calls.  ``train(`` catches a
-    # ``def train(...)`` or ``foo.train(`` invocation anywhere in
-    # seca/ — the historical SECA trainers all had a public
-    # ``train()`` entry point.  ``.update(`` is a heuristic that
-    # would catch a fitted-model in-place update; it has zero
-    # false-positive risk in the current tree because the live coach
-    # pipelines never call ``.update`` on a learnt model — the
-    # observation-only LinUCB head uses closed-form sufficient
-    # statistics, not ``.update``.
-    "train(",
-    ".update(",
-    # PyTorch / sklearn training-step keywords.  These are the
-    # canonical signals that a module is doing gradient descent or
-    # online fitting — any seca/ source that contains them at module
-    # load time fails the startup scan.
-    "optimizer.step",
-    "loss.backward",
-    ".partial_fit(",
-    # Neural-policy *definition* keywords.  After the fourth deletion
-    # sweep removed ``seca/engines/hmpt/`` and ``seca/engines/adaptive/``
-    # (PyTorch ``nn.Module`` substrate that nothing imported), no live
-    # SECA module imports torch.  These keywords ensure a future
+    ("bandit.update", re.compile(r"\bbandit\.update\b")),
+    ("bandit.save", re.compile(r"\bbandit\.save\b")),
+    # ``def train(...)`` — historical SECA trainer entry points all
+    # carried a public ``train()`` method.  Anchored to a function
+    # *definition* rather than any ``train(...)`` call so chess-domain
+    # helpers (``train_session(...)``, ``train_player(...)``) and the
+    # ``training_recommendations`` API surface are not caught.  A future
+    # ``def train(self, ...):`` slipped into a SECA module trips this.
+    ("def train(", re.compile(r"^\s*def\s+train\s*\(", re.MULTILINE)),
+    # ML-receiver ``.update(`` — catches fitted-model in-place updates.
+    # Restricted to the small set of receiver names defined in
+    # ``_ML_UPDATE_RECEIVERS`` so generic ``dict.update(...)`` /
+    # ``set.update(...)`` calls do not trip the guard.  The receiver
+    # list is intentionally narrow; broaden only after re-auditing the
+    # ``llm/*`` tree for new dict-named-state shapes.
+    (
+        "<ml>.update(",
+        re.compile(r"\b(?:" + "|".join(_ML_UPDATE_RECEIVERS) + r")\.update\s*\("),
+    ),
+    # PyTorch / sklearn training-step keywords.  Canonical signals that
+    # a module is doing gradient descent or online fitting — any seca/
+    # source that contains them at module load time fails the startup
+    # scan.
+    ("optimizer.step", re.compile(r"\boptimizer\.step\b")),
+    ("loss.backward", re.compile(r"\bloss\.backward\b")),
+    ("partial_fit", re.compile(r"\.partial_fit\s*\(")),
+    # Neural-policy *definition* keywords.  After the dormant-RL sweeps
+    # removed ``seca/engines/hmpt/`` and ``seca/engines/adaptive/``, no
+    # live SECA module imports torch.  These patterns ensure a future
     # contributor who tries to reintroduce a neural-policy class — even
     # without ever calling ``optimizer.step`` (e.g., a pure-inference
     # model loaded from a pickled state-dict) — trips the startup scan.
-    # Cross-checked: ``llm/seca/`` contains no ``import torch`` or
-    # ``nn.Module`` after the sweep, so these are tripwires only.
-    "import torch",
-    "nn.Module",
+    # Anchored to module-level imports so a torch-mention inside a
+    # docstring or comment does not trip.
+    ("import torch", re.compile(r"^\s*(?:from|import)\s+torch\b", re.MULTILINE)),
+    ("nn.Module", re.compile(r"\bnn\.Module\b")),
 ]
 
 FORBIDDEN_MODULE_PARTS = [
@@ -194,29 +241,27 @@ FORBIDDEN_MODULE_PARTS = [
 def _scan_loaded_modules():
     """Scan already imported modules for forbidden adaptive components.
 
-    Scope is ``llm.seca.*`` only.  Widening to ``llm.*`` was attempted but
-    reverted: ``FORBIDDEN_KEYWORDS`` contains generic substrings
-    (``train(``, ``.update(``) chosen to catch the historical SECA
-    trainers' entry points, and those false-positive on legitimate
-    production modules outside the SECA tree.  The cache-helper
-    false-positive that originally motivated this scope
-    (``llm.elite_engine_service.update_*``) is gone after the
-    engine-library cleanup deleted that module, but the
-    ``llm.*``-widening tradeoff remains: scan the SECA tree where the
-    forbidden adaptive paths actually live; trust the structural scan
-    plus code review for the flat ``llm/*`` surface.  The audit's
-    specific worry — top-level ``llm/world_model.py`` and
-    ``llm/bootstrap_skill_dataset.py`` — was addressed by deleting
-    those files in the Sprint 2 PR.  A future revival of that shape
-    would re-trip the audit and warrant a keyword-tightening pass
-    before re-widening the scan.
+    Scope: every loaded ``llm.*`` module except the test tree
+    (``llm.tests.*``, which carries deliberate forbidden-pattern
+    fixtures) and the guard's own source (``llm.seca.safety.*``,
+    which contains the keyword strings and regex patterns as code).
+    Mock modules — anything whose name contains ``mock`` — are also
+    skipped so the test harness's patched ``sys.modules`` entries do
+    not trip the guard during unit-test imports.
+
+    The widening from ``llm.seca.*`` to ``llm.*`` was unlocked by the
+    2026-05-13 keyword-tightening pass that replaced the bare
+    ``train(`` / ``.update(`` substrings with anchored regex
+    patterns; see the ``FORBIDDEN_PATTERNS`` block above.
     """
     for name, module in sys.modules.items():
         if module is None:
             continue
-        if not name.startswith("llm.seca"):
+        if not name.startswith("llm."):
             continue
         if name.startswith("llm.seca.safety"):
+            continue
+        if name.startswith("llm.tests"):
             continue
         if "mock" in name:
             continue
@@ -233,15 +278,18 @@ def _scan_loaded_modules():
             if bad in name:
                 _crash(f"Forbidden adaptive module loaded: {name}")
 
-        # Source keyword scan
+        # Source pattern scan
         try:
             src = inspect.getsource(module)
         except (OSError, TypeError):
             continue
 
-        for kw in FORBIDDEN_KEYWORDS:
-            if kw in src:
-                _crash(f"Forbidden adaptive code detected in module: {name}")
+        for label, pattern in FORBIDDEN_PATTERNS:
+            if pattern.search(src):
+                _crash(
+                    f"Forbidden adaptive code detected in module: {name} "
+                    f"(matched pattern: {label!r})"
+                )
 
 
 def _assert_safe_world_model(world_model):

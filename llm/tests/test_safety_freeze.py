@@ -224,6 +224,112 @@ class FreezeKeywordScanTest(unittest.TestCase):
             with self.assertRaises(_Crash):
                 freeze._scan_loaded_modules()
 
+    # ---- Sprint 2026-05-13 keyword tightening: positive matches -----------
+
+    def test_def_train_function_blocked(self):
+        """A ``def train(...)`` definition anywhere in llm/ trips the scan."""
+        self._load_fixture(
+            "llm.seca.policy.fake_trainer_definition",
+            textwrap.dedent("""
+                def train(state, reward):
+                    return state * reward
+            """),
+        )
+        with patch.object(freeze, "_crash", _raise):
+            with self.assertRaises(_Crash) as cm:
+                freeze._scan_loaded_modules()
+            self.assertIn("def train(", str(cm.exception))
+
+    def test_bandit_dot_update_call_blocked(self):
+        """``bandit.update(...)`` matches the ML-receiver .update pattern."""
+        self._load_fixture(
+            "llm.seca.policy.fake_bandit_update",
+            "def go(bandit, ctx, r):\n    bandit.update(ctx, r)\n",
+        )
+        with patch.object(freeze, "_crash", _raise):
+            with self.assertRaises(_Crash):
+                freeze._scan_loaded_modules()
+
+    def test_model_dot_update_call_blocked(self):
+        """``model.update(...)`` is another ML-receiver match."""
+        self._load_fixture(
+            "llm.seca.policy.fake_model_update",
+            "def go(model, x, y):\n    model.update(x, y)\n",
+        )
+        with patch.object(freeze, "_crash", _raise):
+            with self.assertRaises(_Crash):
+                freeze._scan_loaded_modules()
+
+    # ---- Sprint 2026-05-13 keyword tightening: negative matches -----------
+
+    def test_dict_update_not_blocked(self):
+        """``dict.update(...)`` is a legitimate Python idiom — must not trip."""
+        self._load_fixture(
+            "llm.seca.policy.fake_dict_update",
+            textwrap.dedent("""
+                def merge(base, overrides):
+                    base.update(overrides)
+                    return base
+            """),
+        )
+        with patch.object(freeze, "_crash", _raise):
+            freeze._scan_loaded_modules()  # no raise
+
+    def test_set_update_not_blocked(self):
+        """``set.update(...)`` is a legitimate Python idiom — must not trip."""
+        self._load_fixture(
+            "llm.seca.policy.fake_set_update",
+            textwrap.dedent("""
+                def collect(seen, batch):
+                    seen.update(batch)
+                    return seen
+            """),
+        )
+        with patch.object(freeze, "_crash", _raise):
+            freeze._scan_loaded_modules()  # no raise
+
+    def test_train_session_function_not_blocked(self):
+        """``def train_session(...)`` is NOT ``def train(...)`` and must not trip.
+
+        Pinned because the chess-domain code historically uses
+        ``train_session`` / ``train_player`` / ``train_recommendation``
+        helpers; the ``def train(`` pattern was deliberately tightened
+        from the prior bare ``train(`` substring so these are no longer
+        false-positives.
+        """
+        self._load_fixture(
+            "llm.seca.policy.fake_train_session",
+            textwrap.dedent("""
+                def train_session(player_id):
+                    return f"session for {player_id}"
+
+                def schedule_training_for(player):
+                    return train_session(player)
+            """),
+        )
+        with patch.object(freeze, "_crash", _raise):
+            freeze._scan_loaded_modules()  # no raise
+
+    def test_top_level_llm_module_blocked(self):
+        """Forbidden code in ``llm/<top_level>.py`` (outside seca/) now trips.
+
+        Pre-tightening, the scan was scoped to ``llm.seca.*`` only, so a
+        top-level ``llm/world_model.py``-shaped module could carry
+        ``optimizer.step`` without being caught.  Post-tightening
+        the scan covers ``llm.*`` and this is closed.
+        """
+        self._load_fixture(
+            "llm.fake_top_level_world_model",
+            textwrap.dedent("""
+                def step(optimizer, loss):
+                    loss.backward()
+                    optimizer.step()
+            """),
+        )
+        with patch.object(freeze, "_crash", _raise):
+            with self.assertRaises(_Crash):
+                freeze._scan_loaded_modules()
+
 
 # ---------------------------------------------------------------------------
 # Runtime invariants
