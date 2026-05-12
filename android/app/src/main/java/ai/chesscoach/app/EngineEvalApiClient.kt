@@ -1,12 +1,13 @@
 package ai.chesscoach.app
 
-import org.json.JSONObject
+import kotlinx.serialization.encodeToString
 
 /**
- * Client for POST /engine/eval (host_app.py).
+ * Client for POST /engine/eval (server.py — migrated from host_app.py
+ * in the 2026-05-12 retirement pass).
  *
- * The endpoint requires **no authentication** — the X-Api-Key header is not
- * sent.  Implementations are safe to call from any coroutine context; I/O
+ * The endpoint requires X-Api-Key (or Bearer SECA_API_KEY) auth.
+ * Implementations are safe to call from any coroutine context; I/O
  * dispatch is handled internally.
  */
 interface EngineEvalClient {
@@ -19,7 +20,7 @@ interface EngineEvalClient {
      * the connect or read deadline is exceeded; [ApiResult.NetworkError] for
      * all other transport failures.
      *
-     * @param fen Board position in FEN notation or "startpos".
+     * @param fen Board position in FEN notation.
      */
     suspend fun evaluate(fen: String): ApiResult<EngineEvalResponse>
 }
@@ -31,9 +32,11 @@ interface EngineEvalClient {
  *
  * @param baseUrl          Scheme + host + optional port, no trailing slash
  *                         (e.g. "http://10.0.2.2:8000").
- * @param apiKey           Optional X-Api-Key value. Sent only when non-empty, so
- *                         existing callers that omit it continue to work against
- *                         the unauthenticated `/engine/eval` endpoint.
+ * @param apiKey           X-Api-Key value.  Sent on every call when
+ *                         non-empty; the server-side route is auth-gated
+ *                         (Sprint 4.x host_app retirement tightened the
+ *                         contract from unauthenticated to X-Api-Key /
+ *                         Bearer).  An empty key here will surface as 401.
  * @param connectTimeoutMs TCP connect deadline in milliseconds.
  * @param readTimeoutMs    Read deadline in milliseconds.
  */
@@ -59,16 +62,8 @@ class HttpEngineEvalClient(
                 path = EVAL_PATH,
                 method = "POST",
                 headers = headers,
-                body = JSONObject().put("fen", fen).toString(),
-                parse = ::parseResponse,
+                body = ApiJson.encodeToString(EngineEvalRequest(fen = fen)),
+                parse = { body -> ApiJson.decodeFromString<EngineEvalResponse>(body) },
             )
         }
-
-    private fun parseResponse(body: String): EngineEvalResponse {
-        val root = JSONObject(body)
-        val score = if (root.isNull("score")) null else root.optInt("score")
-        val bestMove = root.optString("best_move", "").ifEmpty { null }
-        val source = root.optString("source", "engine")
-        return EngineEvalResponse(score = score, bestMove = bestMove, source = source)
-    }
 }

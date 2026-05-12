@@ -1,10 +1,14 @@
 package ai.chesscoach.app
 
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
 /**
  * Request/response models for POST /live/move (server.py).
  *
  * The endpoint requires X-Api-Key authentication.
- * All JSON serialisation/deserialisation is handled in [HttpLiveMoveClient].
+ * Sprint 4.3.C migrated these off hand-rolled ``org.json.JSONObject``
+ * parsing onto kotlinx-serialization — see [HttpLiveMoveClient].
  *
  * Schema documented in docs/API_CONTRACTS.md §5.
  */
@@ -16,10 +20,11 @@ package ai.chesscoach.app
  * [uci]       The move just played in UCI notation (e.g. "e2e4", "e7e8q").
  * [playerId]  Player identifier; reserved for future profile enrichment.
  */
+@Serializable
 data class LiveMoveRequest(
     val fen: String,
     val uci: String,
-    val playerId: String = "demo",
+    @SerialName("player_id") val playerId: String = "demo",
 )
 
 /**
@@ -33,10 +38,11 @@ data class LiveMoveRequest(
  *                null when absent or unparseable.  Matches [EngineSignalDto] from
  *                the /chat response so the same display logic can be reused.
  */
+@Serializable
 data class LiveMoveResponse(
-    val status: String,
-    val hint: String,
-    val moveQuality: String,
-    val mode: String,
-    val engineSignal: EngineSignalDto? = null,
+    val status: String = "ok",
+    val hint: String = "",
+    @SerialName("move_quality") val moveQuality: String = "unknown",
+    val mode: String = "LIVE_V1",
+    @SerialName("engine_signal") val engineSignal: EngineSignalDto? = null,
 )

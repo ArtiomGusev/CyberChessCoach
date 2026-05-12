@@ -1,6 +1,6 @@
 package ai.chesscoach.app
 
-import org.json.JSONObject
+import kotlinx.serialization.encodeToString
 import java.net.HttpURLConnection
 
 // ── Interface ─────────────────────────────────────────────────────────────────
@@ -214,36 +214,27 @@ class HttpGameApiClient(
         // T3: /game/start now requires a JWT-authenticated session.
         // The server derives player_id from the token; the body
         // player_id is accepted for back-compat but ignored.
-        body = JSONObject().put("player_id", playerId).toString(),
+        body = ApiJson.encodeToString(GameStartRequest(playerId = playerId)),
         onResponse = refreshOnSuccess(),
-        parse = { text ->
-            val json = JSONObject(text)
-            GameStartResponse(gameId = json.opt("game_id")?.toString() ?: "")
-        },
+        parse = { body -> ApiJson.decodeFromString<GameStartResponse>(body) },
     )
 
     override suspend fun finishGame(req: GameFinishRequest): ApiResult<GameFinishResponse> =
         withRetry(maxAttempts = 3) {
-            val weaknessesJson = JSONObject()
-            req.weaknesses.forEach { (k, v) -> weaknessesJson.put(k, v) }
-            val body = JSONObject()
-                .put("pgn", req.pgn)
-                .put("result", req.result)
-                .put("accuracy", req.accuracy)
-                .put("weaknesses", weaknessesJson)
-                .apply { req.playerId?.let { put("player_id", it) } }
-                // game_id ties this finish back to the original /game/start
-                // row server-side; omitted-when-null keeps the wire shape
-                // compatible with the pre-resume contract.
-                .apply { req.gameId?.takeIf { it.isNotBlank() }?.let { put("game_id", it) } }
-                .toString()
+            // ``encodeDefaults = false`` on [ApiJson] strips null
+            // player_id / game_id from the wire payload so the server
+            // sees the same shape as the prior hand-rolled builder.
+            // game_id ties this finish back to the original /game/start
+            // row server-side; an empty-but-not-null id is normalised
+            // away to keep parity with the pre-resume contract.
+            val normalised = req.copy(gameId = req.gameId?.takeIf { it.isNotBlank() })
             http.request(
                 path = "/game/finish",
                 method = "POST",
                 headers = authHeaders(),
-                body = body,
+                body = ApiJson.encodeToString(normalised),
                 onResponse = refreshOnSuccess(),
-                parse = ::parseFinishResponse,
+                parse = { body -> ApiJson.decodeFromString<GameFinishResponse>(body) },
             )
         }
 
@@ -252,7 +243,7 @@ class HttpGameApiClient(
             path = "/next-training/$playerId",
             method = "GET",
             headers = mapOf("X-Api-Key" to apiKey),
-            parse = ::parseTrainingResponse,
+            parse = { body -> ApiJson.decodeFromString<TrainingRecommendation>(body) },
         )
 
     override suspend fun getNextCurriculum(playerId: String): ApiResult<CurriculumRecommendation> =
@@ -262,9 +253,9 @@ class HttpGameApiClient(
             // Bearer-only; X-Api-Key is intentionally omitted here to
             // match the pre-refactor wire shape.
             headers = authHeaders(includeApiKey = false),
-            body = JSONObject().put("player_id", playerId).toString(),
+            body = ApiJson.encodeToString(CurriculumNextRequest(playerId = playerId)),
             onResponse = refreshOnSuccess(),
-            parse = ::parseCurriculumResponse,
+            parse = { body -> ApiJson.decodeFromString<CurriculumRecommendation>(body) },
         )
 
     override suspend fun getGameHistory(): ApiResult<List<GameHistoryItem>> = http.request(
@@ -273,7 +264,7 @@ class HttpGameApiClient(
         // Bearer-only; pre-refactor wire shape did not send X-Api-Key.
         headers = authHeaders(includeApiKey = false),
         onResponse = refreshOnSuccess(),
-        parse = ::parseHistoryResponse,
+        parse = { body -> ApiJson.decodeFromString<GameHistoryResponse>(body).games },
     )
 
     override suspend fun getPlayerProgress(): ApiResult<PlayerProgressResponse> = http.request(
@@ -282,14 +273,14 @@ class HttpGameApiClient(
         // Bearer-only; pre-refactor wire shape did not send X-Api-Key.
         headers = authHeaders(includeApiKey = false),
         onResponse = refreshOnSuccess(),
-        parse = ::parseProgressResponse,
+        parse = { body -> ApiJson.decodeFromString<PlayerProgressResponse>(body) },
     )
 
     override suspend fun getSecaStatus(): ApiResult<SecaStatusDto> = http.request(
         path = "/seca/status",
         method = "GET",
         // Open endpoint — no auth headers.
-        parse = ::parseSecaStatusResponse,
+        parse = { body -> ApiJson.decodeFromString<SecaStatusDto>(body) },
     )
 
     override suspend fun checkpointGame(
@@ -300,7 +291,7 @@ class HttpGameApiClient(
         path = "/game/${gameId}/checkpoint",
         method = "POST",
         headers = authHeaders(),
-        body = JSONObject().put("fen", fen).put("uci_history", uciHistory).toString(),
+        body = ApiJson.encodeToString(CheckpointRequest(fen = fen, uciHistory = uciHistory)),
         onResponse = refreshOnSuccess(),
     )
 
@@ -321,16 +312,11 @@ class HttpGameApiClient(
                 observedCode = conn.responseCode
                 consumeRefreshedToken(conn, tokenSink)
             },
-            parse = { text ->
+            parse = { body ->
                 if (observedCode == 404) {
                     null
                 } else {
-                    val root = JSONObject(text)
-                    ActiveGameResponse(
-                        gameId = root.optString("game_id", ""),
-                        currentFen = root.optString("current_fen", ""),
-                        currentUciHistory = root.optString("current_uci_history", ""),
-                    )
+                    ApiJson.decodeFromString<ActiveGameResponse>(body)
                 }
             },
         )
@@ -353,12 +339,9 @@ class HttpGameApiClient(
         path = "/repertoire",
         method = "POST",
         headers = authHeaders(),
-        body = JSONObject()
-            .put("eco", eco)
-            .put("name", name)
-            .put("line", line)
-            .put("mastery", mastery.toDouble())
-            .toString(),
+        body = ApiJson.encodeToString(
+            AddOpeningRequest(eco = eco, name = name, line = line, mastery = mastery)
+        ),
         onResponse = refreshOnSuccess(),
         parse = ::parseRepertoireResponse,
     )
@@ -391,183 +374,18 @@ class HttpGameApiClient(
         path = "/repertoire/$eco/drill-result",
         method = "POST",
         headers = authHeaders(),
-        body = JSONObject().put("outcome", outcome.toDouble()).toString(),
+        body = ApiJson.encodeToString(DrillResultRequest(outcome = outcome)),
         onResponse = refreshOnSuccess(),
         parse = ::parseRepertoireResponse,
     )
 
-    private fun parseRepertoireResponse(body: String): List<RepertoireOpeningDto> {
-        val root = JSONObject(body)
-        val arr = root.optJSONArray("openings") ?: return emptyList()
-        return buildList {
-            for (i in 0 until arr.length()) {
-                val o = arr.getJSONObject(i)
-                add(
-                    RepertoireOpeningDto(
-                        eco = o.optString("eco", ""),
-                        name = o.optString("name", ""),
-                        line = o.optString("line", ""),
-                        mastery = o.optDouble("mastery", 0.0).toFloat(),
-                        isActive = o.optBoolean("is_active", false),
-                        ordinal = o.optInt("ordinal", i),
-                    ),
-                )
-            }
-        }
-    }
-
-    private fun parseTrainingResponse(text: String): TrainingRecommendation {
-        val json = JSONObject(text)
-        return TrainingRecommendation(
-            topic = json.optString("topic", ""),
-            difficulty = json.optDouble("difficulty", 0.5).toFloat(),
-            format = json.optString("format", ""),
-            expectedGain = json.optDouble("expected_gain", 0.0).toFloat(),
-        )
-    }
-
-    private fun parseCurriculumResponse(text: String): CurriculumRecommendation {
-        val json = JSONObject(text)
-        val payloadJson = json.optJSONObject("payload") ?: JSONObject()
-        val payload = buildMap<String, String> {
-            payloadJson.keys().forEach { key -> put(key, payloadJson.opt(key)?.toString() ?: "") }
-        }
-        return CurriculumRecommendation(
-            topic = json.optString("topic", ""),
-            difficulty = json.optDouble("difficulty", 0.5).toFloat(),
-            exerciseType = json.optString("exercise_type", ""),
-            payload = payload,
-        )
-    }
-
-    private fun parseHistoryResponse(text: String): List<GameHistoryItem> {
-        val json = JSONObject(text)
-        val arr = json.optJSONArray("games") ?: return emptyList()
-        return (0 until arr.length()).map { i ->
-            val g = arr.getJSONObject(i)
-            GameHistoryItem(
-                id = g.optString("id", ""),
-                result = g.optString("result", ""),
-                accuracy = g.optDouble("accuracy", 0.0).toFloat(),
-                ratingAfter = if (g.isNull("rating_after")) null
-                              else g.optDouble("rating_after").toFloat(),
-                createdAt = g.optString("created_at", ""),
-            )
-        }
-    }
-
-    private fun parseSecaStatusResponse(text: String): SecaStatusDto {
-        val json = JSONObject(text)
-        return SecaStatusDto(
-            safeModeEnabled = json.optBoolean("safe_mode", true),
-        )
-    }
-
-    private fun parseFinishResponse(text: String): GameFinishResponse {
-        val json = JSONObject(text)
-
-        val actionJson = json.optJSONObject("coach_action") ?: JSONObject()
-        val coachAction =
-            CoachActionDto(
-                type = actionJson.optString("type", "NONE"),
-                weakness = actionJson.optString("weakness").ifEmpty { null },
-                reason = actionJson.optString("reason").ifEmpty { null },
-            )
-
-        val contentJson = json.optJSONObject("coach_content") ?: JSONObject()
-        val payloadJson = contentJson.optJSONObject("payload") ?: JSONObject()
-        val payload =
-            buildMap<String, String> {
-                payloadJson.keys().forEach { key -> put(key, payloadJson.opt(key)?.toString() ?: "") }
-            }
-        val coachContent =
-            CoachContentDto(
-                title = contentJson.optString("title", "Keep playing"),
-                description = contentJson.optString("description", ""),
-                payload = payload,
-            )
-
-        // Parse learning.status for P3-B surface
-        val learningStatus = json.optJSONObject("learning")?.optString("status")?.ifEmpty { null }
-
-        return GameFinishResponse(
-            status = json.optString("status", "stored"),
-            newRating = json.optDouble("new_rating", 0.0).toFloat(),
-            confidence = json.optDouble("confidence", 0.0).toFloat(),
-            coachAction = coachAction,
-            coachContent = coachContent,
-            learningStatus = learningStatus,
-        )
-    }
-
-    private fun parseProgressResponse(text: String): PlayerProgressResponse {
-        val json = JSONObject(text)
-
-        // current
-        val cur = json.optJSONObject("current") ?: JSONObject()
-        val svJson = cur.optJSONObject("skill_vector") ?: JSONObject()
-        val skillVector = buildMap<String, Float> {
-            svJson.keys().forEach { k -> put(k, svJson.optDouble(k, 0.0).toFloat()) }
-        }
-        val current = ProgressCurrentDto(
-            rating           = cur.optDouble("rating", 0.0).toFloat(),
-            confidence       = cur.optDouble("confidence", 0.0).toFloat(),
-            skillVector      = skillVector,
-            tier             = cur.optString("tier", "intermediate"),
-            teachingStyle    = cur.optString("teaching_style", "intermediate"),
-            opponentElo      = cur.optInt("opponent_elo", 1200),
-            explanationDepth = cur.optDouble("explanation_depth", 0.5).toFloat(),
-            conceptComplexity = cur.optDouble("concept_complexity", 0.5).toFloat(),
-        )
-
-        // history
-        val histArr = json.optJSONArray("history") ?: org.json.JSONArray()
-        val history = (0 until histArr.length()).map { i ->
-            val h = histArr.getJSONObject(i)
-            val wJson = h.optJSONObject("weaknesses") ?: JSONObject()
-            val weaknesses = buildMap<String, Float> {
-                wJson.keys().forEach { k -> put(k, wJson.optDouble(k, 0.0).toFloat()) }
-            }
-            ProgressHistoryItem(
-                gameId          = h.optString("game_id", ""),
-                result          = h.optString("result", ""),
-                accuracy        = h.optDouble("accuracy", 0.0).toFloat(),
-                ratingAfter     = if (h.isNull("rating_after")) null
-                                  else h.optDouble("rating_after").toFloat(),
-                confidenceAfter = if (h.isNull("confidence_after")) null
-                                  else h.optDouble("confidence_after").toFloat(),
-                weaknesses      = weaknesses,
-                createdAt       = h.optString("created_at", ""),
-            )
-        }
-
-        // analysis
-        val ana = json.optJSONObject("analysis") ?: JSONObject()
-        val csJson = ana.optJSONObject("category_scores") ?: JSONObject()
-        val categoryScores = buildMap<String, Float> {
-            csJson.keys().forEach { k -> put(k, csJson.optDouble(k, 0.0).toFloat()) }
-        }
-        val prJson = ana.optJSONObject("phase_rates") ?: JSONObject()
-        val phaseRates = buildMap<String, Float> {
-            prJson.keys().forEach { k -> put(k, prJson.optDouble(k, 0.0).toFloat()) }
-        }
-        val recsArr = ana.optJSONArray("recommendations") ?: org.json.JSONArray()
-        val recommendations = (0 until recsArr.length()).map { i ->
-            val r = recsArr.getJSONObject(i)
-            ProgressRecommendation(
-                category  = r.optString("category", ""),
-                priority  = r.optString("priority", "low"),
-                rationale = r.optString("rationale", ""),
-            )
-        }
-        val analysis = ProgressAnalysisDto(
-            dominantCategory = ana.optString("dominant_category").ifEmpty { null },
-            gamesAnalyzed    = ana.optInt("games_analyzed", 0),
-            categoryScores   = categoryScores,
-            phaseRates       = phaseRates,
-            recommendations  = recommendations,
-        )
-
-        return PlayerProgressResponse(current = current, history = history, analysis = analysis)
-    }
+    /**
+     * Decode the ``{"openings": [...]}`` envelope to the bare list
+     * the [GameApiClient] surface returns.  Shared by every /repertoire
+     * verb (GET, POST, DELETE, /active, /drill-result) — all five emit
+     * the same wrapper shape so callers always receive the full
+     * post-mutation list.
+     */
+    private fun parseRepertoireResponse(body: String): List<RepertoireOpeningDto> =
+        ApiJson.decodeFromString<RepertoireListResponse>(body).openings
 }

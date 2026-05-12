@@ -1,36 +1,40 @@
 package ai.chesscoach.app
 
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
 /**
  * Typed request/response models for the backend authentication endpoints.
  *
- * Pure Kotlin — no Android or org.json dependencies; fully JVM-testable.
- * JSON serialisation/deserialisation is handled in [HttpAuthApiClient].
+ * Sprint 4.3.C migrated these off hand-rolled ``org.json.JSONObject``
+ * parsing onto kotlinx-serialization.  ``@SerialName`` annotations
+ * preserve the snake_case wire format the FastAPI backend emits while
+ * keeping the Kotlin properties camelCase.
  */
 
 /**
  * Request body for POST /auth/login.
- *
- * Backend field mapping: email → email, password → password, deviceInfo → device_info.
  */
+@Serializable
 data class LoginRequest(
     val email: String,
     val password: String,
     /** Device fingerprint forwarded to the backend session record. */
-    val deviceInfo: String = "",
+    @SerialName("device_info") val deviceInfo: String = "",
 )
 
 /**
  * Typed response from POST /auth/login and POST /auth/register.
- *
- * Backend field names: access_token, player_id, token_type.
  */
+@Serializable
 data class LoginResponse(
-    val accessToken: String,
-    val playerId: String,
-    val tokenType: String,
+    @SerialName("access_token") val accessToken: String,
+    @SerialName("player_id") val playerId: String,
+    @SerialName("token_type") val tokenType: String = "bearer",
 )
 
 /** Response from POST /auth/logout. Backend returns {"status": "logged_out"}. */
+@Serializable
 data class LogoutResponse(val status: String)
 
 /**
@@ -38,21 +42,63 @@ data class LogoutResponse(val status: String)
  *
  * Returns the authenticated player's current profile.  Used to sync the
  * rating display at cold-start without waiting for a /game/finish round.
- *
- * Backend field names: id, email, rating, confidence.
  */
+@Serializable
 data class MeResponse(
-    val id: String,
-    val email: String,
-    val rating: Float,
-    val confidence: Float,
+    val id: String = "",
+    val email: String = "",
+    val rating: Float = 0f,
+    val confidence: Float = 0f,
     /**
      * Per-skill weakness scores from the SECA skill tracker.
      * Keys are skill names (e.g. "tactics", "endgame"); values are 0.0–1.0
      * where higher means more weakness in that area.
      * Empty when the player has no game history yet.
      */
-    val skillVector: Map<String, Float> = emptyMap(),
+    @SerialName("skill_vector") val skillVector: Map<String, Float> = emptyMap(),
+)
+
+/**
+ * Request body for POST /auth/register — same shape as /auth/login.
+ * (The previous hand-rolled client inlined the JSON body; this class
+ * lets every endpoint go through ``ApiJson.encodeToString`` uniformly.)
+ *
+ * Default for [deviceInfo] is empty so that the explicit ``"android"``
+ * the production client passes is *not* equal to the default — with
+ * ``ApiJson.encodeDefaults = false`` a value equal to the declared
+ * default would be stripped from the wire payload (regression caught
+ * by ``INT_REG_DEVICE_INFO``).
+ */
+@Serializable
+data class RegisterRequest(
+    val email: String,
+    val password: String,
+    @SerialName("device_info") val deviceInfo: String = "",
+)
+
+/**
+ * Request body for POST /auth/change-password.  Both fields are
+ * length-bounded server-side (1000 char max).
+ */
+@Serializable
+data class ChangePasswordRequest(
+    @SerialName("current_password") val currentPassword: String,
+    @SerialName("new_password") val newPassword: String,
+)
+
+/**
+ * Request body for PATCH /auth/me — partial profile update.  Either
+ * or both fields may be absent.  Sending both null produces a 400 from
+ * the backend.  ``encodeDefaults = false`` on the shared
+ * [ApiJson] config ensures null fields are stripped from the wire
+ * payload so the server-side ``rating: float | None = None`` /
+ * ``confidence: float | None = None`` validators get exactly the
+ * keys the client intended to update.
+ */
+@Serializable
+data class UpdateMeRequest(
+    val rating: Float? = null,
+    val confidence: Float? = null,
 )
 
 /**

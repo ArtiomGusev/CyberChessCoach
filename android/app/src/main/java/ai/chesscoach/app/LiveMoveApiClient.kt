@@ -1,6 +1,6 @@
 package ai.chesscoach.app
 
-import org.json.JSONObject
+import kotlinx.serialization.encodeToString
 
 /**
  * Client for POST /live/move (server.py).
@@ -64,36 +64,9 @@ class HttpLiveMoveClient(
         path = LIVE_MOVE_PATH,
         method = "POST",
         headers = mapOf("X-Api-Key" to apiKey),
-        body = JSONObject()
-            .put("fen", fen)
-            .put("uci", uci)
-            .put("player_id", playerId)
-            .toString(),
-        parse = ::parseResponse,
+        body = ApiJson.encodeToString(
+            LiveMoveRequest(fen = fen, uci = uci, playerId = playerId)
+        ),
+        parse = { body -> ApiJson.decodeFromString<LiveMoveResponse>(body) },
     )
-
-    private fun parseResponse(body: String): LiveMoveResponse {
-        val root = JSONObject(body)
-        val sigObj = root.optJSONObject("engine_signal")
-        val engineSignal = sigObj?.let { sig ->
-            val evalObj = sig.optJSONObject("evaluation")
-            val evaluation = evalObj?.let { ev ->
-                EvaluationDto(
-                    band = ev.optString("band", "").takeIf { it.isNotEmpty() },
-                    side = ev.optString("side", "").takeIf { it.isNotEmpty() },
-                )
-            }
-            EngineSignalDto(
-                evaluation = evaluation,
-                phase = sig.optString("phase", "").takeIf { it.isNotEmpty() },
-            )
-        }
-        return LiveMoveResponse(
-            status = root.optString("status", "ok"),
-            hint = root.optString("hint", ""),
-            moveQuality = root.optString("move_quality", "unknown"),
-            mode = root.optString("mode", "LIVE_V1"),
-            engineSignal = engineSignal,
-        )
-    }
 }

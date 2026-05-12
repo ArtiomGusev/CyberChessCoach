@@ -12,7 +12,9 @@ import android.widget.TextView
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import kotlinx.coroutines.launch
-import org.json.JSONObject
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.encodeToString
 
 /**
  * Bottom sheet shown after a game ends.
@@ -45,6 +47,16 @@ class GameSummaryBottomSheet : BottomSheetDialogFragment() {
         const val PREFS_NAME  = MainActivity.PREFS_NAME
         const val PREF_RATING = MainActivity.PREF_RATING
 
+        /**
+         * Serializer for the ``payload`` map transported through the
+         * fragment's [Bundle].  Pinned to ``Map<String, String>`` because
+         * the JsonAsStringMapSerializer in [GameApiModels] has already
+         * stringified every value by the time it reaches this fragment,
+         * so the bundle blob can stay a plain string-map.
+         */
+        private val PAYLOAD_SERIALIZER =
+            MapSerializer(String.serializer(), String.serializer())
+
         fun newInstance(
             response: GameFinishResponse,
             playerId: String,
@@ -52,9 +64,10 @@ class GameSummaryBottomSheet : BottomSheetDialogFragment() {
             moveCount: Int = 0,
         ): GameSummaryBottomSheet = GameSummaryBottomSheet().apply {
             // Serialise payload map to JSON string for bundle transport
-            val payloadJson = JSONObject().apply {
-                response.coachContent.payload.forEach { (k, v) -> put(k, v) }
-            }.toString()
+            val payloadJson = ApiJson.encodeToString(
+                PAYLOAD_SERIALIZER,
+                response.coachContent.payload,
+            )
             arguments = Bundle().apply {
                 putFloat(ARG_RATING,      response.newRating)
                 putFloat(ARG_CONFIDENCE,  response.confidence)
@@ -227,11 +240,14 @@ class GameSummaryBottomSheet : BottomSheetDialogFragment() {
         val upperType = actionType.uppercase()
         if (upperType == "DRILL" || upperType == "PUZZLE") {
             try {
-                val payloadObj = JSONObject(payloadJsonStr ?: "{}")
-                if (payloadObj.length() > 0) {
-                    payloadObj.keys().forEach { key ->
+                val payload = ApiJson.decodeFromString(
+                    PAYLOAD_SERIALIZER,
+                    payloadJsonStr ?: "{}",
+                )
+                if (payload.isNotEmpty()) {
+                    payload.forEach { (key, value) ->
                         val tv = TextView(requireContext()).apply {
-                            text = "$key: ${payloadObj.opt(key)}"
+                            text = "$key: $value"
                             setTextColor(0xFFCCCCCC.toInt())
                             textSize = 12f
                         }

@@ -1,6 +1,6 @@
 package ai.chesscoach.app
 
-import org.json.JSONObject
+import kotlinx.serialization.encodeToString
 import java.net.HttpURLConnection
 
 /**
@@ -158,12 +158,10 @@ class HttpAuthApiClient(
     ): ApiResult<LoginResponse> = http.request(
         path = LOGIN_PATH,
         method = "POST",
-        body = JSONObject().apply {
-            put("email", email)
-            put("password", password)
-            put("device_info", "android")
-        }.toString(),
-        parse = ::parseLoginResponse,
+        body = ApiJson.encodeToString(
+            LoginRequest(email = email, password = password, deviceInfo = "android")
+        ),
+        parse = { body -> ApiJson.decodeFromString<LoginResponse>(body) },
     )
 
     override suspend fun logout(token: String): ApiResult<Unit> = http.requestNoBody(
@@ -177,7 +175,7 @@ class HttpAuthApiClient(
         method = "GET",
         headers = bearerHeader(token),
         onResponse = refreshOnSuccess(),
-        parse = ::parseMeResponse,
+        parse = { body -> ApiJson.decodeFromString<MeResponse>(body) },
     )
 
     override suspend fun updateMe(
@@ -195,16 +193,17 @@ class HttpAuthApiClient(
         path = ME_PATH,
         method = "POST",
         headers = bearerHeader(token) + ("X-HTTP-Method-Override" to "PATCH"),
-        // Body with only the non-null fields.  Sending {} (both null)
-        // produces a 400 from the backend — preserved so a malformed
-        // call surfaces immediately rather than appearing as a no-op
-        // success.
-        body = JSONObject().apply {
-            if (rating != null) put("rating", rating.toDouble())
-            if (confidence != null) put("confidence", confidence.toDouble())
-        }.toString(),
+        // ``ApiJson.encodeDefaults = false`` strips null fields from the
+        // wire payload so the server-side validators (rating: float | None,
+        // confidence: float | None) get exactly the keys the client
+        // intended to update.  Sending {} (both null) produces a 400 from
+        // the backend — preserved so a malformed call surfaces
+        // immediately rather than appearing as a no-op success.
+        body = ApiJson.encodeToString(
+            UpdateMeRequest(rating = rating, confidence = confidence)
+        ),
         onResponse = refreshOnSuccess(),
-        parse = ::parseMeResponse,
+        parse = { body -> ApiJson.decodeFromString<MeResponse>(body) },
     )
 
     override suspend fun changePassword(
@@ -215,10 +214,12 @@ class HttpAuthApiClient(
         path = CHANGE_PASSWORD_PATH,
         method = "POST",
         headers = bearerHeader(token),
-        body = JSONObject().apply {
-            put("current_password", currentPassword)
-            put("new_password", newPassword)
-        }.toString(),
+        body = ApiJson.encodeToString(
+            ChangePasswordRequest(
+                currentPassword = currentPassword,
+                newPassword = newPassword,
+            )
+        ),
         onResponse = refreshOnSuccess(),
     )
 
@@ -228,42 +229,12 @@ class HttpAuthApiClient(
     ): ApiResult<LoginResponse> = http.request(
         path = REGISTER_PATH,
         method = "POST",
-        body = JSONObject().apply {
-            put("email", email)
-            put("password", password)
-            put("device_info", "android")
-        }.toString(),
+        body = ApiJson.encodeToString(
+            RegisterRequest(email = email, password = password, deviceInfo = "android")
+        ),
         // Register is the only endpoint that returns 201 Created in
         // addition to 200 OK; widen the success set accordingly.
         successCodes = setOf(HttpURLConnection.HTTP_OK, HttpURLConnection.HTTP_CREATED),
-        parse = ::parseLoginResponse,
+        parse = { body -> ApiJson.decodeFromString<LoginResponse>(body) },
     )
-
-    // -----------------------------------------------------------------------
-    // Private helpers
-    // -----------------------------------------------------------------------
-
-    private fun parseLoginResponse(body: String): LoginResponse {
-        val root = JSONObject(body)
-        return LoginResponse(
-            accessToken = root.getString("access_token"),
-            playerId = root.optString("player_id", ""),
-            tokenType = root.optString("token_type", "bearer"),
-        )
-    }
-
-    private fun parseMeResponse(body: String): MeResponse {
-        val root = JSONObject(body)
-        val svJson = root.optJSONObject("skill_vector") ?: JSONObject()
-        val skillVector = buildMap<String, Float> {
-            svJson.keys().forEach { key -> put(key, svJson.optDouble(key, 0.0).toFloat()) }
-        }
-        return MeResponse(
-            id = root.optString("id", ""),
-            email = root.optString("email", ""),
-            rating = root.optDouble("rating", 0.0).toFloat(),
-            confidence = root.optDouble("confidence", 0.0).toFloat(),
-            skillVector = skillVector,
-        )
-    }
 }
