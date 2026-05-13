@@ -5,13 +5,13 @@ Findings covered
 ────────────────
 HDR-01  server.py: Content-Security-Policy is not set.
 HDR-02  server.py: Permissions-Policy is not set.
-HDR-03  host_app.py: NO security headers at all (no HSTS, no X-Frame-Options,
-        no X-Content-Type-Options, no CSP, no Permissions-Policy, no
-        Referrer-Policy).  host_app.py is the engine-evaluation FastAPI
-        sub-server; its responses must carry the same defense-in-depth
-        headers as server.py.
 
-All three are defense-in-depth additions for a JSON API.  CSP
+HDR-03 (host_app.py) was retired alongside the ``llm.host_app`` module
+in PR #111; the engine-evaluation endpoint moved into ``server.py`` and
+inherits ``server.py``'s global header middleware automatically, so a
+separate class targeting a deleted submodule is no longer meaningful.
+
+Both are defense-in-depth additions for a JSON API.  CSP
 `default-src 'none'` ensures that if any unexpected HTML response is ever
 returned (for example from a misbehaving error page), no scripts, frames,
 or sub-resources can execute.  Permissions-Policy with all features
@@ -92,64 +92,6 @@ class TestSecurityHeadersCompleteness(unittest.TestCase):
                 f"{feature}=()", pp,
                 f"HDR-02b: Permissions-Policy must disable {feature!r}; got: {pp!r}",
             )
-
-
-class TestHdr03HostAppSecurityHeaders(unittest.TestCase):
-    """HDR-03: host_app.py must carry the same defense-in-depth headers
-    as server.py.  Currently it carries none."""
-
-    @classmethod
-    def setUpClass(cls):
-        import llm.host_app as ha
-        cls.client = TestClient(ha.app)
-
-    def _headers(self) -> dict:
-        r = self.client.get("/health")
-        self.assertEqual(r.status_code, 200, "expected /health to return 200")
-        return {k.lower(): v for k, v in r.headers.items()}
-
-    def test_hdr03_hsts_set(self):
-        headers = self._headers()
-        self.assertIn(
-            "strict-transport-security", headers,
-            "HDR-03: host_app.py is missing Strict-Transport-Security",
-        )
-
-    def test_hdr03_x_content_type_options_set(self):
-        headers = self._headers()
-        self.assertEqual(
-            headers.get("x-content-type-options"), "nosniff",
-            "HDR-03: host_app.py is missing X-Content-Type-Options: nosniff",
-        )
-
-    def test_hdr03_x_frame_options_deny(self):
-        headers = self._headers()
-        self.assertEqual(
-            headers.get("x-frame-options"), "DENY",
-            "HDR-03: host_app.py is missing X-Frame-Options: DENY",
-        )
-
-    def test_hdr03_referrer_policy_set(self):
-        headers = self._headers()
-        self.assertIn(
-            "referrer-policy", headers,
-            "HDR-03: host_app.py is missing Referrer-Policy",
-        )
-
-    def test_hdr03_csp_set_with_default_src_none(self):
-        headers = self._headers()
-        csp = headers.get("content-security-policy", "")
-        self.assertIn(
-            "default-src 'none'", csp,
-            f"HDR-03: host_app.py CSP missing or weak; got: {csp!r}",
-        )
-
-    def test_hdr03_permissions_policy_set(self):
-        headers = self._headers()
-        self.assertIn(
-            "permissions-policy", headers,
-            "HDR-03: host_app.py is missing Permissions-Policy",
-        )
 
 
 if __name__ == "__main__":
