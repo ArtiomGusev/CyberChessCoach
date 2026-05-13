@@ -174,7 +174,9 @@ interchangeable. Clients MUST NOT assume the two endpoints return the same shape
 ## 4. `POST /live/move`
 
 **Host:** `server.py`
-**Auth:** `X-Api-Key` required
+**Auth:** `X-Api-Key` + `Authorization: Bearer <token>` (route depends on
+`get_current_player`, so JWT is required alongside the API key; absent or
+invalid Bearer returns 401)
 
 ### Request body
 
