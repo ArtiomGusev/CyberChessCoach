@@ -165,6 +165,12 @@ async def lifespan(app: FastAPI):
         )
         engine_pool = StockfishEnginePool(settings)
         engine_pool.startup()
+        # Expose on app.state for routes that need it without late
+        # imports.  The events router uses this for the server-side
+        # PGN accuracy recompute on /game/finish (closes the
+        # client-trust gap documented in docs/SECA.md "Trust
+        # property of the reward signal").
+        app.state.engine_pool = engine_pool
         move_cache = FenMoveCache(
             redis_url=os.getenv("REDIS_URL"),
             ttl_seconds=_env_int("MOVE_CACHE_TTL_SECONDS", 3600),
@@ -225,6 +231,10 @@ async def lifespan(app: FastAPI):
             engine_pool.close()
         engine_pool = None
         move_cache = None
+        # Keep app.state in sync with the global so any route that
+        # late-binds via getattr(request.app.state, "engine_pool", None)
+        # falls back cleanly when startup failed mid-way.
+        app.state.engine_pool = None
         logger.error("Stockfish engine pool DISABLED: %s", e)
 
     yield

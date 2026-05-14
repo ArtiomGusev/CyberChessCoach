@@ -369,9 +369,16 @@ def _call_finish_game(
 
     fake_event = SimpleNamespace(id=99)
     req = GameFinishRequest(**req_kwargs)
+    # The handler reads ``request.app.state.engine_pool`` for the
+    # server-side PGN accuracy recompute.  Stub the app with an empty
+    # state so the resolver falls back to client-supplied values (no
+    # engine pool → ACC_FALLBACK log path); pinned by
+    # test_pgn_accuracy.test_falls_back_when_pool_missing.
+    fake_app = SimpleNamespace(state=SimpleNamespace())
     fake_request = Request({
         "type": "http", "method": "POST", "path": "/game/finish",
         "headers": [], "client": ("127.0.0.1", 0),
+        "app": fake_app,
     })
 
     prev_enabled = limiter.enabled

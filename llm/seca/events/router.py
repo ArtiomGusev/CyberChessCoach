@@ -28,6 +28,10 @@ from llm.seca.coach.live_controller import (
 from llm.seca.events.models import GameEvent
 from llm.seca.coach.executor import CoachContent, CoachExecutor
 from llm.seca.runtime.safe_mode import SAFE_MODE
+from llm.seca.analysis.pgn_accuracy import (
+    AccuracyAnalysis,
+    compute_accuracy_from_pgn,
+)
 
 router = APIRouter(prefix="/game", tags=["game"])
 
@@ -60,6 +64,106 @@ def _safe_log(value: object, max_len: int = 80) -> str:
     2026-05-13).
     """
     return _LOG_INJECTION_RE.sub("", repr(value))[:max_len]
+
+
+# ---------------------------------------------------------------------------
+# Server-side accuracy + weakness recompute
+# ---------------------------------------------------------------------------
+#
+# /game/finish previously trusted the client's self-reported ``accuracy``
+# and ``weaknesses`` on faith — a modded Android client could send
+# ``accuracy=1.0, weaknesses={}`` and poison the bandit's context
+# vector + the player's rating delta.  The trust gap was documented in
+# ``docs/SECA.md`` under "Trust property of the reward signal".
+#
+# The helper below re-analyses the submitted PGN with the engine pool
+# and replaces the client's accuracy / weaknesses with engine-truth
+# values.  Falls back to client values when the engine pool is
+# unavailable (Stockfish missing, pool saturated, or analysis raised)
+# so the route's success path is preserved; the ``ACC_FALLBACK`` /
+# ``ACC_DIVERGENCE`` log signals surface degraded coverage to
+# operators.
+#
+# The recompute itself lives in
+# ``llm.seca.analysis.pgn_accuracy.compute_accuracy_from_pgn``; this
+# wrapper handles the engine-pool plumbing and the comparison logging.
+
+_DIVERGENCE_WARN_THRESHOLD = 0.20
+
+
+def _resolve_authoritative_accuracy(
+    *,
+    request: Request,
+    req,  # GameFinishRequest, forward reference to avoid declaration order
+    player_id: str,
+) -> tuple[float, dict, str]:
+    """Recompute accuracy + weaknesses from the PGN via the engine pool.
+
+    Returns a 3-tuple ``(accuracy, weaknesses, source)`` where source
+    is ``"engine"`` (recompute succeeded) or ``"client"`` (falling
+    back to request fields).  Emits an ``ACC_DIVERGENCE`` warning
+    when the recomputed accuracy differs from the client value by
+    at least ``_DIVERGENCE_WARN_THRESHOLD`` — anti-cheat telemetry
+    that operators can grep for in production logs.
+    """
+    pool = getattr(request.app.state, "engine_pool", None)
+    if pool is None:
+        logger.info(
+            "ACC_FALLBACK player=%s reason=engine_pool_unavailable",
+            _safe_log(player_id),
+        )
+        return req.accuracy, req.weaknesses, "client"
+
+    try:
+        analysis: AccuracyAnalysis = compute_accuracy_from_pgn(
+            pgn_text=req.pgn,
+            engine_pool=pool,
+            result=req.result,
+        )
+    except (ValueError, RuntimeError):
+        logger.exception(
+            "ACC_FALLBACK player=%s reason=recompute_failed",
+            _safe_log(player_id),
+        )
+        return req.accuracy, req.weaknesses, "client"
+
+    if analysis.moves_analyzed == 0:
+        # The engine pool was available AND the recompute ran, but the
+        # PGN produced zero player moves.  Combined with a non-trivial
+        # ``result`` ("win" / "loss"), this is a contradiction — the
+        # player can't win or lose a game they didn't move in.  Reject
+        # rather than fall back: the 2-engine-acquire cost would
+        # otherwise buy a modded client a bypass of the trust gap.
+        # Distinct from the ``pool is None`` branch above, which IS
+        # a legitimate fallback (Stockfish unavailable).
+        logger.warning(
+            "ACC_REJECT player=%s reason=zero_player_moves moves_in_pgn=%d",
+            _safe_log(player_id),
+            analysis.moves_analyzed,
+        )
+        raise HTTPException(
+            status_code=422,
+            detail="PGN has no player moves; result/PGN combination is invalid.",
+        )
+    if analysis.source != "engine":
+        logger.info(
+            "ACC_FALLBACK player=%s reason=non_engine_source",
+            _safe_log(player_id),
+        )
+        return req.accuracy, req.weaknesses, "client"
+
+    divergence = abs(analysis.accuracy - float(req.accuracy))
+    if divergence >= _DIVERGENCE_WARN_THRESHOLD:
+        logger.warning(
+            "ACC_DIVERGENCE player=%s client=%.3f server=%.3f delta=%.3f moves=%d",
+            _safe_log(player_id),
+            float(req.accuracy),
+            analysis.accuracy,
+            divergence,
+            analysis.moves_analyzed,
+        )
+
+    return analysis.accuracy, analysis.weaknesses, "engine"
 
 
 # ---------------------------------------------------------------------------
@@ -232,6 +336,15 @@ class GameFinishRequest(BaseModel):
             raise ValueError("invalid PGN: no game found")
         if game.errors:
             raise ValueError(f"invalid PGN: {game.errors[0]}")
+        # Reject PGNs whose mainline parses to zero moves.  ``read_game``
+        # is tolerant of unrecognized SAN tokens (drops them from the
+        # mainline rather than populating ``game.errors``), so a body
+        # like ``1. e4 e9 1-0`` parses to a 1-move mainline and an
+        # empty body parses to zero moves — both should fail at the
+        # Pydantic boundary rather than slip through to the server-
+        # side accuracy recompute as a bypass surface.
+        if not list(game.mainline_moves()):
+            raise ValueError("invalid PGN: no moves found in mainline")
         return v
 
     @field_validator("result")
@@ -300,6 +413,23 @@ def finish_game(
     if req.player_id is not None and req.player_id != str(player.id):
         raise HTTPException(status_code=403, detail="Cannot submit game for another player")
 
+    # Server-side accuracy + weakness recompute.  Closes the client-trust
+    # gap on /game/finish; falls back to the request fields when the
+    # engine pool is unavailable.  Every downstream consumer (event
+    # storage, skill update, bandit context) reads from these locals
+    # rather than from req.accuracy / req.weaknesses so a single
+    # decision point gates whether trust flows from the client or from
+    # engine truth.
+    # The source ("engine" vs "client") is surfaced through log signals
+    # in the resolver (``ACC_FALLBACK`` / ``ACC_DIVERGENCE``); we don't
+    # propagate it onto the response or stored record yet — that's a
+    # follow-up if operators want a queryable telemetry column.
+    accuracy, weaknesses, _ = _resolve_authoritative_accuracy(
+        request=request,
+        req=req,
+        player_id=str(player.id),
+    )
+
     storage = EventStorage(db)
 
     rating_before = player.rating
@@ -309,8 +439,8 @@ def finish_game(
         player_id=player.id,
         pgn=req.pgn,
         result=req.result,
-        accuracy=req.accuracy,
-        weaknesses=req.weaknesses,
+        accuracy=accuracy,
+        weaknesses=weaknesses,
     )
 
     # If the client tracked the game_id from /game/start, mark the
@@ -382,7 +512,7 @@ def finish_game(
         confidence_before=confidence_before,
         confidence_after=confidence_after,
         learning_delta=reward,
-        weaknesses=req.weaknesses or {},
+        weaknesses=weaknesses or {},
     )
 
     recent = (
@@ -398,9 +528,16 @@ def finish_game(
         if not ev.weaknesses_json:
             continue
         try:
-            weaknesses = json.loads(ev.weaknesses_json)
-            if isinstance(weaknesses, dict):
-                recent_weaknesses.extend(list(weaknesses.keys()))
+            # Loop-local name — must NOT shadow the outer authoritative
+            # ``weaknesses`` (resolver output) consumed by
+            # _apply_bandit_decision below.  A 2026-05-14 reviewer pass
+            # caught this exact shadow regressing the bandit context
+            # vector to recent[-1].weaknesses_json (i.e., a prior game's
+            # client-supplied weaknesses).  Pinned by
+            # test_pgn_accuracy.test_recent_weakness_loop_does_not_shadow.
+            parsed = json.loads(ev.weaknesses_json)
+            if isinstance(parsed, dict):
+                recent_weaknesses.extend(list(parsed.keys()))
         except Exception:
             # Ignore malformed weakness payloads
             pass
@@ -421,8 +558,8 @@ def finish_game(
             deterministic_action=coach_action,
             rating_before=rating_before,
             confidence_before=confidence_before,
-            accuracy=req.accuracy,
-            weaknesses=req.weaknesses or {},
+            accuracy=accuracy,
+            weaknesses=weaknesses or {},
             reward=reward,
         )
 

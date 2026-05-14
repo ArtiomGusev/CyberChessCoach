@@ -98,30 +98,61 @@ flag check.
 
 ## Trust property of the reward signal
 
-The reward signal in step 4 comes directly from the Android client's
-self-reported `accuracy` and `weaknesses` fields on `/game/finish`.
-The server validates the request schema (accuracy ∈ [0, 1], weaknesses
-is a dict with ≤ 50 keys, PGN ≤ 100k chars and parses as a valid game)
-but **does not independently recompute accuracy from the submitted
-PGN**. A modded client can therefore:
+The reward signal in step 4 starts from the client-supplied `accuracy`
+and `weaknesses` fields on `/game/finish`, but the server re-derives
+both before they reach the bandit, the skill tracker, or storage.
 
-- inflate `accuracy` toward 1.0, which feeds `build_context_vector`
-  (the third feature) and shifts every subsequent bandit context
-  toward the high-accuracy regime;
-- under-report `weaknesses`, shrinking the weakness-aggregate features
-  and biasing action selection away from DRILL / PLAN_UPDATE.
+The recompute lives in
+[`llm/seca/analysis/pgn_accuracy.py`](../llm/seca/analysis/pgn_accuracy.py)
+and runs inside `events/router._resolve_authoritative_accuracy`. For
+each player move in the submitted PGN, the engine pool evaluates the
+position at shallow depth (default 50 ms per move; ~2 s for a 40-move
+game; mostly cache hits when `FenMoveCache` was populated during live
+play). Centipawn losses are classified via the same thresholds the
+live `mistake_classifier` uses (50 / 150 / 300 cp), an Average
+Centipawn Loss is converted to an accuracy figure via a
+diminishing-returns mapping, and a weakness vector (blunders /
+mistakes / inaccuracies as fractions of player moves) is built from
+the classification distribution. The player's color is inferred from
+the PGN `Result` tag combined with the client's reported outcome —
+faking both fields simultaneously while keeping the PGN moves
+realistic is much harder than the bypass this closes.
 
-The mitigation — server-side shallow Stockfish re-analysis of the PGN
-to derive ground-truth accuracy and a canonical weakness classification
-— is planned and tracked separately. Until it lands, the SECA reward
-signal is **only as trustworthy as the client**, and the bandit's
-context vector is correspondingly trust-bounded.
+The downstream consumers (`storage.store_game`, `SkillUpdater`,
+`build_context_vector` via `_apply_bandit_decision`,
+`PostGameCoachController.decide`) all read from a single pair of
+locals (`accuracy`, `weaknesses`) populated by the resolver, so the
+trust boundary is one decision point at the top of the handler — not
+spread across the rest of `finish_game`.
 
-This is the only place the trust boundary discipline of
-[`ARCHITECTURE.md`](ARCHITECTURE.md) (LLM is untrusted, engine truth is
-trusted) does NOT extend to: the engine is the source of truth for
-positions, but the SECA loop's reward signal is currently sourced from
-the client, not from the engine.
+### Fallback mode
+
+When the engine pool is unavailable (Stockfish missing, pool saturated,
+analysis raised), the resolver falls back to the client-supplied
+values and emits an `ACC_FALLBACK` log signal. Fallback mode is the
+only path under which the loop's reward signal is still trust-bounded
+to the client. Operators surface fallback prevalence via the log
+stream; sustained fallback indicates an engine-pool health issue
+rather than an anti-cheat concern.
+
+### Divergence telemetry
+
+When the recompute succeeds and the server-derived accuracy differs
+from the client's by ≥ 0.20, the resolver emits an `ACC_DIVERGENCE`
+warning carrying both values and the player ID. This is anti-cheat
+telemetry, not a blocking signal — the server's value drives the
+bandit regardless. Sustained divergence on a specific player
+indicates either a malicious client or a buggy local accuracy
+estimator on the Android side.
+
+### Architectural fit
+
+This closes the only place the trust-boundary discipline of
+[`ARCHITECTURE.md`](ARCHITECTURE.md) (LLM untrusted, engine truth
+trusted) previously did not extend to. The SECA reward signal is now
+engine-derived, matching the architecture's spirit: engine output is
+the source of truth, and every layer above it consumes engine truth
+rather than client claims.
 
 ---
 
