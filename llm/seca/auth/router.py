@@ -7,7 +7,7 @@
 import json
 import os
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Response
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker, Session as DBSession
 from llm.seca.shared_limiter import limiter
 
@@ -46,19 +46,46 @@ else:
 SessionLocal = sessionmaker(bind=engine)
 
 
+def _column_type_for_dialect(sqlite_type: str, pg_type: str) -> str:
+    """Pick the SQL type literal appropriate for the current engine."""
+    return sqlite_type if _is_sqlite else pg_type
+
+
+def _ensure_column(conn, table: str, column: str, sql_type: str) -> None:
+    """Idempotent ``ALTER TABLE ... ADD COLUMN`` for SQLite + Postgres.
+
+    Uses SQLAlchemy's ``inspect`` so we don't have to dialect-switch on the
+    PRAGMA / information_schema query.  Both dialects accept the
+    ``ALTER TABLE <t> ADD COLUMN <c> <type>`` form (no DEFAULT, NULL
+    allowed) — that's the lowest-common-denominator portable DDL.
+    """
+    cols = {c["name"] for c in inspect(engine).get_columns(table)}
+    if column in cols:
+        return
+    conn.execute(text(f'ALTER TABLE "{table}" ADD COLUMN "{column}" {sql_type}'))
+    conn.commit()
+
+
 def init_schema() -> None:
-    """Create the SQLAlchemy schema and apply small SQLite-only migrations.
+    """Create the SQLAlchemy schema and apply small in-place migrations.
 
     Idempotent — safe to call from FastAPI lifespan, the test conftest
-    fixture, or maintenance scripts.  Performs three ordered steps:
+    fixture, or maintenance scripts.  Performs:
 
     1.  For SQLite, ensure ``data/`` exists so the file-based DB can be
         created on first connect.
-    2.  ``Base.metadata.create_all`` — adds any missing tables.
-    3.  ``ALTER TABLE players ADD COLUMN player_embedding`` — one-time
-        column addition for legacy SQLite instances created before the
-        column was added to the Player model.  Postgres deployments get
-        the column from create_all() and skip this step.
+    2.  ``Base.metadata.create_all`` — adds any missing tables (creates
+        new tables on Postgres + SQLite; does NOT alter existing tables).
+    3.  Best-effort ``ADD COLUMN`` for columns that exist in the SQLAlchemy
+        models but not on the live table.  Required because
+        ``create_all`` is no-op for tables that already exist, even when
+        a column has been added to the model since the table was last
+        created.  Without this step, an authenticated request that
+        relies on the new column 500s (the production symptom that
+        prompted this helper: PR #135 added
+        ``sessions.previous_token_hash`` + ``previous_token_expires_at``
+        to the model; Postgres never got the columns; every login
+        500'd until this migration shipped).
 
     Must NOT run at module-import time: import-time DDL slows ``import
     llm.seca.auth.router`` (used by every backend test for its Pydantic
@@ -69,32 +96,39 @@ def init_schema() -> None:
 
     Base.metadata.create_all(bind=engine)
 
-    if _is_sqlite:
-        with engine.connect() as conn:
-            rows = conn.execute(text("PRAGMA table_info(players)")).fetchall()
-            if "player_embedding" not in {r[1] for r in rows}:
-                conn.execute(
-                    text("ALTER TABLE players ADD COLUMN player_embedding TEXT DEFAULT '[]'")
-                )
-                conn.commit()
+    # In-place column migrations.  Both SQLite (legacy files) and
+    # Postgres (live production) need these — Postgres because
+    # ``create_all`` doesn't alter existing tables, SQLite because we
+    # have user files that pre-date the column additions.
+    with engine.connect() as conn:
+        # Player.player_embedding (added pre-F-07 era).
+        _ensure_column(
+            conn,
+            "players",
+            "player_embedding",
+            _column_type_for_dialect("TEXT DEFAULT '[]'", "TEXT DEFAULT '[]'"),
+        )
 
-            # F-07 rotation race grace window — see Session model + service.
-            # Sessions table existed before previous_token_hash /
-            # previous_token_expires_at were added, so legacy SQLite files
-            # need these columns ADDed in-place.  Postgres deployments get
-            # them from create_all() above and skip this step.  Both
-            # columns nullable so existing rows pass through without a
-            # backfill.
-            session_rows = conn.execute(text("PRAGMA table_info(sessions)")).fetchall()
-            session_cols = {r[1] for r in session_rows}
-            if "previous_token_hash" not in session_cols:
-                conn.execute(text("ALTER TABLE sessions ADD COLUMN previous_token_hash TEXT"))
-                conn.commit()
-            if "previous_token_expires_at" not in session_cols:
-                conn.execute(
-                    text("ALTER TABLE sessions ADD COLUMN previous_token_expires_at DATETIME")
-                )
-                conn.commit()
+        # F-07 rotation race grace window — see Session model + service.
+        # Sessions table pre-dates these columns on both dialects.
+        # Both columns nullable so existing rows pass through without a
+        # backfill.  SQLite uses TEXT/DATETIME, Postgres uses
+        # VARCHAR/TIMESTAMP — both ANSI-compatible enough that the
+        # lowest-common-denominator names ("TEXT", "TIMESTAMP") work
+        # on both, but emitting the dialect-native ones keeps generated
+        # tables matching what ``create_all`` would have produced.
+        _ensure_column(
+            conn,
+            "sessions",
+            "previous_token_hash",
+            _column_type_for_dialect("TEXT", "VARCHAR"),
+        )
+        _ensure_column(
+            conn,
+            "sessions",
+            "previous_token_expires_at",
+            _column_type_for_dialect("DATETIME", "TIMESTAMP"),
+        )
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
