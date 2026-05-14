@@ -6,25 +6,40 @@ original crash/wrong-value description so CI failures are self-explaining.
 
 Bugs covered
 ------------
-BUG-1  reward.py:6       ZeroDivisionError on empty skill list
-BUG-2  spacing.py:12     next_interval(_, 0.0) returned 0.0 instead of ≥1
-BUG-3  trainer.py:21     ZeroDivisionError when events list is empty
-BUG-4a bandit.py:27-47  LinUCB.select() returned None for empty actions list
-BUG-4b bandit.py:35      np.linalg.inv raised LinAlgError on near-singular A
-BUG-5  engine_eval.py:47 cache key collision (test class removed —
-                          engine_eval.py deleted in engine-library cleanup,
-                          live cache covered by test_fen_move_cache_key.py)
-BUG-6  engine_pool.py    stop()/_started race  (test class removed —
-                          engine_pool.py deleted, live lifecycle covered by
-                          test_engine_pool_crash_recovery.py / test_engine_pool_exhaustion.py)
-BUG-7  auth/service.py   token_hash compared with != (timing attack); must use hmac.compare_digest
-BUG-8  storage/repo.py        SQLite connections leaked on exception (no try-finally)
-BUG-9  adapt.py:241           random.choice(sorted_moves[:-1]) raises IndexError
-                               when only one move is available (list[:-1] == [])
-BUG-10 global_bandit.py       GlobalLinUCB.select() same empty-actions + singular matrix
-                               + float((1,1)) TypeError as contextual_bandit
-BUG-11 meta_bandit.py         LinUCB.select_action() same three issues
+BUG-1  reward.py            ZeroDivisionError on empty skill list (test class
+                             removed — curriculum/reward.py deleted in the
+                             dormant-cluster cleanup, 2026-05-14 PR 7)
+BUG-2  spacing.py           next_interval(_, 0.0) returned 0.0 (test classes
+                             removed — curriculum/spacing.py deleted in PR 7)
+BUG-3  skills/trainer.py    ZeroDivisionError on empty events list (test class
+                             removed — skills/trainer.py deleted in PR 7)
+BUG-4a bandit.py            LinUCB.select() returned None on empty actions
+                             (test class removed — brain/bandit/contextual_bandit.py
+                             deleted in PR 7)
+BUG-4b bandit.py            np.linalg.inv raised on near-singular A (test class
+                             removed alongside BUG-4a in PR 7)
+BUG-5  engine_eval.py       cache key collision (test class removed —
+                             engine_eval.py deleted in engine-library cleanup,
+                             live cache covered by test_fen_move_cache_key.py)
+BUG-6  engine_pool.py       stop()/_started race  (test class removed —
+                             engine_pool.py deleted, live lifecycle covered by
+                             test_engine_pool_crash_recovery.py / test_engine_pool_exhaustion.py)
+BUG-7  auth/service.py      token_hash compared with != (timing attack); must use hmac.compare_digest
+BUG-8  storage/repo.py      SQLite connections leaked on exception (no try-finally)
+BUG-9  adapt.py             random.choice(sorted_moves[:-1]) IndexError (test
+                             class removed — seca/adapt.py deleted in PR 7)
+BUG-10 global_bandit.py     GlobalLinUCB.select() same three issues (test class
+                             removed — brain/bandit/global_bandit.py deleted in PR 7)
+BUG-11 meta_bandit.py       LinUCB.select_action() same three issues (test class
+                             removed — brain/meta/meta_bandit.py deleted in PR 7)
 BUG-12 outcome_tracker.py:130 4 score components divided by 3.0; max reachable = 1.167 > 1.0
+
+Retired test classes for BUG-1/2/3/4a/4b/9/10/11 are not reinstated:
+the bug-fix patches landed years ago, the rest of the freeze guard's
+keyword scan + brain allowlist now prevents the dormant code from
+being re-introduced to the live runtime, and the modules themselves
+no longer exist on disk so there is nothing to pin.  Bug-history
+entries are retained above for the audit trail.
 """
 
 from __future__ import annotations
@@ -40,252 +55,26 @@ os.environ.setdefault("SECRET_KEY", "ci-secret-key-that-is-32-chars-long!!")
 
 
 # ---------------------------------------------------------------------------
-# BUG-1  reward.py — ZeroDivisionError on empty skill list
+# BUG-1  reward.py           — ZeroDivisionError on empty skill list (removed)
+# BUG-2  spacing.py          — next_interval(_, 0.0) returned 0.0   (removed)
+# BUG-3  skills/trainer.py   — ZeroDivisionError on empty events    (removed)
+# BUG-4a contextual_bandit   — empty-actions returned None          (removed)
+# BUG-4b contextual_bandit   — pinv-vs-inv on near-singular A       (removed)
 # ---------------------------------------------------------------------------
-
-
-class TestRatingFromSkillEmptyList:
-    """BUG-1: rating_from_skill([]) must not raise ZeroDivisionError."""
-
-    def test_empty_skill_list_does_not_raise(self):
-        from llm.seca.curriculum.reward import rating_from_skill
-
-        result = rating_from_skill([])
-        assert isinstance(result, float), f"Expected float, got {type(result)}"
-
-    def test_empty_skill_list_returns_base_rating(self):
-        """An empty latent skill vector has no information; base Elo (800) is the default."""
-        from llm.seca.curriculum.reward import rating_from_skill
-
-        assert rating_from_skill([]) == 800.0
-
-    def test_reward_with_both_empty_vectors_does_not_raise(self):
-        """reward([], []) is Elo-improvement of 0; must not crash."""
-        from llm.seca.curriculum.reward import reward
-
-        result = reward([], [])
-        assert result == 0.0
-
-    def test_reward_skill_before_empty_does_not_raise(self):
-        from llm.seca.curriculum.reward import reward
-
-        result = reward([], [0.5, 0.6])
-        assert isinstance(result, float)
-
-    def test_nonempty_skill_list_still_correct(self):
-        """Regression: the fix must not change behaviour for normal inputs."""
-        from llm.seca.curriculum.reward import rating_from_skill
-
-        assert rating_from_skill([0.5, 0.5]) == pytest.approx(800 + 400 * 0.5)
-        assert rating_from_skill([1.0]) == pytest.approx(1200.0)
-        assert rating_from_skill([0.0]) == pytest.approx(800.0)
-
-
-# ---------------------------------------------------------------------------
-# BUG-2  spacing.py — next_interval(_, 0.0) returned 0.0
-# ---------------------------------------------------------------------------
-
-
-class TestNextIntervalZeroPreviousInterval:
-    """BUG-2: next_interval with previous_interval=0 must return ≥1, not 0."""
-
-    @pytest.mark.parametrize("success_rate", [0.6, 0.7, 0.8, 0.9, 1.0])
-    def test_zero_previous_interval_returns_at_least_one(self, success_rate: float):
-        """
-        On a player's very first review (previous_interval=0) with any
-        passing success_rate, the next interval must be ≥1 day.
-        Before the fix: 0.0 * growth == 0.0, scheduling nothing.
-        """
-        from llm.seca.curriculum.spacing import next_interval
-
-        result = next_interval(success_rate, 0.0)
-        assert result >= 1.0, (
-            f"next_interval({success_rate}, 0.0) = {result}; "
-            "must be ≥1 to schedule the first review"
-        )
-
-    def test_below_threshold_still_returns_one(self):
-        """success_rate < 0.6 always returns 1.0 regardless of previous_interval."""
-        from llm.seca.curriculum.spacing import next_interval
-
-        assert next_interval(0.5, 0.0) == 1.0
-        assert next_interval(0.0, 10.0) == 1.0
-
-    def test_non_zero_previous_interval_is_unaffected(self):
-        """The fix (max(1.0, ...)) must not alter normal intervals > 1."""
-        from llm.seca.curriculum.spacing import next_interval
-
-        result = next_interval(0.8, 5.0)
-        expected = 5.0 * (1.8 + 0.8)
-        assert result == pytest.approx(expected)
-
-
-class TestSpacingUrgency:
-    """Companion coverage for ``spacing.urgency``.  Lives alongside
-    BUG-2 because both functions ship together and an unused-import
-    cleanup in 6.B brought the file under its 70% floor — urgency had
-    no direct tests, so its 3 lines were dead-weight in coverage."""
-
-    def test_zero_interval_returns_one(self):
-        """``interval == 0`` is the sentinel for "no prior schedule
-        recorded"; urgency must report 1.0 so the scheduler treats it
-        as overdue rather than dividing by zero."""
-        from llm.seca.curriculum.spacing import urgency
-
-        assert urgency(days_since_last=3.0, interval=0.0) == 1.0
-
-    def test_overdue_interval_clamps_to_one(self):
-        """``days_since_last > interval`` saturates at 1.0 — a topic
-        that was due 5 days ago shouldn't be 5x more urgent than one
-        due yesterday in the policy layer's ranking."""
-        from llm.seca.curriculum.spacing import urgency
-
-        assert urgency(days_since_last=10.0, interval=2.0) == 1.0
-
-    def test_proportional_urgency_below_interval(self):
-        """Within the interval, urgency is proportional — half the
-        review window gives 0.5 urgency, etc."""
-        from llm.seca.curriculum.spacing import urgency
-
-        assert urgency(days_since_last=1.0, interval=2.0) == 0.5
-        assert urgency(days_since_last=2.5, interval=10.0) == 0.25
-
-
-# ---------------------------------------------------------------------------
-# BUG-3  trainer.py — ZeroDivisionError on empty events list
-# ---------------------------------------------------------------------------
-
-
-class TestSkillTrainerEmptyEvents:
-    """BUG-3: SkillTrainer.train_on_events([]) must not raise ZeroDivisionError."""
-
-    def test_empty_events_does_not_raise(self):
-        from llm.seca.skills.trainer import SkillTrainer
-
-        trainer = SkillTrainer()
-        result = trainer.train_on_events([])
-        assert result is not None
-
-    def test_empty_events_returns_status_dict(self):
-        from llm.seca.skills.trainer import SkillTrainer
-
-        trainer = SkillTrainer()
-        result = trainer.train_on_events([])
-        assert isinstance(result, dict), f"Expected dict, got {type(result)}"
-
-    def test_empty_events_does_not_mutate_last_accuracy(self):
-        """last_accuracy must remain None when there is nothing to learn from."""
-        from llm.seca.skills.trainer import SkillTrainer
-
-        trainer = SkillTrainer()
-        trainer.train_on_events([])
-        assert trainer.last_accuracy is None
-
-    def test_nonempty_events_returns_dict(self):
-        """Regression: non-empty events must return a dict (SAFE_MODE short-circuits
-        the computation path in this environment, but must still return a dict)."""
-        from llm.seca.skills.trainer import SkillTrainer
-        from types import SimpleNamespace
-
-        trainer = SkillTrainer()
-        events = [SimpleNamespace(accuracy=0.8), SimpleNamespace(accuracy=0.6)]
-        result = trainer.train_on_events(events)
-        assert isinstance(result, dict)
-        # SAFE_MODE=True is hardcoded in this codebase; the safe-mode path returns
-        # {"status": "safe_mode"}.  When SAFE_MODE is disabled the path returns
-        # {"games_seen": N, "avg_accuracy": ...}.
-        assert "status" in result or "games_seen" in result
-
-
-# ---------------------------------------------------------------------------
-# BUG-4a  contextual_bandit.py — select() returned None for empty actions
-# ---------------------------------------------------------------------------
-
-
-class TestLinUCBSelectEmptyActions:
-    """BUG-4a: LinUCB.select() must raise instead of returning None."""
-
-    def test_empty_actions_raises_value_error(self):
-        import numpy as np
-        from llm.seca.brain.bandit.contextual_bandit import LinUCB
-
-        bandit = LinUCB(n_features=3)
-        context = np.array([0.5, 0.5, 0.5])
-        with pytest.raises(ValueError, match="empty"):
-            bandit.select(context, [])
-
-    def test_single_action_always_selected(self):
-        """With one candidate, select() must return that candidate."""
-        import numpy as np
-        from llm.seca.brain.bandit.contextual_bandit import LinUCB
-
-        bandit = LinUCB(n_features=3)
-        context = np.array([1.0, 0.0, 0.0])
-        result = bandit.select(context, ["only_action"])
-        assert result == "only_action"
-
-    def test_select_returns_an_action_from_the_list(self):
-        import numpy as np
-        from llm.seca.brain.bandit.contextual_bandit import LinUCB
-
-        bandit = LinUCB(n_features=2)
-        context = np.array([0.3, 0.7])
-        actions = ["tactics", "endgames", "openings"]
-        result = bandit.select(context, actions)
-        assert result in actions
-
-
-# ---------------------------------------------------------------------------
-# BUG-4b  contextual_bandit.py — np.linalg.inv raised on near-singular A
-# ---------------------------------------------------------------------------
-
-
-class TestLinUCBNumericalStability:
-    """BUG-4b: LinUCB must stay numerically stable after many updates."""
-
-    def test_degenerate_context_does_not_raise_linalg_error(self):
-        """
-        Updating with a rank-1 context vector makes A near-singular.
-        np.linalg.inv would raise LinAlgError; pinv handles it gracefully.
-        """
-        import numpy as np
-        from llm.seca.brain.bandit.contextual_bandit import LinUCB
-
-        bandit = LinUCB(n_features=4, alpha=0.1)
-        # All context vectors lie on the same ray → A is rank-1, near-singular.
-        context = np.array([1.0, 0.0, 0.0, 0.0])
-        for i in range(200):
-            bandit.update("action_a", context, float(i % 2))
-
-        # Must not raise LinAlgError or any other numerical error.
-        result = bandit.select(context, ["action_a", "action_b"])
-        assert result in ["action_a", "action_b"]
-
-    def test_zero_context_does_not_crash(self):
-        """Zero context vector is edge-case degenerate; select() must still return."""
-        import numpy as np
-        from llm.seca.brain.bandit.contextual_bandit import LinUCB
-
-        bandit = LinUCB(n_features=3)
-        context = np.zeros(3)
-        result = bandit.select(context, ["a", "b"])
-        assert result in ["a", "b"]
-
-    def test_explore_term_is_non_negative(self):
-        """
-        The exploration term sqrt(x^T A^{-1} x) must always be ≥ 0.
-        If pinv produces a negative value here, the UCB formula is broken.
-        """
-        import numpy as np
-        from llm.seca.brain.bandit.contextual_bandit import LinUCB
-
-        bandit = LinUCB(n_features=3, alpha=1.0)
-        context = np.array([0.5, 0.3, 0.2])
-        A_inv = np.linalg.pinv(bandit.A["x"])
-        explore_sq = float(context @ A_inv @ context)
-        assert explore_sq >= 0.0, (
-            f"x^T A_inv x = {explore_sq} < 0; pinv of identity must be PSD"
-        )
+#
+# Test classes retired in the 2026-05-14 dormant-cluster cleanup (PR 7)
+# alongside the modules they pinned:
+#
+#   - ``llm/seca/curriculum/reward.py``                (BUG-1)
+#   - ``llm/seca/curriculum/spacing.py``               (BUG-2)
+#   - ``llm/seca/skills/trainer.py``                   (BUG-3)
+#   - ``llm/seca/brain/bandit/contextual_bandit.py``   (BUG-4a, BUG-4b)
+#
+# The original bug-fixes landed years ago and the modules sat dormant
+# behind the freeze guard until PR 7 removed them.  No live code path
+# depended on these modules; the freeze guard's keyword scan +
+# ``brain.*`` allowlist now prevents re-introduction to the live
+# runtime.  Bug-history entries above retain the audit trail.
 
 
 # ---------------------------------------------------------------------------
@@ -458,123 +247,22 @@ class TestRepoConnectionNotLeaked:
 
 
 # ---------------------------------------------------------------------------
-# BUG-9  adapt.py — random.choice(sorted_moves[:-1]) raises IndexError with 1 move
+# BUG-9   adapt.py            — random.choice IndexError on 1-move (removed)
+# BUG-10  global_bandit.py    — GlobalLinUCB.select() empty + pinv  (removed)
+# BUG-11  meta_bandit.py      — LinUCB.select_action()              (removed)
 # ---------------------------------------------------------------------------
-
-
-class TestAdaptSelectMoveWithNoise:
-    """BUG-9: select_move_with_noise must not crash when only one move is available."""
-
-    def test_single_move_does_not_raise_on_blunder_path(self):
-        """
-        When moves has only one entry, sorted_moves[:-1] == [] and
-        random.choice([]) raises IndexError.  With blunder_prob=1.0 this
-        was a guaranteed crash.
-        """
-        from llm.seca.adapt import select_move_with_noise
-
-        result = select_move_with_noise(
-            moves={"e2e4": 50.0},
-            blunder_prob=1.0,
-            sigma=0.0,
-        )
-        assert result == "e2e4", (
-            f"Single-move position must always return that move; got {result!r}"
-        )
-
-    def test_multiple_moves_blunder_excludes_best(self):
-        """With multiple moves and blunder_prob=1.0, best move is not chosen."""
-        import random
-        from llm.seca.adapt import select_move_with_noise
-
-        random.seed(0)
-        moves = {"best": 1000.0, "ok": 10.0, "bad": 1.0}
-        result = select_move_with_noise(moves=moves, blunder_prob=1.0, sigma=0.0)
-        assert result != "best", "blunder_prob=1.0 must not return the best move"
-
-    def test_zero_blunder_prob_returns_best(self):
-        """blunder_prob=0.0 must always return the top-scored move."""
-        from llm.seca.adapt import select_move_with_noise
-
-        moves = {"best": 500.0, "ok": 50.0}
-        result = select_move_with_noise(moves=moves, blunder_prob=0.0, sigma=0.0)
-        assert result == "best"
-
-
-# ---------------------------------------------------------------------------
-# BUG-10  global_bandit.py — GlobalLinUCB same empty-actions + numerical issues
-# ---------------------------------------------------------------------------
-
-
-class TestGlobalLinUCBFixes:
-    """BUG-10: GlobalLinUCB.select() must guard empty actions and use pinv."""
-
-    def test_empty_actions_raises(self):
-        import numpy as np
-        from llm.seca.brain.bandit.global_bandit import GlobalLinUCB
-
-        bandit = GlobalLinUCB(n_features=3)
-        context = np.array([0.5, 0.5, 0.5])
-        with pytest.raises(ValueError, match="empty"):
-            bandit.select(context, [])
-
-    def test_select_returns_from_list(self):
-        import numpy as np
-        from llm.seca.brain.bandit.global_bandit import GlobalLinUCB
-
-        bandit = GlobalLinUCB(n_features=2)
-        context = np.array([0.3, 0.7])
-        result = bandit.select(context, ["a", "b", "c"])
-        assert result in ["a", "b", "c"]
-
-    def test_degenerate_context_numerically_stable(self):
-        import numpy as np
-        from llm.seca.brain.bandit.global_bandit import GlobalLinUCB
-
-        bandit = GlobalLinUCB(n_features=3, alpha=0.1)
-        context = np.array([1.0, 0.0, 0.0])
-        for i in range(150):
-            bandit.update("x", context, float(i % 2))
-        result = bandit.select(context, ["x", "y"])
-        assert result in ["x", "y"]
-
-
-# ---------------------------------------------------------------------------
-# BUG-11  meta_bandit.py — LinUCB.select_action() same issues
-# ---------------------------------------------------------------------------
-
-
-class TestMetaBanditFixes:
-    """BUG-11: meta_bandit LinUCB must guard empty actions and use pinv."""
-
-    def test_empty_actions_raises(self):
-        import numpy as np
-        from llm.seca.brain.meta.meta_bandit import LinUCB
-
-        bandit = LinUCB(n_features=3, actions=[])
-        x = np.array([0.5, 0.5, 0.5])
-        with pytest.raises(ValueError, match="empty"):
-            bandit.select_action(x)
-
-    def test_select_action_returns_from_list(self):
-        import numpy as np
-        from llm.seca.brain.meta.meta_bandit import LinUCB
-
-        bandit = LinUCB(n_features=2, actions=["plan_a", "plan_b"])
-        x = np.array([0.4, 0.6])
-        result = bandit.select_action(x)
-        assert result in ["plan_a", "plan_b"]
-
-    def test_degenerate_context_numerically_stable(self):
-        import numpy as np
-        from llm.seca.brain.meta.meta_bandit import LinUCB
-
-        bandit = LinUCB(n_features=3, actions=["a", "b"], alpha=0.1)
-        context = np.array([1.0, 0.0, 0.0])
-        for i in range(150):
-            bandit.update("a", context, float(i % 2))
-        result = bandit.select_action(context)
-        assert result in ["a", "b"]
+#
+# Test classes retired in the 2026-05-14 dormant-cluster cleanup (PR 7)
+# alongside the modules they pinned:
+#
+#   - ``llm/seca/adapt.py``                       (BUG-9)
+#   - ``llm/seca/brain/bandit/global_bandit.py``  (BUG-10)
+#   - ``llm/seca/brain/meta/meta_bandit.py``      (BUG-11)
+#
+# Same retirement rationale as BUG-1/2/3/4a/4b above: fixes landed
+# years ago, modules sat dormant behind the freeze guard, PR 7
+# removed them.  Freeze-guard keyword scan + brain allowlist prevents
+# re-introduction.  Audit trail in the docstring header.
 
 
 # ---------------------------------------------------------------------------
