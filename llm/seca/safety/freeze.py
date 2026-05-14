@@ -28,7 +28,7 @@ outcome, realtime, serving, policy, player}/`` outright; reducing
 lesson_selector, optoimizer, planner, training_tasks, weakness_detector}.py``;
 and deleting top-level ``llm/{world_model, bootstrap_skill_dataset,
 governor}.py``.  The 2026-05-14 dormant-cluster cleanup pass deleted
-the remaining test-impact-free dormant code: ``brain/rewards/``,
+the test-impact-free clusters: ``brain/rewards/``,
 ``brain/meta/{context, meta_coach}.py``, and the two experimental
 neural-opponent dirs ``engines/{hmpt, adaptive}/``.  ``meta_coach.py``
 in particular carried live ``bandit.update`` / ``bandit.save`` / pickle
@@ -36,23 +36,30 @@ keywords — the very patterns the source-scan layer below tripwires on
 — so its removal closes a latent crash trigger that would have fired
 the moment anything lazy-imported it.
 
-Surviving dormant code on disk after the cleanup pass:
+The 2026-05-14 test-paired cleanup pass (PR 7) finished the sweep by
+deleting the modules + retiring their pinning tests as paired
+edits in the same commit:
 
-- ``brain/meta/meta_bandit.py`` — paired with BUG-11 regression test.
-- ``brain/bandit/{contextual_bandit, global_bandit, online_update}.py`` —
-  paired with BUG-4a/4b and BUG-10 regression tests.
+- ``llm/seca/adapt.py``                       (retired BUG-9)
+- ``llm/seca/brain/meta/meta_bandit.py``      (retired BUG-11)
+- ``llm/seca/brain/bandit/{contextual_bandit, global_bandit, online_update}.py``
+                                              (retired BUG-4a/4b, BUG-10)
+- ``llm/seca/curriculum/{reward, spacing}.py`` (retired BUG-1, BUG-2)
+- ``llm/seca/skills/{trainer, skill_graph, skill_update}.py`` (retired BUG-3)
+- ``llm/seca/learning/{online_learner, causal_engine, causal_impact,
+  credit_assignment, performance, pipeline, trainer}.py``
+- ``llm/seca/skill/``                         (entire dir; no tests)
+
+Surviving dormant code on disk after PR 7:
+
 - ``brain/world_model/{train_regression.py, world_model.pkl}`` and
-  ``brain/data/{build_world_model_dataset.py, world_model_dataset.csv}`` —
-  referenced by the standalone diagnostic ``llm/seca/seca_doctor.py``
+  ``brain/data/{build_world_model_dataset.py, world_model_dataset.csv}``
+  — referenced by the standalone diagnostic ``llm/seca/seca_doctor.py``
   via subprocess (different process, never crosses the freeze guard).
-- ``learning/{online_learner, causal_engine, causal_impact, credit_assignment,
-  performance, pipeline, trainer}.py`` — test-paired or imported only by
-  ``test_security_hardening.py``.
 
 All surviving dormant code is unreachable at runtime under
 ``SAFE_MODE=True`` and trips the guard if imported into a live process
-anyway.  Deferred test-paired deletions are tracked for a follow-up
-cleanup.  ``BUG-5 / BUG-6`` were retired alongside ``engine_eval.py``
+anyway.  ``BUG-5 / BUG-6`` were retired alongside ``engine_eval.py``
 / ``engine_pool.py`` in the 2026-05-12 engine-library cleanup.
 
 Policy

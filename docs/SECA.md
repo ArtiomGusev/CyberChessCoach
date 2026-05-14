@@ -182,38 +182,25 @@ path:
 
 ## What's dormant on disk and why
 
-After the 2026-05-14 dormant-cluster cleanup pass (PR #140), the
-surviving dormant code under `seca/` falls into two categories:
-
-**Test-paired** — kept on disk because deleting requires retiring a
-CI regression test in `test_bug_regressions.py`:
-
-- `brain/meta/meta_bandit.py` — BUG-11
-- `brain/bandit/contextual_bandit.py` — BUG-4a, BUG-4b
-- `brain/bandit/global_bandit.py` — BUG-10
-- `brain/bandit/online_update.py` — referenced by the keyword scan in
-  `freeze.py`; not directly tested
-- `learning/{online_learner, causal_engine, causal_impact,
-  credit_assignment, performance, pipeline, trainer}.py` — referenced
-  by `test_security_hardening.py` and other freeze-guard fixtures
-- `skills/{trainer, skill_graph, skill_update}.py` — referenced by
-  BUG-3 and adjacent tests
-- `adapt.py` — BUG-9
-- `curriculum/{reward, spacing}.py` — BUG-1, BUG-2
-
-**Operational-tool-paired** — referenced via subprocess by the
-standalone `seca/seca_doctor.py` diagnostic; the child Python process
-runs them in isolation and never crosses the live FastAPI process's
-freeze guard:
+After the 2026-05-14 dormant-cluster cleanup passes (PR #140 + PR 7),
+the only surviving dormant code under `seca/` is the **operational-tool
+cluster** referenced by the standalone `seca/seca_doctor.py`
+diagnostic. The child Python process runs these in isolation and
+never crosses the live FastAPI process's freeze guard:
 
 - `brain/world_model/{train_regression.py, world_model.pkl}`
 - `brain/data/{build_world_model_dataset.py, world_model_dataset.csv}`
 
-All surviving dormant code is unreachable at runtime under
-`SAFE_MODE=True` and trips the freeze guard if imported into a live
-process anyway. The "quarantine, not deletion" policy applies to
-files that still have regression coverage; everything else has been
-deleted in the Sprint 2 / PR #140 sweeps.
+Test-paired files previously listed here — `meta_bandit.py`,
+`contextual_bandit.py`, `global_bandit.py`, `online_update.py`,
+`adapt.py`, `curriculum/{reward, spacing}.py`, `skills/{trainer,
+skill_graph, skill_update}.py`, `skill/`, and the `learning/`
+dormant cluster — were deleted in PR 7 alongside their pinning
+test classes (BUG-1, BUG-2, BUG-3, BUG-4a/4b, BUG-9, BUG-10, BUG-11
+in `test_bug_regressions.py`).  The freeze guard's keyword scan +
+`brain.*` allowlist prevents re-introduction to the live runtime;
+the historical-bug docstring entries in `test_bug_regressions.py`
+preserve the audit trail.
 
 If a contributor wants to revive any of this code for live use, the
 path is: add the relevant module to the freeze guard's allowlist
