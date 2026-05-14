@@ -358,6 +358,137 @@ class FreezeWorldModelTest(unittest.TestCase):
                 freeze._assert_safe_world_model(UnsafeWorldModel())
             self.assertIn("Unsafe", str(cm.exception))
 
+    def test_imposter_named_safe_world_model_rejected(self):
+        """A class literally named ``SafeWorldModel`` but defined outside
+        the canonical ``llm.seca.world_model.safe_stub`` module must be
+        rejected.
+
+        Pinned because the previous class-name string compare would have
+        accepted any class with the matching ``__name__``, regardless of
+        ``predict_next`` semantics.  The type-identity check rejects it
+        because the class object is a different ``type``.
+        """
+        class SafeWorldModel:  # noqa: same name; structurally distinct class
+            def predict_next(self, state, action=None):
+                # An adversary's stub could mutate state here — the
+                # type-identity gate is what prevents this from running live.
+                return state
+
+        with patch.object(freeze, "_crash", _raise):
+            with self.assertRaises(_Crash) as cm:
+                freeze._assert_safe_world_model(SafeWorldModel())
+            self.assertIn("Unsafe", str(cm.exception))
+
+    def test_subclass_of_safe_world_model_rejected(self):
+        """A subclass of the canonical SafeWorldModel must be rejected.
+
+        Pinned because ``isinstance(...)`` would accept a subclass that
+        overrides ``predict_next`` to mutate state — exactly the
+        rule-3 (no autonomous RL) reintroduction vector this guard
+        exists to close.  Type-identity (``type(...) is SafeWorldModel``)
+        rejects it.
+        """
+        from llm.seca.world_model.safe_stub import SafeWorldModel as RealSafe
+
+        class FasterSafeWorldModel(RealSafe):
+            def predict_next(self, state, action=None):
+                # A real attacker would mutate state; the override
+                # itself is the policy violation, not the body.
+                return state
+
+        with patch.object(freeze, "_crash", _raise):
+            with self.assertRaises(_Crash) as cm:
+                freeze._assert_safe_world_model(FasterSafeWorldModel())
+            self.assertIn("Unsafe", str(cm.exception))
+
+
+class FreezeVerifyRuntimeSafetyImposterTest(unittest.TestCase):
+    """``verify_runtime_safety`` mirrors the startup type-identity check.
+
+    Both the imposter (a same-named class defined elsewhere) and a
+    subclass of the canonical SafeWorldModel must surface as
+    ``(False, …)`` from the per-request verifier, not silently pass.
+    """
+
+    def test_imposter_returns_unsafe(self):
+        class SafeWorldModel:  # noqa: structurally distinct
+            def predict_next(self, state, action=None):
+                return state
+
+        ok, reason = freeze.verify_runtime_safety(SafeWorldModel())
+        self.assertFalse(ok)
+        self.assertIsNotNone(reason)
+        self.assertIn("unsafe world model class", reason)
+
+    def test_subclass_returns_unsafe(self):
+        """Subclass of canonical SafeWorldModel — see startup-side
+        ``test_subclass_of_safe_world_model_rejected`` for rationale."""
+        from llm.seca.world_model.safe_stub import SafeWorldModel as RealSafe
+
+        class FasterSafeWorldModel(RealSafe):
+            def predict_next(self, state, action=None):
+                return state
+
+        ok, reason = freeze.verify_runtime_safety(FasterSafeWorldModel())
+        self.assertFalse(ok)
+        self.assertIsNotNone(reason)
+        self.assertIn("unsafe world model class", reason)
+
+
+class FreezeQuickScanScopeTest(unittest.TestCase):
+    """``_quick_scan_modules`` scope parity with ``_scan_loaded_modules``.
+
+    The per-request verifier walks the same ``llm.*`` surface as the
+    startup scan (minus ``llm.tests.*`` fixtures and the guard's own
+    source).  Pinned so a future revision that re-narrows the scope back
+    to ``llm.seca.*`` trips this test instead of silently re-opening the
+    asymmetry.
+    """
+
+    def setUp(self):
+        self._initial_keys = set(sys.modules.keys())
+        self._stashed: dict[str, types.ModuleType] = {}
+        for name in list(sys.modules.keys()):
+            if (
+                name.startswith("llm.seca.brain.")
+                and name not in freeze.ALLOWED_BRAIN_MODULES
+            ):
+                self._stashed[name] = sys.modules.pop(name)
+
+    def tearDown(self):
+        for name in list(sys.modules.keys()):
+            if name not in self._initial_keys and name not in self._stashed:
+                del sys.modules[name]
+        for name, mod in self._stashed.items():
+            sys.modules[name] = mod
+
+    def test_clean_runtime_returns_none(self):
+        """No forbidden modules pre-loaded: scan returns ``None``."""
+        self.assertIsNone(freeze._quick_scan_modules())
+
+    def test_non_allowlisted_brain_module_returns_reason(self):
+        """Injected non-allowlisted ``brain.*`` module yields a reason."""
+        name = "llm.seca.brain.bandit.global_bandit"
+        sys.modules[name] = types.ModuleType(name)
+        reason = freeze._quick_scan_modules()
+        self.assertIsNotNone(reason)
+        self.assertIn("forbidden brain module loaded", reason)
+        self.assertIn("global_bandit", reason)
+
+    def test_tests_tree_is_excluded(self):
+        """``llm.tests.*`` is excluded from the scan (deliberate fixtures
+        in that tree carry forbidden patterns)."""
+        name = "llm.tests.fake_scope_fixture"
+        sys.modules[name] = types.ModuleType(name)
+        self.assertIsNone(freeze._quick_scan_modules())
+
+    def test_safety_tree_is_excluded(self):
+        """``llm.seca.safety.*`` is excluded — the guard's own source
+        contains every forbidden token as data."""
+        name = "llm.seca.safety.fake_scope_fixture"
+        sys.modules[name] = types.ModuleType(name)
+        self.assertIsNone(freeze._quick_scan_modules())
+
 
 class FreezeBackgroundTasksTest(unittest.TestCase):
     """Layer 3b: SECA_ENABLE_ONLINE_LEARNING=1 must be rejected."""

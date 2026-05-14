@@ -96,8 +96,6 @@ logger = logging.getLogger(__name__)
 # Configuration
 # ------------------------------------------------------------------
 
-SAFE_WORLD_MODEL_CLASS = "SafeWorldModel"
-
 # Modules under llm.seca.brain.* that are SAFE to load — every other path
 # under brain/ is forbidden.  Keep this list tiny: schema/registration
 # modules required for SQLAlchemy ``Base.metadata``, plus two helpers that
@@ -295,13 +293,41 @@ def _scan_loaded_modules():
 
 
 def _assert_safe_world_model(world_model):
-    """Ensure only SafeWorldModel is used at runtime."""
+    """Ensure only the canonical SafeWorldModel is used at runtime.
+
+    Uses ``type(...) is SafeWorldModel`` — strict identity, not
+    ``isinstance`` — against the imported class object rather than a
+    class-name string compare.  Two failure modes are closed:
+
+    1. An imposter class literally named ``SafeWorldModel`` but defined
+       outside ``llm.seca.world_model.safe_stub`` would have satisfied
+       the previous ``__class__.__name__`` compare; the type-identity
+       check rejects it because the class object is a different ``type``.
+    2. A subclass of the canonical ``SafeWorldModel`` that overrides
+       ``predict_next`` would pass ``isinstance`` but is not the
+       canonical class.  Subclasses are the most plausible
+       reintroduction vector for rule-3 (no autonomous RL) violations —
+       a contributor writes ``class FasterSafeWorldModel(SafeWorldModel)``
+       with a mutating ``predict_next`` and the structural shape looks
+       innocent.  Type identity rejects this.
+    """
     if world_model is None:
         _crash("World model not initialized")
 
-    cls_name = world_model.__class__.__name__
-    if cls_name != SAFE_WORLD_MODEL_CLASS:
-        _crash(f"Unsafe world model detected: {cls_name}")
+    # Lazy import keeps freeze.py importable in isolation (the safe_stub
+    # transitively imports llm.seca.runtime.safe_mode, which is harmless
+    # here but the lazy-import pattern matches the rest of this file).
+    from llm.seca.world_model.safe_stub import SafeWorldModel
+
+    # pylint: disable=unidiomatic-typecheck
+    # Type identity is intentional, not a lint mistake.  ``isinstance``
+    # accepts subclasses, which is exactly the rule-3 reintroduction
+    # vector this guard exists to close (a contributor writes
+    # ``class FasterSafeWorldModel(SafeWorldModel)`` with a mutating
+    # ``predict_next`` and the structural shape looks innocent).
+    if type(world_model) is not SafeWorldModel:
+        cls = world_model.__class__
+        _crash(f"Unsafe world model detected: {cls.__module__}.{cls.__qualname__}")
 
 
 def _assert_no_background_tasks():
@@ -398,15 +424,27 @@ def _quick_scan_modules() -> str | None:
     are O(N) over ``sys.modules`` with cheap string ops and catch the
     structural reintroduction cases we care about.
 
+    Scope mirrors ``_scan_loaded_modules``: the full ``llm.*`` tree,
+    minus ``llm.tests.*`` (deliberate forbidden-pattern fixtures) and
+    ``llm.seca.safety.*`` (this guard's own source).  Earlier revisions
+    scoped the quick scan to ``llm.seca.*`` only — asymmetric with the
+    startup scan, which since 2026-05-13 covers ``llm.*`` so a
+    top-level ``llm/<rl_thing>.py`` cannot slip past.  Per-request
+    parity is cheap (the brain allowlist + FORBIDDEN_MODULE_PARTS pass
+    remain string ops over ``sys.modules``) and closes the gap that a
+    future lazy import after startup could otherwise exploit.
+
     Returns ``None`` when the runtime passes.  Returns a one-line
     operator-readable reason otherwise.
     """
     for name, module in sys.modules.items():
         if module is None:
             continue
-        if not name.startswith("llm.seca"):
+        if not name.startswith("llm."):
             continue
         if name.startswith("llm.seca.safety"):
+            continue
+        if name.startswith("llm.tests"):
             continue
         if "mock" in name:
             continue
@@ -471,9 +509,14 @@ def verify_runtime_safety(world_model) -> tuple[bool, str | None]:
     if world_model is None:
         return (False, "world_model not initialised (lifespan startup did not complete)")
 
-    cls_name = world_model.__class__.__name__
-    if cls_name != SAFE_WORLD_MODEL_CLASS:
-        return (False, f"unsafe world model class: {cls_name}")
+    from llm.seca.world_model.safe_stub import SafeWorldModel  # noqa: PLC0415
+
+    # Type-identity check (not isinstance) — see _assert_safe_world_model
+    # for the rationale.  Subclasses overriding predict_next are exactly
+    # the rule-3 reintroduction vector this guard exists to close.
+    if type(world_model) is not SafeWorldModel:  # pylint: disable=unidiomatic-typecheck
+        cls = world_model.__class__
+        return (False, f"unsafe world model class: {cls.__module__}.{cls.__qualname__}")
 
     reason = _quick_scan_modules()
     if reason is not None:
