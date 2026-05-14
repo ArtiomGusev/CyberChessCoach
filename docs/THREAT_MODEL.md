@@ -130,37 +130,23 @@ limits. Accepted at small player counts; mitigated by infrastructure
 (Hetzner CX22 → CX42 upgrade path documented in
 `docs/OPERATIONS.md` § 5.4).
 
-### T4 — Telemetry exfiltration (A1, A4)
+### T4 — Telemetry exfiltration (RETIRED in PR 13)
 
-A user's chat content, FENs, or other PII end up in the
-`telemetry/quality_scores.jsonl` log and leak via an artifact upload or
-log export.
+This threat was retired on 2026-05-15 (PR 13).  The
+``record_quality_score`` writer that the section's mitigations
+defended had no callers anywhere in the repo — the
+``telemetry/quality_scores.jsonl`` artifact the cron workflow
+uploaded was always empty.  PR 13 deleted the dead writer +
+consumer + workflow upload step + this section's threat surface.
 
-Mitigation:
+When per-attempt retry telemetry is actually wired into the live
+pipelines, restore this section alongside the writer.  The
+mitigation list above is preserved here as a design template for
+that future implementation; the output-firewall PII filter
+(``_CAT_D``) and the ``*.jsonl`` gitignore rule both still apply
+to any future telemetry path.
 
-- **Telemetry schema is intentionally narrow.** Each record is
-  `{timestamp, score, case_type, model, mode, attempt}` only; no prompt
-  text, no FEN, no user_query, no player ID is written. Code:
-  `llm/rag/telemetry/quality.py::record_quality_score`.
-- **Append-only, never read at runtime.** The pipeline never loads
-  telemetry back; it is operational instrumentation only — there is no
-  read-path that could echo telemetry into a response.
-- **Output firewall PII filter.** Even if telemetry were echoed,
-  `output_firewall._CAT_D` (email regex, API-key regex, password
-  assignment regex) blocks the response. Coverage entries
-  `FW-PII-01..02` in
-  `llm/rag/tests/contracts/fixtures/violations.jsonl`.
-- **Gitignore.** `*.jsonl` is in `llm/.gitignore`, with a single
-  explicit exception (`!rag/tests/contracts/fixtures/*.jsonl`) for the
-  validator violations corpus, so telemetry cannot accidentally be
-  committed.
-- **Weekly artifact retention.** The `llm-regression-cron` workflow
-  uploads telemetry as an artifact for drift analysis with a 90-day
-  retention; the schema constraint above means those artifacts contain
-  no user data.
-
-Residual risk: a future telemetry-read path that surfaces stored fields
-in a response. Mitigated by code review against this document.
+T-numbering not renumbered; the gap is the audit trail.
 
 ### T5 — Malicious RAG document submission (A1, A2, A5)
 

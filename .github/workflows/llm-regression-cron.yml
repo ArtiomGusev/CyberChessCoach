@@ -82,17 +82,11 @@ jobs:
           COACH_DEEPSEEK_API_KEY: ${{ secrets.COACH_DEEPSEEK_API_KEY }}
         run: python -m pytest -q llm/rag/tests/llm/test_deepseek_smoke.py
 
-      # Always publish the JSONL telemetry — even on failure — so a regression
-      # is debuggable from the Actions UI alone.  The tests append per-call
-      # quality scores to telemetry/quality_scores.jsonl (cwd-relative; pytest
-      # runs from the repo root so the file lands at <repo>/telemetry/).
-      # 90-day retention keeps roughly a quarter of weekly runs available
-      # for drift analysis.
-      - name: Upload quality_scores.jsonl telemetry
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: llm-regression-telemetry-${{ github.run_id }}
-          path: telemetry/quality_scores.jsonl
-          if-no-files-found: warn
-          retention-days: 90
+      # Per-call quality-score telemetry was previously uploaded as an
+      # artifact here, but the writer (``llm/rag/telemetry/quality.py::
+      # record_quality_score``) had no callers — the file the workflow
+      # uploaded was always empty.  Retired in PR 13 (2026-05-15)
+      # alongside the writer + consumer + the THREAT_MODEL § T4 and
+      # OPERATIONS_RETRIES § A6 doc claims it supported.  When the
+      # retry-tracking telemetry is actually wired, restore the upload
+      # step alongside the writer.

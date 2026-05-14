@@ -107,8 +107,6 @@ validate_mode_2_negative()   ← hard gate
   ↓
 score_explanation()          ← quality gate
   ↓
-record_quality_score()      ← telemetry
-  ↓
 return explanation
 
 

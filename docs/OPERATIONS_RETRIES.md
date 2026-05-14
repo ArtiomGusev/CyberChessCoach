@@ -90,25 +90,25 @@ FAIL (hard stop)
 No branching.
 No special cases.
 
-A6. Telemetry During Retries
+A6. Telemetry During Retries (RETIRED in PR 13)
 
-Each attempt is recorded independently.
+Per-attempt quality-score telemetry was previously described here
+as feeding ``telemetry/quality_scores.jsonl`` via
+``record_quality_score``.  The writer existed but had no callers in
+the live pipelines (the retry loops never invoked it), so the file
+was never written and the corresponding CI artifact upload was
+always empty.
 
-Example records:
+PR 13 (2026-05-15) deleted the dead writer + consumer + upload
+step + the THREAT_MODEL § T4 surface that defended it.  When
+retry-tracking telemetry is actually wired into the live retry
+loops, restore this section alongside a working writer + a
+THREAT_MODEL § T4 entry.
 
-{ "score": 6, "attempt": 1 }
-{ "score": 8, "attempt": 2 }
-
-
-Telemetry allows operators to answer:
-
-How often retries occur
-
-Whether retries improve quality
-
-Whether the model hovers near threshold
-
-Telemetry does not influence runtime decisions.
+Until then, retry telemetry is **not implemented**.  Operators
+cannot answer "how often retries occur" or "whether retries
+improve quality" from production data — that visibility was
+documented but never available.
 
 A7. Expected Operational Behavior
 Normal

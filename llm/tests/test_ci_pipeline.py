@@ -960,12 +960,14 @@ def test_llm_regression_cron_workflow_pins_topology():
     """The weekly llm-regression-cron workflow must:
     - run on a schedule + accept manual workflow_dispatch (not on push/PR — it's
       Category D, mandated to stay out of per-push CI)
-    - exercise both real-LLM tests with RUN_OLLAMA_TESTS=1 (test_llm_regression
-      AND test_ollama_smoke — Category D + C)
-    - publish telemetry/quality_scores.jsonl as an artifact on every run, even
-      on failure, so drift is debuggable from the Actions UI alone
+    - exercise both real-LLM tests with RUN_DEEPSEEK_TESTS=1 (test_llm_regression
+      AND test_deepseek_smoke — Category D + C)
     - own its own concurrency group so it can't race the tag-pushed regression
       job in fly-deploy.yml
+
+    The ``quality_scores.jsonl`` artifact-upload step was retired in PR 13
+    (2026-05-15) alongside the writer (``record_quality_score``) which had
+    no callers anywhere in the repo — the upload was always empty.
     """
     workflow = _load_workflow("llm-regression-cron.yml")
 
@@ -1028,16 +1030,10 @@ def test_llm_regression_cron_workflow_pins_topology():
             "env.HAS_DEEPSEEK_KEY" in step_if
         ), f"Step {step.get('name')!r} must gate on env.HAS_DEEPSEEK_KEY."
 
-    # Telemetry artifact: must run on success AND failure (if: always()) so a
-    # failed nightly is debuggable without needing to re-run the suite.
-    artifact_step = _step_named(job, "Upload quality_scores.jsonl telemetry")
-    assert artifact_step["if"] == "always()"
-    assert "telemetry/quality_scores.jsonl" in artifact_step["with"]["path"]
-    assert artifact_step["with"]["if-no-files-found"] == "warn"
-    assert int(artifact_step["with"]["retention-days"]) >= 30, (
-        "telemetry must persist long enough to support drift analysis across "
-        "multiple weekly runs"
-    )
+    # Telemetry artifact step retired in PR 13 — see workflow comment.
+    # The writer (``record_quality_score``) had no callers, so the upload
+    # never had anything to upload.  When per-attempt retry telemetry is
+    # actually wired, restore both the workflow step and a pin here.
 
     # The tag-pushed counterpart job in fly-deploy.yml must still exist so the
     # release pipeline runs the same suite against pinned tag refs.  This
