@@ -1,0 +1,329 @@
+"""Server-side accuracy + weakness recompute from a finished game's PGN.
+
+Closes the trust gap previously documented in
+``docs/SECA.md`` under "Trust property of the reward signal":
+``/game/finish`` accepted client-supplied ``accuracy`` and
+``weaknesses`` at face value, feeding the SECA loop's reward signal
+from a value the Android client controls.  A modded client could
+inflate ``accuracy`` toward 1.0 and shift every subsequent bandit
+context vector toward the high-accuracy regime.
+
+This module re-analyses the submitted PGN with the engine pool,
+classifies each player move via centipawn-loss thresholds aligned with
+``llm.seca.analysis.mistake_classifier``, and returns the canonical
+``accuracy`` + ``weakness`` dict driven by engine truth.
+
+Performance notes
+-----------------
+The default ``movetime_ms=50`` keeps per-move evaluation cheap
+(~50 ms per uncached position).  A 40-move game with a cold cache
+finishes in ~2 s; ``FenMoveCache`` populated during live play makes
+most positions cache hits.  Each move requires exactly one engine
+call (the position-after-the-move serves as the position-before for
+the next iteration).
+
+The function raises on engine-pool unavailability or malformed PGNs;
+the caller (``llm.seca.events.router.finish_game``) catches and
+falls back to client-supplied values with a warning log line.  The
+fallback preserves the existing /game/finish flow but loses
+anti-cheat coverage — operators surface this via the
+``ACC_FALLBACK`` log signal.
+"""
+
+from __future__ import annotations
+
+import io
+import logging
+from dataclasses import dataclass
+from typing import Protocol
+
+import chess
+import chess.pgn
+
+logger = logging.getLogger(__name__)
+
+
+class _EnginePool(Protocol):
+    """Structural type for the engine-pool dependency.
+
+    Defined as a Protocol so this module does not need a runtime
+    import of ``llm.seca.engines.stockfish.pool`` — which keeps the
+    mypy strict-typed surface narrow (pool.py is not on the typed
+    surface today; following its imports here would surface
+    pre-existing type seams that are out of scope for this PR).
+    Any object exposing the keyword-only ``evaluate_position``
+    method satisfies the Protocol; the production
+    ``StockfishEnginePool`` does.
+    """
+
+    def evaluate_position(
+        self,
+        *,
+        fen: str,
+        movetime_ms: int,
+        queue_timeout_ms: int | None = ...,
+    ) -> dict: ...
+
+
+# Per-move classification thresholds (centipawn loss from the mover's
+# perspective).  Aligned with ``llm.seca.analysis.mistake_classifier``
+# (50 / 150 / 300) so the live-play classifier and the post-game
+# recompute speak the same vocabulary.
+_INACCURACY_THRESHOLD_CP = 50
+_MISTAKE_THRESHOLD_CP = 150
+_BLUNDER_THRESHOLD_CP = 300
+
+# Mate values are collapsed to ±10000 cp so the centipawn-delta math
+# below works without special-casing mate-vs-mate transitions.  10000
+# is large enough that any non-mate eval is dominated by it.
+_MATE_VALUE_CP = 10000
+
+# Safety cap on moves analysed — paranoia against pathological PGNs
+# (extremely long games or runaway PGN constructions).  Real games
+# rarely exceed 200 plies; the cap lets us bound /game/finish latency.
+_MAX_PLIES_ANALYSED = 200
+
+# Queue timeout for the per-ply slot acquire on the engine pool.  The
+# pool's default ``queue_timeout_ms`` (50 ms in production) is right
+# for the snappy /live/move path but too aggressive when one
+# /game/finish request needs ~40 sequential acquires: even mild
+# concurrency from /live/move or /engine/eval can push an acquire
+# past 50 ms and demote the whole recompute to the fallback path.
+# 1 000 ms gives enough slack to ride out routine contention while
+# still bounding tail latency.  Pinned by
+# test_pgn_accuracy.test_evaluate_passes_higher_queue_timeout.
+_RECOMPUTE_QUEUE_TIMEOUT_MS = 1_000
+
+
+@dataclass(frozen=True)
+class AccuracyAnalysis:
+    """Canonical analysis of a completed game.
+
+    All values are derived from engine evaluation of the PGN's moves;
+    none are propagated from client-supplied request fields.
+    """
+
+    accuracy: float
+    """Player-side accuracy in [0, 1].  Higher is better.  Derived from
+    Average Centipawn Loss (ACPL) via ``1 / (1 + acpl / 100)`` — a
+    diminishing-returns mapping that gives accuracy ~ 1.0 at ACPL=0,
+    ~ 0.5 at ACPL=100, ~ 0.25 at ACPL=300."""
+
+    weaknesses: dict[str, float]
+    """Player-side weakness vector.  Currently exposes the three
+    severity-bucket rates (blunders / mistakes / inaccuracies as
+    fractions of player moves).  Compatible with the request schema's
+    ``weaknesses: dict[str, float]`` shape; consumers downstream of
+    ``finish_game`` accept arbitrary string keys."""
+
+    blunder_count: int
+    mistake_count: int
+    inaccuracy_count: int
+    moves_analyzed: int
+    """Number of *player* moves analysed (not total plies)."""
+
+    player_color: chess.Color
+    """Which side the analysis was attributed to.  Inferred from the
+    PGN's Result tag combined with the player's reported outcome —
+    see ``_infer_player_color``."""
+
+    source: str
+    """``"engine"`` when the analysis was driven by engine evaluation;
+    ``"fallback"`` when ``moves_analyzed == 0`` (empty PGN or all moves
+    rejected).  Distinguishes "we analysed and the answer is X" from
+    "we couldn't analyse, here's a neutral default."""
+
+
+def compute_accuracy_from_pgn(
+    pgn_text: str,
+    engine_pool: _EnginePool,
+    *,
+    result: str,
+    movetime_ms: int = 50,
+    max_plies: int = _MAX_PLIES_ANALYSED,
+) -> AccuracyAnalysis:
+    """Re-analyse ``pgn_text`` and return canonical accuracy + weakness.
+
+    Parameters
+    ----------
+    pgn_text:
+        Full PGN of the completed game.
+    engine_pool:
+        Live ``StockfishEnginePool`` used for per-move evaluation.
+    result:
+        The player's reported outcome ("win" / "loss" / "draw").
+        Combined with the PGN's Result tag to infer which side was
+        the player — see ``_infer_player_color``.
+    movetime_ms:
+        Per-move analysis budget.  Defaults to 50 ms — shallow but
+        sufficient for blunder-vs-good-move classification.
+    max_plies:
+        Safety cap on plies analysed.  Defaults to 200.
+
+    Raises
+    ------
+    ValueError
+        On malformed PGN or invalid moves.
+    RuntimeError
+        On engine-pool unavailability or queue saturation.
+    """
+    game = chess.pgn.read_game(io.StringIO(pgn_text))
+    if game is None:
+        raise ValueError("PGN could not be parsed")
+
+    player_color = _infer_player_color(game, result)
+    board = game.board()
+
+    losses_cp: list[int] = []
+    plies_seen = 0
+    prev_eval_cp: int | None = None
+
+    for node in game.mainline():
+        if plies_seen >= max_plies:
+            break
+
+        side_to_move = board.turn
+        is_player_move = side_to_move == player_color
+
+        if prev_eval_cp is None:
+            # First iteration — establish the eval-before for the
+            # starting position.  Subsequent iterations reuse the
+            # eval-after as the next eval-before.
+            prev_eval_cp = _evaluate_cp(engine_pool, board.fen(), movetime_ms)
+
+        try:
+            board.push(node.move)
+        except (ValueError, AssertionError) as exc:
+            raise ValueError(
+                f"PGN move {plies_seen + 1} could not be applied: {exc}"
+            ) from exc
+
+        after_eval_cp = _evaluate_cp(engine_pool, board.fen(), movetime_ms)
+
+        if is_player_move:
+            # Loss from the player's POV — positive when the player's
+            # move worsened the eval for their side.  Engine evals are
+            # always from White's perspective in centipawns, so:
+            #   White moves: loss = prev - after  (eval going down hurts White)
+            #   Black moves: loss = after - prev  (eval going up hurts Black)
+            if player_color == chess.WHITE:
+                loss = max(0, prev_eval_cp - after_eval_cp)
+            else:
+                loss = max(0, after_eval_cp - prev_eval_cp)
+            losses_cp.append(loss)
+
+        prev_eval_cp = after_eval_cp
+        plies_seen += 1
+
+    return _summarise(losses_cp, player_color)
+
+
+def _evaluate_cp(
+    pool: _EnginePool,
+    fen: str,
+    movetime_ms: int,
+) -> int:
+    """Evaluate a position and return a centipawn score from White's POV.
+
+    Passes ``queue_timeout_ms=_RECOMPUTE_QUEUE_TIMEOUT_MS`` (1 000 ms,
+    not the pool's 50 ms default) because the recompute is a ~40-acquire
+    batch that mustn't collapse to the client-value fallback under
+    routine concurrent /live/move pressure.  See module docstring.
+
+    Mate-in-N is collapsed to ±``_MATE_VALUE_CP`` (positive for White
+    mating, negative for Black mating) so downstream centipawn-delta
+    arithmetic works without special-casing the type field.
+    """
+    result = pool.evaluate_position(
+        fen=fen,
+        movetime_ms=movetime_ms,
+        queue_timeout_ms=_RECOMPUTE_QUEUE_TIMEOUT_MS,
+    )
+    evaluation = result.get("evaluation", {})
+    eval_type = evaluation.get("type")
+    value = int(evaluation.get("value", 0))
+    if eval_type == "mate":
+        return _MATE_VALUE_CP if value > 0 else -_MATE_VALUE_CP
+    return value
+
+
+def _infer_player_color(game: chess.pgn.Game, result: str) -> chess.Color:
+    """Match the PGN's Result tag against the player's reported outcome.
+
+    The Result tag (``"1-0"``, ``"0-1"``, ``"1/2-1/2"``, or ``"*"``)
+    plus the player's report (``"win"`` / ``"loss"`` / ``"draw"``)
+    pins which side the player was on.  Faking both fields
+    simultaneously while keeping the PGN moves realistic is much
+    harder than the bypass this module closes (just send
+    ``accuracy=1.0``).
+
+    Draws + unknown defaults to White.  Per-side ACPL in a drawn game
+    is usually comparable for both sides, so the choice rarely
+    matters downstream.
+    """
+    pgn_result = (game.headers.get("Result") or "").strip()
+    result_norm = result.lower().strip()
+
+    if result_norm == "win":
+        return chess.WHITE if pgn_result == "1-0" else chess.BLACK
+    if result_norm == "loss":
+        return chess.BLACK if pgn_result == "1-0" else chess.WHITE
+    return chess.WHITE
+
+
+def _summarise(
+    losses_cp: list[int],
+    player_color: chess.Color,
+) -> AccuracyAnalysis:
+    """Reduce per-move CP losses to accuracy + weakness counts."""
+    if not losses_cp:
+        return AccuracyAnalysis(
+            accuracy=0.5,
+            weaknesses={},
+            blunder_count=0,
+            mistake_count=0,
+            inaccuracy_count=0,
+            moves_analyzed=0,
+            player_color=player_color,
+            source="fallback",
+        )
+
+    blunders = sum(1 for loss in losses_cp if loss >= _BLUNDER_THRESHOLD_CP)
+    mistakes = sum(
+        1
+        for loss in losses_cp
+        if _MISTAKE_THRESHOLD_CP <= loss < _BLUNDER_THRESHOLD_CP
+    )
+    inaccuracies = sum(
+        1
+        for loss in losses_cp
+        if _INACCURACY_THRESHOLD_CP <= loss < _MISTAKE_THRESHOLD_CP
+    )
+
+    acpl = sum(losses_cp) / len(losses_cp)
+    # Diminishing-returns ACPL → accuracy mapping.  Calibration:
+    #   ACPL=0   -> 1.00
+    #   ACPL=20  -> 0.83
+    #   ACPL=50  -> 0.67
+    #   ACPL=100 -> 0.50
+    #   ACPL=200 -> 0.33
+    #   ACPL=300 -> 0.25
+    accuracy = max(0.0, min(1.0, 1.0 / (1.0 + acpl / 100.0)))
+
+    n = len(losses_cp)
+    weaknesses = {
+        "blunders": blunders / n,
+        "mistakes": mistakes / n,
+        "inaccuracies": inaccuracies / n,
+    }
+
+    return AccuracyAnalysis(
+        accuracy=accuracy,
+        weaknesses=weaknesses,
+        blunder_count=blunders,
+        mistake_count=mistakes,
+        inaccuracy_count=inaccuracies,
+        moves_analyzed=n,
+        player_color=player_color,
+        source="engine",
+    )

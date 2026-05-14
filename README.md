@@ -204,7 +204,7 @@ load-bearing facts:
 | Bandit decision head | Closed-form LinUCB (`A ← A + xxᵀ`, `b ← b + r·x`); shadow warm-up by default, user-visible behind `SECA_USE_BANDIT_COACH=1` |
 | Online updates to base models (engine, LLM) | **Forbidden** by the freeze guard |
 | Background training tasks | **Forbidden** at startup |
-| Reward-signal trust | Client-supplied `accuracy` / `weaknesses` on `/game/finish` is currently trusted on faith; server-side PGN re-analysis is the planned mitigation. See [`docs/SECA.md`](docs/SECA.md#trust-property-of-the-reward-signal). |
+| Reward-signal trust | **Engine-derived.** `/game/finish` recomputes accuracy + weaknesses from the submitted PGN via the engine pool before they reach the bandit, skill tracker, or storage. Falls back to client-supplied values only when the engine pool is unavailable; emits `ACC_FALLBACK` / `ACC_DIVERGENCE` telemetry. See [`docs/SECA.md`](docs/SECA.md#trust-property-of-the-reward-signal). |
 
 ### Freeze guard
 
