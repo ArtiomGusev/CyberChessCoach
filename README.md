@@ -646,7 +646,6 @@ The full threat model lives in
 | Prompt injection via `user_query` | Pre-LLM sanitiser → structured prompt rendering → Mode-2 contracts → output firewall → bounded retries |
 | JWT replay / session theft | HMAC-signed tokens, ≥ 32-char secret, sliding refresh, HTTPS-only, per-IP rate limit |
 | Engine-pool DoS | Bounded pool, fast-fail queue timeout, movetime ceiling, L1+L2 cache, slowapi per-IP, transport-liveness probe on release |
-| Telemetry exfiltration | Schema is `{timestamp, score, case_type, model, mode, attempt}` — no prompt text, FEN, or PII; never read at runtime |
 | Malicious RAG document | No runtime submission surface; corpus is static in-tree, golden-pinned |
 | Operator misconfiguration | Two-flag bypass (`SECA_INSECURE_DEV`); hard startup guards on `SECA_API_KEY` and `SECRET_KEY` in prod; CORS defaults closed |
 
