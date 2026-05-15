@@ -185,9 +185,9 @@ class HttpGameApiClient(
 
     /**
      * Header set used by most game endpoints: X-Api-Key plus optional
-     * Bearer token from [tokenProvider].  Some endpoints (getNextTraining,
-     * getNextCurriculum, getGameHistory, getPlayerProgress) omit the
-     * X-Api-Key — set [includeApiKey] = false for those.
+     * Bearer token from [tokenProvider].  Some endpoints (getNextCurriculum,
+     * getGameHistory, getPlayerProgress) omit the X-Api-Key — set
+     * [includeApiKey] = false for those.
      */
     private fun authHeaders(includeApiKey: Boolean = true): Map<String, String> = buildMap {
         if (includeApiKey) put("X-Api-Key", apiKey)
