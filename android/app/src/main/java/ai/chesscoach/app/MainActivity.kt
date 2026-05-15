@@ -307,7 +307,7 @@ class MainActivity : AppCompatActivity() {
         btnTraining.setOnClickListener {
             drawerLayout.closeDrawer(GravityCompat.END)
             lifecycleScope.launch {
-                when (val r = gameApiClient.getNextCurriculum(currentPlayerId)) {
+                when (val r = gameApiClient.getNextCurriculum()) {
                     is ApiResult.Success -> {
                         if (!supportFragmentManager.isStateSaved) {
                             TrainingSessionBottomSheet
