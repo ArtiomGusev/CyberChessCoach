@@ -43,6 +43,10 @@ class GameSummaryBottomSheet : BottomSheetDialogFragment() {
         // not currently carry result / move-count fields).
         private const val ARG_RESULT          = "result"
         private const val ARG_MOVE_COUNT      = "move_count"
+        // Coach decision passed-through for downstream persistence —
+        // see ProgressDashboardBottomSheet's "Coach's plan" section.
+        private const val ARG_COACH_WEAKNESS  = "coach_weakness"
+        private const val ARG_COACH_REASON    = "coach_reason"
 
         const val PREFS_NAME  = MainActivity.PREFS_NAME
         const val PREF_RATING = MainActivity.PREF_RATING
@@ -76,6 +80,14 @@ class GameSummaryBottomSheet : BottomSheetDialogFragment() {
                 putString(ARG_DESCRIPTION, response.coachContent.description)
                 putString(ARG_PLAYER_ID,   playerId)
                 putString(ARG_PAYLOAD_JSON, payloadJson)
+                // Pass coach_action.weakness / coach_action.reason through
+                // for the dashboard persistence step in onViewCreated.
+                // Not used directly by the in-sheet UI today (the title /
+                // description carry the user-visible coach copy), but
+                // needed downstream by ProgressDashboardBottomSheet to
+                // render the "Coach's plan" section between games.
+                response.coachAction.weakness?.let { putString(ARG_COACH_WEAKNESS, it) }
+                response.coachAction.reason?.let   { putString(ARG_COACH_REASON, it) }
                 response.learningStatus?.let { putString(ARG_LEARNING_STATUS, it) }
                 result?.let { putString(ARG_RESULT, it.name) }
                 if (moveCount > 0) putInt(ARG_MOVE_COUNT, moveCount)
@@ -258,11 +270,25 @@ class GameSummaryBottomSheet : BottomSheetDialogFragment() {
         }
 
         // ── Persist rating + confidence to SharedPreferences (Gap 6 / P3-A) ──
+        // Also persist the coach decision so ProgressDashboardBottomSheet
+        // can render a "Coach's plan" section between games — without
+        // this, the action verdict / weakness / reason / coach copy are
+        // visible only during the transient post-game sheet and lost the
+        // moment the user dismisses it (the gap the user surfaced
+        // 2026-05-16: "I see training focus but we actually need to see
+        // full information that the coach provides").
+        val coachWeakness = args.getString(ARG_COACH_WEAKNESS)
+        val coachReason   = args.getString(ARG_COACH_REASON)
         requireContext()
             .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putFloat(PREF_RATING, rating)
             .putFloat(MainActivity.PREF_CONFIDENCE, confidence)
+            .putString(MainActivity.PREF_LAST_COACH_ACTION_TYPE, actionType)
+            .putString(MainActivity.PREF_LAST_COACH_WEAKNESS, coachWeakness ?: "")
+            .putString(MainActivity.PREF_LAST_COACH_REASON, coachReason ?: "")
+            .putString(MainActivity.PREF_LAST_COACH_TITLE, title)
+            .putString(MainActivity.PREF_LAST_COACH_DESCRIPTION, description)
             .apply()
 
         // ── Fetch training recommendation from /curriculum/next ────────────────

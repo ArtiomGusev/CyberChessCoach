@@ -216,6 +216,111 @@
             android:layout_marginBottom="@dimen/atrium_space_16"
             android:background="@color/atrium_hairline" />
 
+        <!-- COACH'S PLAN.
+
+             Reads SharedPreferences keys populated by
+             GameSummaryBottomSheet on every /game/finish:
+               PREF_LAST_COACH_ACTION_TYPE
+               PREF_LAST_COACH_WEAKNESS
+               PREF_LAST_COACH_REASON
+               PREF_LAST_COACH_TITLE
+               PREF_LAST_COACH_DESCRIPTION
+             Hidden when no game has been played yet (action type
+             absent or "NONE" with empty reason).  The whole
+             ``coachPlanCard`` toggles visibility together so the
+             section doesn't render as a half-empty stub. -->
+        <TextView
+            android:id="@+id/txtCoachPlanKicker"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAppearance="@style/Atrium.Kicker"
+            android:text="Coach's plan"
+            android:paddingStart="@dimen/atrium_space_24"
+            android:paddingEnd="@dimen/atrium_space_24"
+            android:paddingBottom="@dimen/atrium_space_8"
+            android:visibility="gone" />
+
+        <ai.chesscoach.app.AtriumCardView
+            android:id="@+id/coachPlanCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="@dimen/atrium_space_16"
+            android:layout_marginStart="@dimen/atrium_space_24"
+            android:layout_marginEnd="@dimen/atrium_space_24"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <!-- Action verdict + weakness focus area, both mono kickers. -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:paddingBottom="@dimen/atrium_space_8">
+
+                    <TextView
+                        android:id="@+id/txtCoachPlanAction"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:textAppearance="@style/Atrium.Kicker"
+                        android:textColor="@color/atrium_accent_cyan"
+                        tools:text="PLAN UPDATE" />
+
+                    <TextView
+                        android:id="@+id/txtCoachPlanWeakness"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textAppearance="@style/Atrium.Kicker"
+                        android:textColor="@color/atrium_dim"
+                        tools:text="FOCUS · OPENING" />
+                </LinearLayout>
+
+                <!-- Headline copy from coach_content.title. -->
+                <TextView
+                    android:id="@+id/txtCoachPlanTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="@style/Atrium.Body.Italic"
+                    android:paddingBottom="@dimen/atrium_space_8"
+                    tools:text="Structural change needed for your opening" />
+
+                <!-- Prose from coach_content.description. -->
+                <TextView
+                    android:id="@+id/txtCoachPlanDescription"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="@style/Atrium.Inline"
+                    android:textColor="@color/atrium_muted"
+                    android:paddingBottom="@dimen/atrium_space_8"
+                    tools:text="You've been making the same kind of opening mistake across recent games. Focus your training time on opening principles before drilling other areas." />
+
+                <!-- Reason (rationale from the controller's decision). -->
+                <TextView
+                    android:id="@+id/txtCoachPlanReason"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="@style/Atrium.Inline"
+                    android:textStyle="italic"
+                    android:textColor="@color/atrium_dim"
+                    tools:text="Repeated weakness across games -> structural change" />
+            </LinearLayout>
+        </ai.chesscoach.app.AtriumCardView>
+
+        <View
+            android:id="@+id/coachPlanDivider"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/atrium_hairline_thickness"
+            android:layout_marginStart="@dimen/atrium_space_24"
+            android:layout_marginEnd="@dimen/atrium_space_24"
+            android:layout_marginTop="@dimen/atrium_space_16"
+            android:layout_marginBottom="@dimen/atrium_space_16"
+            android:background="@color/atrium_hairline"
+            android:visibility="gone" />
+
         <!-- TRAINING FOCUS. -->
         <TextView
             android:layout_width="match_parent"
