@@ -1,5 +1,6 @@
 package ai.chesscoach.app
 
+import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Bundle
@@ -51,6 +52,13 @@ class ProgressDashboardBottomSheet : BottomSheetDialogFragment() {
         val txtNoRecs           = view.findViewById<TextView>(R.id.txtNoRecommendations)
         val txtError            = view.findViewById<TextView>(R.id.txtDashboardError)
 
+        // ── Coach's plan section (read-only from SharedPreferences) ─────────
+        // Populated by GameSummaryBottomSheet on every /game/finish.  The
+        // section renders only when there's actually a coach decision to
+        // show — first-run / freshly-logged-in players see the existing
+        // dashboard sections without an empty coach card stub.
+        populateCoachPlanFromPrefs(view)
+
         val client = gameApiClient ?: run {
             txtError.visibility = View.VISIBLE
             return
@@ -74,6 +82,106 @@ class ProgressDashboardBottomSheet : BottomSheetDialogFragment() {
     }
 
     // ── Sections ─────────────────────────────────────────────────────────────
+
+    /**
+     * Read the most-recent coach decision from SharedPreferences and
+     * surface it as a card above "Training focus".  When there's no
+     * decision yet (fresh account / never finished a game), the
+     * kicker + card + divider stay hidden and the dashboard reads
+     * exactly as it did pre-PR-#172.
+     *
+     * Source keys are populated by ``GameSummaryBottomSheet``'s
+     * persist block — see the matching ``putString`` calls there.
+     * The contract is one-way: dashboard never writes, only reads.
+     * Logout-time cleanup of these keys is owned by the same
+     * SharedPreferences scrub that nukes ``last_rating`` etc.
+     */
+    private fun populateCoachPlanFromPrefs(view: View) {
+        val prefs = requireContext().getSharedPreferences(
+            MainActivity.PREFS_NAME,
+            Context.MODE_PRIVATE,
+        )
+        val actionType  = prefs.getString(MainActivity.PREF_LAST_COACH_ACTION_TYPE, null).orEmpty()
+        val weakness    = prefs.getString(MainActivity.PREF_LAST_COACH_WEAKNESS, null).orEmpty()
+        val reason      = prefs.getString(MainActivity.PREF_LAST_COACH_REASON, null).orEmpty()
+        val title       = prefs.getString(MainActivity.PREF_LAST_COACH_TITLE, null).orEmpty()
+        val description = prefs.getString(MainActivity.PREF_LAST_COACH_DESCRIPTION, null).orEmpty()
+
+        // Show the section iff we have ANY non-trivial coach content.
+        // ``NONE/No trigger`` with empty title+description+weakness is
+        // the "controller didn't fire" idle state — no value showing it
+        // to the user.
+        val hasContent =
+            (title.isNotBlank() || description.isNotBlank()) ||
+                (actionType.isNotBlank() && actionType != "NONE") ||
+                weakness.isNotBlank()
+
+        val kicker  = view.findViewById<TextView>(R.id.txtCoachPlanKicker)
+        val card    = view.findViewById<AtriumCardView>(R.id.coachPlanCard)
+        val divider = view.findViewById<View>(R.id.coachPlanDivider)
+
+        if (!hasContent) {
+            kicker.visibility  = View.GONE
+            card.visibility    = View.GONE
+            divider.visibility = View.GONE
+            return
+        }
+
+        val txtAction      = view.findViewById<TextView>(R.id.txtCoachPlanAction)
+        val txtWeakness    = view.findViewById<TextView>(R.id.txtCoachPlanWeakness)
+        val txtTitle       = view.findViewById<TextView>(R.id.txtCoachPlanTitle)
+        val txtDescription = view.findViewById<TextView>(R.id.txtCoachPlanDescription)
+        val txtReason      = view.findViewById<TextView>(R.id.txtCoachPlanReason)
+
+        txtAction.text = actionVerdictLabel(actionType)
+
+        if (weakness.isNotBlank()) {
+            txtWeakness.text = "FOCUS · ${weakness.uppercase()}"
+            txtWeakness.visibility = View.VISIBLE
+        } else {
+            txtWeakness.visibility = View.GONE
+        }
+
+        if (title.isNotBlank()) {
+            txtTitle.text = title
+            txtTitle.visibility = View.VISIBLE
+        } else {
+            txtTitle.visibility = View.GONE
+        }
+
+        if (description.isNotBlank()) {
+            txtDescription.text = description
+            txtDescription.visibility = View.VISIBLE
+        } else {
+            txtDescription.visibility = View.GONE
+        }
+
+        if (reason.isNotBlank()) {
+            txtReason.text = reason
+            txtReason.visibility = View.VISIBLE
+        } else {
+            txtReason.visibility = View.GONE
+        }
+
+        kicker.visibility  = View.VISIBLE
+        card.visibility    = View.VISIBLE
+        divider.visibility = View.VISIBLE
+    }
+
+    /**
+     * Map raw ``CoachAction.type`` strings to readable card kickers.
+     * Mirrors ``GameSummaryBottomSheet.actionBadgeLabel`` so the same
+     * action surfaces with the same label across both screens.
+     */
+    private fun actionVerdictLabel(actionType: String): String = when (actionType.uppercase()) {
+        "DRILL"       -> "DRILL"
+        "PUZZLE"      -> "PUZZLE"
+        "REFLECT"     -> "REFLECT"
+        "PLAN_UPDATE" -> "PLAN UPDATE"
+        "CELEBRATE"   -> "CELEBRATE"
+        "NONE", ""    -> "COACH"
+        else          -> "COACH"
+    }
 
     private fun populateRatingRow(
         txtRating: TextView,

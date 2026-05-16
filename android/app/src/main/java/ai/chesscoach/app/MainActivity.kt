@@ -609,6 +609,17 @@ class MainActivity : AppCompatActivity() {
         const val PREF_CURRICULUM_DIFFICULTY = "curriculum_difficulty"
         const val PREF_CURRICULUM_EXERCISE_TYPE = "curriculum_exercise_type"
 
+        // Latest coach decision — populated by GameSummaryBottomSheet on
+        // every /game/finish and consumed by ProgressDashboardBottomSheet
+        // to surface "what the coach is currently telling the player"
+        // beyond the transient post-game sheet.  Cleared on logout via
+        // the same SharedPreferences scrub the rating keys go through.
+        const val PREF_LAST_COACH_ACTION_TYPE  = "last_coach_action_type"
+        const val PREF_LAST_COACH_WEAKNESS     = "last_coach_weakness"
+        const val PREF_LAST_COACH_REASON       = "last_coach_reason"
+        const val PREF_LAST_COACH_TITLE        = "last_coach_title"
+        const val PREF_LAST_COACH_DESCRIPTION  = "last_coach_description"
+
         // In-progress snapshot keys — read by HomeActivity to populate
         // the Resume card.  See bumpGameNumber / persistInProgressSnapshot
         // / clearInProgressSnapshot below for the lifecycle.
