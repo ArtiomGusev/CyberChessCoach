@@ -315,6 +315,15 @@ class TestSkillUpdaterAction:
 
         db = MagicMock()
         db.query.return_value.filter_by.return_value.first.return_value = player
+        # PR #174: SkillUpdater also queries
+        # ``db.query(GameEvent).filter(...).count()`` to drive
+        # K-factor banding (new players K=40, established K=20).
+        # Without this mock the count call returns a MagicMock,
+        # which can't be compared/subtracted as an int.  Zero
+        # prior games -> K=40 path, which is fine for this test
+        # since it only asserts action derivation from dominant
+        # weakness, not the rating delta itself.
+        db.query.return_value.filter.return_value.count.return_value = 0
 
         logged_actions: list[str] = []
 
