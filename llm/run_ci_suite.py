@@ -133,6 +133,10 @@ TEST_TARGETS = [
     "llm/tests/test_explain_schema_mutation_killers.py",
     # Progress dashboard: /player/progress endpoint contract + world-model transparency tests.
     "llm/tests/test_progress_dashboard.py",
+    # Weekly digest agent (v1): deterministic top-3-holes + microtask
+    # selection, 7-day window, persistence, refresh/fetch endpoint
+    # contract, and no-LLM-imports invariant.
+    "llm/tests/test_weekly_digest.py",
     # Bug regression suite: guards the surviving confirmed fixes (reward
     # ZeroDivision, spacing zero-interval, trainer empty-events, bandit
     # empty-actions + singular matrix).  The flat engine_eval / engine_pool

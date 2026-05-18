@@ -1,7 +1,7 @@
 import json
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session as DBSession
 
 from llm.seca.auth.router import get_db, get_current_player
@@ -11,6 +11,12 @@ from llm.seca.events.models import GameEvent
 from llm.seca.analysis.historical_pipeline import HistoricalAnalysisPipeline
 from llm.seca.analytics.training_recommendations import generate_training_recommendations
 from llm.seca.adaptation.coupling import compute_adaptation
+from llm.seca.coach.weekly_digest import (
+    build_weekly_digest,
+    get_latest_digest,
+    persist_weekly_digest,
+    serialize_digest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -114,3 +120,37 @@ def get_player_progress(
             logger.exception("HistoricalAnalysisPipeline failed in /player/progress")
 
     return {"current": current, "history": history, "analysis": analysis}
+
+
+@router.post("/weekly-digest/refresh")
+def refresh_weekly_digest(
+    player=Depends(get_current_player),
+    db: DBSession = Depends(get_db),
+):
+    """Rebuild and persist the weekly digest for the authenticated player.
+
+    Aggregates the trailing 7 days of stored per-game weakness vectors
+    into the three biggest holes and three matching microtasks. The
+    builder is deterministic and idempotent — calling refresh twice in a
+    row writes two rows with identical payload but different
+    ``generated_at`` so callers can detect freshness.
+    """
+    digest = build_weekly_digest(db, str(player.id))
+    record = persist_weekly_digest(db, str(player.id), digest)
+    return serialize_digest(record)
+
+
+@router.get("/weekly-digest")
+def fetch_weekly_digest(
+    player=Depends(get_current_player),
+    db: DBSession = Depends(get_db),
+):
+    """Return the most recent stored digest for the authenticated player.
+
+    Returns 404 when no digest has ever been generated for the player —
+    clients should treat that as a hint to call ``/refresh``.
+    """
+    record = get_latest_digest(db, str(player.id))
+    if record is None:
+        raise HTTPException(status_code=404, detail="no_digest")
+    return serialize_digest(record)
