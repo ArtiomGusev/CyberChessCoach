@@ -1,6 +1,9 @@
 import json
+import logging
+
 from sqlalchemy.orm import Session as DBSession
 
+from llm.seca.adaptation.coupling import compute_adaptation
 from llm.seca.learning.player_embedding import (
     PlayerEmbeddingEncoder,
     embedding_from_json,
@@ -8,9 +11,16 @@ from llm.seca.learning.player_embedding import (
 )
 from llm.seca.brain.bandit.experience_store import ExperienceStore
 from llm.seca.brain.bandit.context_builder import build_context_vector
+from llm.seca.skills.elo import (
+    actual_score_from_result,
+    apply_rating_delta,
+    compute_rating_delta,
+)
 
 from llm.seca.auth.models import Player
 from llm.seca.events.models import GameEvent
+
+logger = logging.getLogger(__name__)
 
 
 class SkillUpdater:
@@ -48,20 +58,61 @@ class SkillUpdater:
         weaknesses_json: str = event.weaknesses_json or "{}"
 
         # -----------------------------
-        # Rating delta (simple Elo-like)
+        # Rating delta — standard Elo
         # -----------------------------
-        delta: float
-        if event.result == "win":
-            delta = 12.0
-        elif event.result == "loss":
-            delta = -12.0
-        else:
-            delta = 2.0
+        # PR #174 (2026-05-16) replaced the homebrew
+        # ``±12 + (accuracy − 0.5) * 10`` formula with FIDE-style
+        # classic Elo so the rating in this app tracks the same
+        # scale players see on chess.com / lichess.  The new math
+        # uses opponent rating (from the SECA adaptive engine) and
+        # banded K-factor (40 for new players, 20 for established,
+        # 10 for masters) — see ``llm.seca.skills.elo`` for the full
+        # rationale and the pinned tests.
+        #
+        # Accuracy intentionally NO LONGER influences the rating
+        # delta directly — neither chess.com nor lichess use a
+        # per-move accuracy signal in their Elo math.  Engine
+        # accuracy still flows into ``player.confidence`` below and
+        # into the bandit context vector (build_context_vector),
+        # where it can shape coaching without distorting the
+        # external-scale rating.
+        adaptation = compute_adaptation(rating_before, confidence_before)
+        opponent_rating = float(adaptation["opponent"]["target_elo"])
 
-        # accuracy influence
-        delta += (accuracy - 0.5) * 10
+        # Total stored games INCLUDES the just-finished one because
+        # ``EventStorage.store_game`` commits before SkillUpdater
+        # runs (see ``llm/seca/events/router.py:finish_game``).
+        # Subtract 1 so the K-factor reflects prior games — at the
+        # very first finished game the player has 0 prior games and
+        # K=40 (new).  Pinned by
+        # ``test_skill_updater_new_player_uses_k40`` in
+        # test_elo_integration.
+        total_games = (
+            self.db.query(GameEvent)
+            .filter(GameEvent.player_id == player_id)
+            .count()
+        )
+        prior_games = max(0, total_games - 1)
 
-        player.rating = max(100.0, player.rating + delta)
+        if event.result not in ("win", "loss", "draw"):
+            # Unknown result — log so operators can investigate the
+            # upstream validation gap.  ``actual_score_from_result``
+            # collapses unknowns to 0.5 (draw) so the rating delta
+            # is unbiased rather than fabricating a win/loss.
+            logger.warning(
+                "SkillUpdater received unrecognised result %r; treating as draw",
+                event.result,
+            )
+        actual = actual_score_from_result(event.result)
+
+        delta = compute_rating_delta(
+            player_rating=rating_before,
+            opponent_rating=opponent_rating,
+            actual_score=actual,
+            games_played=prior_games,
+        )
+
+        player.rating = apply_rating_delta(rating_before, delta)
 
         # -----------------------------
         # Confidence update
