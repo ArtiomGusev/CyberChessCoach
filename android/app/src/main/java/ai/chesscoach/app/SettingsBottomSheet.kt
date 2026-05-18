@@ -207,9 +207,24 @@ class SettingsBottomSheet : BottomSheetDialogFragment() {
         // rating, not the certainty around it.
         lifecycleScope.launch {
             when (val r = client.updateMe(token, rating = rating, confidence = null)) {
-                is ApiResult.Success -> Toast.makeText(
-                    ctx, "Rating saved · ${rating.roundToInt()}", Toast.LENGTH_SHORT,
-                ).show()
+                is ApiResult.Success -> {
+                    Toast.makeText(
+                        ctx, "Rating saved · ${rating.roundToInt()}", Toast.LENGTH_SHORT,
+                    ).show()
+                    // PR #175: clear the onboarding-time PREF after a
+                    // successful PATCH.  Without this the value would
+                    // linger and (pre-PR-#175 cold-start reconcile) get
+                    // re-PATCHed on every cold-start, clobbering
+                    // game-driven rating updates.  The cold-start
+                    // reconcile path is retired in PR #175; we still
+                    // clear the PREF for hygiene so a future regression
+                    // can't reintroduce the same shape.
+                    ctx.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
+                        .edit()
+                        .remove(OnboardingActivity.PREF_PLAYER_RATING_ESTIMATE)
+                        .remove(OnboardingActivity.PREF_PLAYER_CONFIDENCE)
+                        .apply()
+                }
                 is ApiResult.HttpError -> {
                     Log.w("SETTINGS", "PATCH /auth/me HTTP ${r.code}")
                     if (r.code != 401) {

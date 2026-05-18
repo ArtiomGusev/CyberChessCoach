@@ -364,42 +364,38 @@ class MainActivity : AppCompatActivity() {
             lifecycleScope.launch {
                 when (val r = authApiClient.me(authToken)) {
                     is ApiResult.Success -> {
-                        // Recovery path for the OnboardingActivity PATCH:
-                        // if the local PREF_PLAYER_RATING_ESTIMATE was
-                        // set (i.e. user completed Onboarding) but the
-                        // server rating still differs, the PATCH
-                        // attempted there must have failed (offline,
-                        // server down).  Re-PATCH now while we have a
-                        // good network round-trip in flight, then use
-                        // the local values as the source of truth for
-                        // this cold-start.  Without this branch the
-                        // server's stale rating would clobber the
-                        // calibration the user just completed.
-                        val localEstimate = prefs.getFloat(PREF_PLAYER_RATING_ESTIMATE, -1f)
-                        val localConfidence = prefs.getFloat(PREF_PLAYER_CONFIDENCE_LOCAL, -1f)
-                        val needsReconcile = localEstimate >= 0f &&
-                            kotlin.math.abs(localEstimate - r.data.rating) > RATING_RECONCILE_EPSILON
-                        val reconciled = if (needsReconcile) {
-                            val confArg = localConfidence.takeIf { it >= 0f }
-                            when (val patch = authApiClient.updateMe(
-                                token = authToken,
-                                rating = localEstimate,
-                                confidence = confArg,
-                            )) {
-                                is ApiResult.Success -> patch.data
-                                else -> {
-                                    Log.d("AUTH", "PATCH /auth/me reconcile failed: $patch")
-                                    r.data
-                                }
-                            }
-                        } else r.data
-
-                        txtRatingHeader.text = "Rating: %.0f".format(reconciled.rating)
+                        // Server is authoritative.  PR #175 retired the
+                        // cold-start reconcile path that used to compare
+                        // the local PREF_PLAYER_RATING_ESTIMATE (set
+                        // during onboarding or in Settings) against the
+                        // server rating and re-PATCH if they differed.
+                        // That logic CLOBBERED game-driven rating
+                        // updates on every cold-start: after a loss the
+                        // server's rating dropped, but the stale local
+                        // estimate hadn't, so the reconcile pushed the
+                        // pre-game rating back to the server.  Caught
+                        // 2026-05-18 — the user saw rating RISING after
+                        // losses on the 'Your trends' dashboard.
+                        //
+                        // The onboarding and settings paths still PATCH
+                        // their values directly at the moment the user
+                        // sets them; on success they clear these PREFs
+                        // (see OnboardingActivity.firePatchAuthMe /
+                        // SettingsBottomSheet.firePatchAuthMe).  No
+                        // auto-retry on cold-start.
+                        val server = r.data
+                        txtRatingHeader.text = "Rating: %.0f".format(server.rating)
+                        // Wipe the stale onboarding-time estimate too,
+                        // so older installs (where the PATCH cleanup
+                        // hadn't yet been added) don't carry the
+                        // pre-PR-#175 dirty value forward.
                         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
-                            .putFloat(PREF_RATING, reconciled.rating)
-                            .putFloat(PREF_CONFIDENCE, reconciled.confidence)
+                            .putFloat(PREF_RATING, server.rating)
+                            .putFloat(PREF_CONFIDENCE, server.confidence)
+                            .remove(PREF_PLAYER_RATING_ESTIMATE)
+                            .remove(PREF_PLAYER_CONFIDENCE_LOCAL)
                             .apply()
-                        val tags = formatWeaknessTags(reconciled.skillVector)
+                        val tags = formatWeaknessTags(server.skillVector)
                         if (tags.isNotEmpty()) {
                             txtWeaknessTags.text = tags
                             txtWeaknessTags.visibility = View.VISIBLE
