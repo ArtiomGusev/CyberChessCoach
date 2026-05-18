@@ -149,14 +149,31 @@ class OnboardingActivity : AppCompatActivity() {
         // Fire on the activity's lifecycleScope rather than
         // GlobalScope: if the user backgrounds the app immediately
         // after Continue, the launch is cancelled and we don't leak
-        // a coroutine.  Recovery path in MainActivity will retry on
-        // the next cold-start.
+        // a coroutine.  PR #175 retired the cold-start reconcile path
+        // that used to retry this PATCH from PREF_PLAYER_RATING_ESTIMATE
+        // (the retry kept clobbering game-driven rating updates).  On
+        // failure the user keeps the server's default 1200 rating; one
+        // game or a Settings adjustment recovers without lingering
+        // stale state.
         lifecycleScope.launch {
             when (val r = client.updateMe(token, rating = rating, confidence = confidence)) {
-                is ApiResult.Success -> Log.d(
-                    "ONBOARDING",
-                    "PATCH /auth/me OK (rating=${r.data.rating}, confidence=${r.data.confidence})",
-                )
+                is ApiResult.Success -> {
+                    Log.d(
+                        "ONBOARDING",
+                        "PATCH /auth/me OK (rating=${r.data.rating}, confidence=${r.data.confidence})",
+                    )
+                    // Clear the onboarding-time estimate now that the
+                    // server has accepted it.  Without this clear, the
+                    // PREF would linger and (pre-PR-#175) get re-PATCHed
+                    // on every cold-start, clobbering game-driven
+                    // updates.  Post-PR-#175 the cold-start reconcile
+                    // is gone, but the PREF still has no further role,
+                    // so we wipe it for hygiene.
+                    getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                        .remove(PREF_PLAYER_RATING_ESTIMATE)
+                        .remove(PREF_PLAYER_CONFIDENCE)
+                        .apply()
+                }
                 is ApiResult.HttpError -> Log.w("ONBOARDING", "PATCH /auth/me HTTP ${r.code}")
                 is ApiResult.NetworkError -> Log.w("ONBOARDING", "PATCH /auth/me network error", r.cause)
                 ApiResult.Timeout -> Log.w("ONBOARDING", "PATCH /auth/me timed out")
