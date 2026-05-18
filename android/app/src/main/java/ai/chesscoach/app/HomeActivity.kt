@@ -94,6 +94,21 @@ class HomeActivity : AppCompatActivity() {
         )
     }
 
+    /**
+     * Lazy AuthApiClient used for the cold-start GET /auth/me that
+     * populates the personal-rating kicker.  Pre-PR-#184 only
+     * MainActivity fetched /auth/me, so the home screen's rating
+     * display was blank until the user either opened MainActivity OR
+     * finished a game.  User feedback 2026-05-18: "When I open the
+     * app there is no personal rating - it appears only after a game".
+     */
+    private val authApiClient: AuthApiClient by lazy {
+        HttpAuthApiClient(
+            baseUrl = BuildConfig.COACH_API_BASE,
+            tokenSink = { newToken -> authRepo.saveToken(newToken) },
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -242,12 +257,62 @@ class HomeActivity : AppCompatActivity() {
         // reflects the player's current calibration without waiting for
         // a network round-trip.  The opponent rating is biased ~40
         // below per the Onboarding handoff.
+        val personalRatingView = findViewById<TextView>(R.id.homePersonalRating)
+        val newGameSubView = findViewById<TextView>(R.id.homeRowNewGameSub)
         val cachedRating = prefs.getFloat(MainActivity.PREF_RATING, -1f)
         if (cachedRating >= 0f) {
-            val opponent = OnboardingActivity.formatFirstOpponent(cachedRating)
-            findViewById<TextView>(R.id.homeRowNewGameSub).text =
-                "Adaptive opponent · $opponent"
+            renderRatingChips(personalRatingView, newGameSubView, cachedRating)
         }
+
+        // Refresh from the server on every Home cold-start so:
+        //   - A fresh install (no SharedPreferences cache) shows the
+        //     rating immediately, not just after the first game.
+        //   - The rating kicker stays in sync with server-side Elo
+        //     updates that landed while the app was backgrounded
+        //     (e.g. games finished on another device).
+        // Same /auth/me round-trip MainActivity already runs at its
+        // cold-start; running it here too is cheap (one GET) and the
+        // PREF write-back is shared.  PR #183's "no PATCH from cold-
+        // start" invariant is preserved — this is pure GET.
+        val authToken = authRepo.getToken()
+        if (authToken != null) {
+            lifecycleScope.launch {
+                when (val r = authApiClient.me(authToken)) {
+                    is ApiResult.Success -> {
+                        val server = r.data
+                        renderRatingChips(personalRatingView, newGameSubView, server.rating)
+                        prefs.edit()
+                            .putFloat(MainActivity.PREF_RATING, server.rating)
+                            .putFloat(MainActivity.PREF_CONFIDENCE, server.confidence)
+                            .apply()
+                    }
+                    else -> {
+                        // Cache-hit path already populated the chips
+                        // (or they stay hidden on a fresh install) —
+                        // network failure is non-fatal at the home
+                        // surface.  MainActivity's own /auth/me on the
+                        // next New-game tap is the recovery.
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Populate the personal-rating kicker AND the New-game row's
+     * adaptive-opponent sub from a single rating value.  Centralised
+     * so the cache-hit and post-/auth/me code paths can't drift on
+     * formatting.
+     */
+    private fun renderRatingChips(
+        personalRating: TextView,
+        newGameSub: TextView,
+        rating: Float,
+    ) {
+        personalRating.text = "Rating · ${rating.roundToInt()}"
+        personalRating.visibility = View.VISIBLE
+        val opponent = OnboardingActivity.formatFirstOpponent(rating)
+        newGameSub.text = "Adaptive opponent · $opponent"
     }
 
     /**
@@ -269,8 +334,24 @@ class HomeActivity : AppCompatActivity() {
         // was off-screen.  Re-evaluate so the indicator hides without
         // requiring a full Home re-enter.  Cheap: a single
         // SharedPreferences.contains() lookup.
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         if (::syncIndicator.isInitialized) {
-            refreshSyncIndicator(getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE))
+            refreshSyncIndicator(prefs)
+        }
+        // The user may have finished a game in MainActivity while Home
+        // was off-screen — GameSummaryBottomSheet writes PREF_RATING
+        // before dismissing, so re-read it here to refresh the rating
+        // kicker without waiting for the next /auth/me on next cold-
+        // start.  Defensive ``isInitialized`` guard mirrors the
+        // sync-indicator one above (HomeActivity#onCreate may have
+        // early-returned in the unauthenticated branch).
+        val cachedRating = prefs.getFloat(MainActivity.PREF_RATING, -1f)
+        if (cachedRating >= 0f) {
+            val personalRating = findViewById<TextView>(R.id.homePersonalRating)
+            val newGameSub = findViewById<TextView>(R.id.homeRowNewGameSub)
+            if (personalRating != null && newGameSub != null) {
+                renderRatingChips(personalRating, newGameSub, cachedRating)
+            }
         }
     }
 
