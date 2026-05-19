@@ -40,6 +40,13 @@
     <string name="lichess_import_summary_all_duplicates">Already imported · %1$d games skipped as duplicates</string>
     <string name="lichess_import_summary_empty">No new games to import</string>
 
+    <!-- Determinate import progress caption (v2 async path).
+         %1$d = inserted so far, %2$d = target cap (max_games).
+         "_with_skipped" appends skipped-game count when non-zero so
+         the user sees why total != target on completion. -->
+    <string name="lichess_import_progress_caption">Imported %1$d of up to %2$d</string>
+    <string name="lichess_import_progress_caption_with_skipped">Imported %1$d of up to %2$d · %3$d skipped</string>
+
     <!-- Error toasts and inline messages. -->
     <string name="lichess_error_unauthenticated">Sign in required</string>
     <string name="lichess_error_username_invalid">Use 2–30 letters, digits, underscores, or hyphens.</string>

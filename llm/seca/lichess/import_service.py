@@ -29,14 +29,36 @@ from typing import Iterator
 
 import chess
 import chess.pgn
-from sqlalchemy.orm import Session as DBSession
+from sqlalchemy.orm import Session as DBSession, sessionmaker
 
 from llm.seca.auth.models import Player
+from llm.seca.auth.router import engine
 from llm.seca.events.models import GameEvent
 from llm.seca.lichess import client as lichess_client
-from llm.seca.lichess.models import LinkedAccount
+from llm.seca.lichess import get_player_import_lock
+from llm.seca.lichess.models import (
+    JOB_STATUS_ACTIVE,
+    JOB_STATUS_FAILED,
+    JOB_STATUS_QUEUED,
+    JOB_STATUS_RUNNING,
+    JOB_STATUS_SUCCEEDED,
+    LichessImportJob,
+    LinkedAccount,
+)
 
 logger = logging.getLogger(__name__)
+
+# Worker-thread session factory.  Separate from the request-scoped
+# ``SessionLocal`` because:
+#   1. The thread that runs ``run_import_job`` is detached from the
+#      request that created the job — request-scoped sessions are
+#      closed by FastAPI's ``Depends(get_db)`` teardown long before.
+#   2. ``expire_on_commit=False`` keeps the loaded ``LinkedAccount`` /
+#      ``LichessImportJob`` rows usable across N per-game commits.  The
+#      default (True) would re-SELECT ``link.last_imported_at`` and
+#      ``job.*`` on every attribute access after each commit — turning
+#      a 100-game import into ~400 unnecessary round-trips.
+_WorkerSession = sessionmaker(bind=engine, expire_on_commit=False)
 
 # Naive-UTC epoch math.  ``datetime.utcfromtimestamp(x).timestamp()`` is
 # NOT round-trip safe because ``.timestamp()`` on a naive datetime
@@ -185,6 +207,13 @@ def unlink_account(db: DBSession, player: Player) -> bool:
     the player had no link to begin with.  Imported game_events rows
     are NOT deleted — they remain as history.  Future:
     DELETE /lichess/data could prune them.
+
+    Any in-flight v2 import jobs for this player are marked ``failed``
+    before the link row is deleted.  The worker picks up the status
+    change via ``db.refresh(job, ['status'])`` between games and exits
+    cleanly without advancing the watermark.  We update jobs BEFORE
+    deleting the link so the worker never sees a half-detached state
+    (link gone but job still ``running``).
     """
     link = (
         db.query(LinkedAccount)
@@ -196,6 +225,17 @@ def unlink_account(db: DBSession, player: Player) -> bool:
     )
     if link is None:
         return False
+
+    db.query(LichessImportJob).filter(
+        LichessImportJob.player_id == player.id,
+        LichessImportJob.status.in_(JOB_STATUS_ACTIVE),
+    ).update(
+        {
+            LichessImportJob.status: JOB_STATUS_FAILED,
+            LichessImportJob.error_message: "link removed during import",
+        },
+        synchronize_session=False,
+    )
     db.delete(link)
     db.commit()
     return True
@@ -207,7 +247,14 @@ def unlink_account(db: DBSession, player: Player) -> bool:
 
 
 def get_status(db: DBSession, player: Player) -> dict:
-    """Return the player's current Lichess link state + import counters."""
+    """Return the player's current Lichess link state + import counters.
+
+    ``active_import_job_id`` is non-null iff a v2 import is in flight for
+    this player (status ``queued`` or ``running``); the Android client
+    uses it to resume the in-progress UI after a sheet dismiss / reopen.
+    Field is omitted from the not-linked response so that shape stays
+    minimal — the client side conditionally reads it.
+    """
     link = (
         db.query(LinkedAccount)
         .filter(
@@ -228,6 +275,15 @@ def get_status(db: DBSession, player: Player) -> dict:
         .count()
     )
 
+    active_job_id = (
+        db.query(LichessImportJob.id)
+        .filter(
+            LichessImportJob.player_id == player.id,
+            LichessImportJob.status.in_(JOB_STATUS_ACTIVE),
+        )
+        .scalar()
+    )
+
     return {
         "linked": True,
         "platform": PLATFORM_LICHESS,
@@ -235,7 +291,68 @@ def get_status(db: DBSession, player: Player) -> dict:
         "linked_at": link.created_at.isoformat() if link.created_at else None,
         "last_imported_at": (link.last_imported_at.isoformat() if link.last_imported_at else None),
         "imported_game_count": int(imported_count),
+        "active_import_job_id": active_job_id,
     }
+
+
+def serialize_job(job: LichessImportJob) -> dict:
+    """Render a ``LichessImportJob`` row as the v2 response body.
+
+    Shared by ``POST /lichess/import`` (202 response) and
+    ``GET /lichess/import/job/{job_id}`` (200 response).  Field set is
+    stable across both so the Android client can decode the same type.
+    """
+    return {
+        "job_id": job.id,
+        "status": job.status,
+        "inserted": int(job.inserted),
+        "skipped_duplicate": int(job.skipped_duplicate),
+        "skipped_invalid": int(job.skipped_invalid),
+        "target_max_games": int(job.target_max_games),
+        "last_imported_at_ms": job.last_imported_at_ms,
+        "error_message": job.error_message,
+        "created_at": job.created_at.isoformat() if job.created_at else None,
+        "updated_at": job.updated_at.isoformat() if job.updated_at else None,
+    }
+
+
+def cleanup_stale_import_jobs_on_startup() -> int:
+    """Mark any ``queued`` / ``running`` jobs as failed on process boot.
+
+    A prior process exit (crash, SIGTERM, container restart) cannot
+    cleanly wind down a worker thread that's blocked on
+    ``httpx.iter_lines``; the row is left ``running`` in the DB even
+    though no thread is attached.  Without this janitor:
+
+    * ``start_import_job`` coalesces forever onto the orphan row.
+    * ``GET /lichess/status.active_import_job_id`` keeps pointing at it,
+      and the Android client polls a job that will never advance.
+
+    Idempotent and cheap.  Runs once from FastAPI lifespan startup,
+    after ``init_schema`` and before the first request hits the route.
+    Returns the count of rows swept (mostly for observability / tests).
+    """
+    db = _WorkerSession()
+    try:
+        affected = (
+            db.query(LichessImportJob)
+            .filter(LichessImportJob.status.in_(JOB_STATUS_ACTIVE))
+            .update(
+                {
+                    LichessImportJob.status: JOB_STATUS_FAILED,
+                    LichessImportJob.error_message: "abandoned by server restart",
+                },
+                synchronize_session=False,
+            )
+        )
+        db.commit()
+        if affected:
+            logger.info(
+                "Lichess import janitor swept %d stale job(s) to failed", affected
+            )
+        return int(affected)
+    finally:
+        db.close()
 
 
 # ---------------------------------------------------------------------------
@@ -251,7 +368,10 @@ def import_user_games(
     perf_types: list[str] | None = None,
     rated: bool = True,
 ) -> dict:
-    """Pull the next slice of games from Lichess for the linked player.
+    """Pull the next slice of games from Lichess for the linked player (v1 sync).
+
+    Used by the legacy ``X-API-Version: 1`` path on ``POST /lichess/import``.
+    The v2 path uses ``start_import_job`` + ``run_import_job`` instead.
 
     Uses the ``last_imported_at`` watermark on the LinkedAccount for
     incremental fetches: only games created *strictly after* the
@@ -281,6 +401,185 @@ def import_user_games(
     if link is None:
         raise LichessNotLinkedError("player has no Lichess account linked")
 
+    return _run_import_stream(
+        db,
+        link,
+        player,
+        max_games=max_games,
+        rated=rated,
+        perf_types=perf_types,
+    )
+
+
+def start_import_job(
+    db: DBSession,
+    player: Player,
+    *,
+    max_games: int,
+    rated: bool = True,
+) -> LichessImportJob:
+    """Create-or-coalesce an import job for the player (v2 async).
+
+    Critical section is per-player: two concurrent ``POST /lichess/import``
+    calls from the same player serialize on ``get_player_import_lock`` so
+    they cannot both pass the "any active job?" SELECT and both insert.
+    On Postgres the partial unique index added in ``init_schema`` is the
+    second line of defense; on SQLite the lock alone carries the property.
+
+    Holds the lock around the SELECT + INSERT + commit only — NOT across
+    the actual Lichess stream, which is the worker's job.  This keeps
+    concurrent imports for *different* players fully parallel.
+
+    Returns the active job row — either one freshly inserted by this
+    call or the one a concurrent caller raced past.  Caller (the router)
+    is responsible for ``executor.submit(run_import_job, job.id, ...)``
+    only when the row was newly created; coalesced returns reuse the
+    worker already running.  ``LichessImportJob.status`` distinguishes:
+    ``queued`` means we just inserted and the worker hasn't picked it up;
+    any other status means a worker is already attached.
+    """
+    if max_games <= 0:
+        raise ValueError("max_games must be positive")
+
+    link = (
+        db.query(LinkedAccount)
+        .filter(
+            LinkedAccount.player_id == player.id,
+            LinkedAccount.platform == PLATFORM_LICHESS,
+        )
+        .first()
+    )
+    if link is None:
+        raise LichessNotLinkedError("player has no Lichess account linked")
+
+    lock = get_player_import_lock(player.id)
+    with lock:
+        existing = (
+            db.query(LichessImportJob)
+            .filter(
+                LichessImportJob.player_id == player.id,
+                LichessImportJob.status.in_(JOB_STATUS_ACTIVE),
+            )
+            .first()
+        )
+        if existing is not None:
+            # Pick up any counter advances the worker has committed.
+            db.refresh(existing)
+            return existing
+
+        job = LichessImportJob(
+            player_id=player.id,
+            status=JOB_STATUS_QUEUED,
+            target_max_games=max_games,
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        return job
+
+
+def run_import_job(job_id: str, *, max_games: int, rated: bool = True) -> None:
+    """Worker entrypoint — runs in the thread pool, not under a request.
+
+    Opens its own ``_WorkerSession`` (``expire_on_commit=False``) so the
+    request-scoped session of the POST that started us has long since
+    closed by the time we run.
+
+    Idempotency: if the job is already terminal at pickup time
+    (``unlink_account`` raced ahead, or the startup janitor marked it
+    failed after a restart) the worker returns without touching the
+    row.  This prevents clobbering ``error_message`` with a generic
+    "linked account not found" when the real cause was the unlink.
+    """
+    db = _WorkerSession()
+    try:
+        job = db.get(LichessImportJob, job_id)
+        if job is None:
+            logger.error("Lichess import job %s not found in worker; aborting", job_id)
+            return
+        if job.status not in JOB_STATUS_ACTIVE:
+            logger.info(
+                "Lichess import job %s already terminal (%s); worker skipping",
+                job_id,
+                job.status,
+            )
+            return
+
+        player = db.get(Player, job.player_id)
+        link = (
+            db.query(LinkedAccount)
+            .filter(
+                LinkedAccount.player_id == job.player_id,
+                LinkedAccount.platform == PLATFORM_LICHESS,
+            )
+            .first()
+        )
+        if player is None or link is None:
+            job.status = JOB_STATUS_FAILED
+            job.error_message = "linked account not found at worker start"
+            db.commit()
+            return
+
+        job.status = JOB_STATUS_RUNNING
+        db.commit()
+
+        try:
+            _run_import_stream(
+                db,
+                link,
+                player,
+                max_games=max_games,
+                rated=rated,
+                job=job,
+            )
+        except Exception as exc:  # pylint: disable=broad-except
+            # Postgres ``InFailedSqlTransaction`` will cascade through
+            # subsequent statements on this session unless we roll back
+            # first — see ``feedback_raw_ddl_dialect_drift``.
+            db.rollback()
+            job_refetch = db.get(LichessImportJob, job_id)
+            if job_refetch is not None and job_refetch.status == JOB_STATUS_RUNNING:
+                # Only overwrite a still-running job: a concurrent
+                # ``unlink_account`` may have already marked it failed
+                # with a more specific reason.
+                job_refetch.status = JOB_STATUS_FAILED
+                job_refetch.error_message = str(exc)[:500]
+                db.commit()
+            logger.warning("Lichess import job %s failed: %s", job_id, exc)
+            return
+
+        # Stream completed.  Promote to succeeded ONLY if the row is
+        # still ``running`` — cancellation may have flipped it to
+        # ``failed`` mid-stream and we must not clobber that.
+        db.refresh(job, ["status"])
+        if job.status == JOB_STATUS_RUNNING:
+            job.status = JOB_STATUS_SUCCEEDED
+            db.commit()
+    finally:
+        db.close()
+
+
+def _run_import_stream(
+    db: DBSession,
+    link: LinkedAccount,
+    player: Player,
+    *,
+    max_games: int,
+    rated: bool,
+    perf_types: list[str] | None = None,
+    job: LichessImportJob | None = None,
+) -> dict:
+    """Drive the Lichess NDJSON stream into ``game_events`` rows.
+
+    Shared between the v1 sync entrypoint (``import_user_games`` — ``job``
+    is None) and the v2 worker (``run_import_job`` — ``job`` is the
+    persistent progress row).  When ``job`` is provided, per-game counter
+    updates are committed to the job row and the loop respects external
+    cancellation via ``job.status`` (set by ``unlink_account``).
+
+    Watermark advance is identical in both modes: only on clean stream
+    completion, never on cancellation or mid-stream exception.
+    """
     user_id_lc = link.external_username.lower()
 
     since_ms: int | None = None
@@ -379,6 +678,34 @@ def import_user_games(
         db.commit()
         existing_ids.add(external_id)
         inserted += 1
+
+        # v2 job mode: mirror counters into the job row + check for
+        # external cancellation (e.g. ``unlink_account``).
+        if job is not None:
+            job.inserted = inserted
+            job.skipped_duplicate = skipped_duplicate
+            job.skipped_invalid = skipped_invalid
+            job.last_imported_at_ms = newest_created_at_ms
+            db.commit()
+            db.refresh(job, ["status"])
+            if job.status not in JOB_STATUS_ACTIVE:
+                # Cancellation observed — leave the row's terminal
+                # status + error_message intact, do NOT advance
+                # watermark.  Already-inserted game rows are retained
+                # (per-game commits).
+                logger.info(
+                    "Lichess import job %s cancelled mid-stream (status=%s)",
+                    job.id,
+                    job.status,
+                )
+                return {
+                    "inserted": inserted,
+                    "skipped_duplicate": skipped_duplicate,
+                    "skipped_invalid": skipped_invalid,
+                    "last_imported_at": (
+                        link.last_imported_at.isoformat() if link.last_imported_at else None
+                    ),
+                }
 
     # Watermark advances only after a clean iteration.  Mid-stream
     # exceptions skip this block; the next retry re-scans and dedup

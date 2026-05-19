@@ -125,7 +125,7 @@ DEBUG = not IS_PROD
 # Pinned by ``llm/tests/test_api_version_header.py`` (AVH_01..AVH_14);
 # the README↔code value link is pinned by
 # ``llm/tests/test_doc_constants_pinned.py::test_api_version_constant``.
-API_VERSIONS_SUPPORTED: tuple[str, ...] = ("1",)
+API_VERSIONS_SUPPORTED: tuple[str, ...] = ("1", "2")
 API_VERSION = API_VERSIONS_SUPPORTED[-1]
 
 #: Cached for the response middleware so the join doesn't run per
@@ -247,6 +247,18 @@ async def lifespan(app: FastAPI):
         # to access Pydantic request models in tests) no longer pays the
         # cost of opening the DB and running DDL.
         init_auth_schema()
+
+        # Sweep Lichess import jobs left in ``queued`` / ``running`` by
+        # a prior crash or SIGTERM.  Their worker thread is gone; the
+        # row would otherwise block ``start_import_job`` coalescing
+        # forever.  Cheap — runs once, idempotent.  Must run AFTER
+        # init_auth_schema so the table exists.
+        from llm.seca.lichess.import_service import (  # noqa: PLC0415
+            cleanup_stale_import_jobs_on_startup,
+        )
+
+        cleanup_stale_import_jobs_on_startup()
+
         world_model = SafeWorldModel()
         enforce(world_model)
         if os.name == "nt":
@@ -313,6 +325,21 @@ async def lifespan(app: FastAPI):
         logger.error("Stockfish engine pool DISABLED: %s", e)
 
     yield
+
+    # Shut down the Lichess import worker pool.  ``wait=False`` +
+    # ``cancel_futures=True`` cancels any queued (not-yet-started)
+    # tasks immediately and lets running workers race uvicorn's
+    # graceful-shutdown timeout (default 30s).  We do NOT block on
+    # in-flight Lichess streams because ``httpx.iter_lines`` can hold
+    # the thread up to its 60s read timeout per chunk — that's a
+    # multi-minute tail at process exit.  Any row left ``running`` is
+    # swept by ``cleanup_stale_import_jobs_on_startup`` on next boot.
+    try:
+        from llm.seca.lichess.router import _executor as _lichess_import_executor
+
+        _lichess_import_executor.shutdown(wait=False, cancel_futures=True)
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.warning("Lichess import executor shutdown error: %s", exc)
 
     if engine_pool:
         engine_pool.close()

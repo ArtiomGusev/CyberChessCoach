@@ -1034,12 +1034,13 @@ No body, no query params.
 
 ```json
 {
-  "linked":              true,
-  "platform":            "lichess",
-  "external_username":   <string>,
-  "linked_at":           <ISO-8601 string | null>,
-  "last_imported_at":    <ISO-8601 string | null>,
-  "imported_game_count": <int>
+  "linked":                true,
+  "platform":              "lichess",
+  "external_username":     <string>,
+  "linked_at":             <ISO-8601 string | null>,
+  "last_imported_at":      <ISO-8601 string | null>,
+  "imported_game_count":   <int>,
+  "active_import_job_id":  <string (UUID) | null>
 }
 ```
 
@@ -1050,6 +1051,12 @@ No body, no query params.
 - `imported_game_count` counts only `game_events` rows where
   `source='lichess'` for this player; it does NOT include in-app
   games.
+- `active_import_job_id` is non-null iff a v2 import job (§31) is in
+  flight (`status='queued'` or `'running'`) for this player.  Added
+  alongside the v2 async path so the Android client can rejoin a
+  progress view after a sheet dismiss / device restart by passing
+  the value to §31a.  Old v1 clients ignore unknown fields and are
+  unaffected.
 
 ---
 
@@ -1122,6 +1129,163 @@ populates `GameEvent.accuracy` / `GameEvent.weaknesses_json` from
 Lichess data.  ESV-based coaching for an imported game is produced
 lazily by re-analysing the stored PGN with the local Stockfish pool
 when (and only when) the user opens that game for review.
+
+### Versioning note
+
+The v1 synchronous contract documented above is preserved for backward
+compatibility with already-shipped Android builds that send
+`X-API-Version: 1` (or no header — also routed to v1).  New clients
+should target **§31 (`POST /lichess/import` v2 async)** — same path,
+same query parameters, but the server returns `202 Accepted` with a
+`LichessImportJob` payload and the actual Lichess stream runs on a
+server-side worker thread.  The v2 path enables a determinate progress
+bar on the client and is the only path that survives a sheet dismiss
+or device restart cleanly (the job row carries the resumable state).
+Server's `API_VERSIONS_SUPPORTED` is `("1", "2")` until the next bump.
+
+---
+
+## 31. `POST /lichess/import` *(v2 async, `X-API-Version: 2`)*
+
+**Host:** `llm/seca/lichess/router.py`
+**Auth:** `Authorization: Bearer <token>` required
+**Rate limit:** 6 / minute
+**Header gate:** `X-API-Version: 2`
+
+Same path as §30; the server branches on the `X-API-Version` request
+header.  When the value is `"2"`, this v2 path runs: the import is
+dispatched to a thread-pool worker and the route returns 202
+immediately with the freshly-created (or coalesced) job row.
+
+The actual Lichess NDJSON stream and per-game commits happen on the
+worker thread; the client polls §31a to follow progress.
+
+### Request
+
+Identical to §30:
+
+| Param | Type | Default | Constraints | Description |
+|-------|------|---------|-------------|-------------|
+| `max_games` | `int` | `50` | `1 ≤ value ≤ 100` | Hard upper bound on games fetched in this call.  Used as the progress bar denominator client-side ("Imported X of up to Y"). |
+| `rated` | `bool` | `true` | — | Filter to rated games only. |
+
+Plus the header gate: requests without `X-API-Version: 2` fall through
+to §30's v1 path.
+
+### Response
+
+```json
+{
+  "job_id":            <string (UUID)>,
+  "status":            <"queued" | "running" | "succeeded" | "failed">,
+  "inserted":          <int>,
+  "skipped_duplicate": <int>,
+  "skipped_invalid":   <int>,
+  "target_max_games":  <int>,
+  "last_imported_at_ms": <int (Unix ms) | null>,
+  "error_message":     <string | null>,
+  "created_at":        <ISO-8601 string>,
+  "updated_at":        <ISO-8601 string>
+}
+```
+
+HTTP status: **202 Accepted**.
+
+- `job_id` — server-issued UUID; pass to §31a to poll progress.
+- `status` — `queued` when the row was freshly inserted by this call
+  (worker has not picked it up yet); any other value means a
+  concurrent caller's job was coalesced into this response.
+- `inserted` / `skipped_*` — counters at the moment the row was read
+  (`queued` rows are always 0; coalesced rows reflect the worker's
+  progress).
+- `target_max_games` — pinned at row creation; the client's progress
+  bar denominator.  Subsequent coalesced calls do NOT update this
+  value (so a second call with a different `max_games` returns the
+  ORIGINAL target).
+- `last_imported_at_ms` — Unix milliseconds of the newest game seen
+  during this run.  Promoted to the canonical
+  `LinkedAccount.last_imported_at` (ISO-8601) only on clean
+  `succeeded`.
+
+### Coalescing
+
+Concurrent calls for the same player return the same `job_id`.  The
+per-player lock in `llm.seca.lichess.get_player_import_lock` is the
+primary guard; on Postgres the partial unique index
+`ix_lichess_import_jobs_one_active_per_player` is the defense in depth.
+
+### Errors
+
+- `400` — player has no Lichess link (`/lichess/link` first).
+- `422` — `max_games` out of range or `rated` not bool.
+- `502` — service-layer crash before the worker dispatch.  (Worker
+  failures DURING the stream are recorded on the job row's
+  `error_message` / `status='failed'`, NOT surfaced through the POST.)
+
+### Trust-boundary note
+
+Same as §30: Lichess `evals=false` is pinned; the import service
+never populates `GameEvent.accuracy` / `weaknesses_json` from Lichess
+data.
+
+---
+
+## 31a. `GET /lichess/import/job/{job_id}` *(v2 async)*
+
+**Host:** `llm/seca/lichess/router.py`
+**Auth:** `Authorization: Bearer <token>` required
+**Rate limit:** 120 / minute (60/min headroom over a 2s steady-state poll)
+
+Poll the state of a v2 import job.  Owner-scoped: returns 404 when
+the job does not exist OR when it belongs to another player (we do
+not differentiate, to avoid leaking the existence of other players'
+jobs).
+
+### Request
+
+Path parameter: `job_id` (UUID returned by §31).  No body, no query.
+
+### Response
+
+Same shape as §31's body (200 OK).  Field semantics identical:
+
+```json
+{
+  "job_id":            <string>,
+  "status":            <"queued" | "running" | "succeeded" | "failed">,
+  "inserted":          <int>,
+  "skipped_duplicate": <int>,
+  "skipped_invalid":   <int>,
+  "target_max_games":  <int>,
+  "last_imported_at_ms": <int | null>,
+  "error_message":     <string | null>,
+  "created_at":        <ISO-8601 string>,
+  "updated_at":        <ISO-8601 string>
+}
+```
+
+Polling cadence: 2s is the Android client's default and the basis for
+the `120/minute` rate limit (steady-state ~30/min + retry headroom).
+Stop polling once `status` is `succeeded` or `failed` (terminal); the
+field set is otherwise stable so a poll that observes terminal counts
+can render the final summary directly.
+
+### Errors
+
+- `404` — job not found OR not owned by current player.
+
+### Cancellation
+
+There is no explicit cancel endpoint.  The two cancellation paths are:
+
+- `DELETE /lichess/link` (§28) — cancels any active jobs for the
+  player with `error_message: "link removed during import"` before
+  removing the link row.  The worker observes the status change via
+  its per-game refresh and exits without advancing the watermark.
+- Server restart — the startup janitor
+  (`cleanup_stale_import_jobs_on_startup`) sweeps any non-terminal
+  rows to `failed` with `error_message: "abandoned by server
+  restart"`.
 
 ---
 

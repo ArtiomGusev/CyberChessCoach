@@ -153,6 +153,28 @@ def init_schema() -> None:
             _column_type_for_dialect("TEXT", "VARCHAR"),
         )
 
+        # Lichess background-import jobs (PR: v2 async import).  One
+        # non-terminal row per player is enforced by:
+        #   (a) llm.seca.lichess.get_player_import_lock — primary
+        #       guard, works on both dialects.
+        #   (b) THIS partial unique index — defense-in-depth on
+        #       Postgres against a future caller that bypasses the
+        #       service-layer lock.
+        # SQLite supports partial indexes since 3.8.0 but the
+        # ``WHERE status IN (...)`` form is finicky to round-trip
+        # via SQLAlchemy reflection, and the lock covers dev anyway,
+        # so we gate this DDL on Postgres only.
+        if not _is_sqlite:
+            conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS "
+                    "ix_lichess_import_jobs_one_active_per_player "
+                    "ON lichess_import_jobs (player_id) "
+                    "WHERE status IN ('queued', 'running')"
+                )
+            )
+            conn.commit()
+
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
