@@ -18,12 +18,23 @@ import java.time.format.DateTimeFormatter
 /**
  * Full-screen bottom sheet showing the player's progress dashboard.
  *
- * Sections:
- *  1. Rating sparkline — last 10 rated games in chronological order.
- *  2. Rating / confidence summary row.
- *  3. Weakness profile — [WeaknessBarChartView] of category scores from the world model.
- *  4. "How the coach sees you" — world-model fields in plain language.
- *  5. Training focus — prioritised recommendations from HistoricalAnalysisPipeline.
+ * Sections (post-Elo-removal):
+ *  1. Weakness profile — [WeaknessBarChartView] of category scores from the world model.
+ *  2. "How the coach sees you" — world-model fields in plain language.
+ *     (OPPONENT ELO row suppressed — would otherwise leak the
+ *     player's own hidden rating since opponent = rating - ~40.)
+ *  3. Coach's plan — most recent decision from SharedPreferences.
+ *  4. Training focus — prioritised recommendations from HistoricalAnalysisPipeline.
+ *
+ * Retired surfaces
+ * ----------------
+ * The hero rating cell, confidence row, and "Rating trend" sparkline
+ * were retired when the user-visible Elo display was hidden.  Their
+ * views remain in the layout with ``visibility="gone"`` so the
+ * findViewById callers below keep resolving; their populate helpers
+ * (``populateRatingRow`` / ``populateSparkline``) are no-ops on the
+ * hidden views and stay in place as scaffolding for a future
+ * XP-progress visualisation that will reuse the sparkline slot.
  *
  * Data is fetched from GET /player/progress (Bearer auth).
  * Inject [gameApiClient] before calling [show].
@@ -262,9 +273,14 @@ class ProgressDashboardBottomSheet : BottomSheetDialogFragment() {
             else           -> current.teachingStyle
         }
 
+        // OPPONENT ELO was removed when the user-visible Elo rating was
+        // hidden from the UI — exposing the matched-opponent rating
+        // here would leak the player's own (now-hidden) rating since
+        // the matcher derives the opponent from rating - ~40.  The
+        // adaptive-difficulty selection itself still happens
+        // internally; it is just no longer displayed.
         val rows = listOf(
             "TIER"          to tierLabel,
-            "OPPONENT ELO"  to "${current.opponentElo}",
             "COACH STYLE"   to styleLabel,
             "DEPTH"         to "%.0f%%".format(current.explanationDepth * 100),
             "COMPLEXITY"    to "%.0f%%".format(current.conceptComplexity * 100),

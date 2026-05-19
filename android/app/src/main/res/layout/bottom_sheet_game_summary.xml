@@ -16,12 +16,16 @@
             - heroSubline — mono cyan metadata
               ("38 MOVES · 27:41 · OPPONENT RESIGNED"); placeholder
               hidden until activity populates.
-      4.  3-cell metric strip with hairline grid:
-            - RATING — txtNewRating (cyan numeric) + kicker.
+      4.  2-cell metric strip with hairline grid:
             - ACCURACY — txtConfidenceLabel + small inline
               progressConfidence track + kicker.
             - THEME — txtLearningStatus reused as italic value +
               kicker.
+            (The RATING cell — txtNewRating — was retired when the
+            user-visible Elo display was hidden from the UI; the
+            ``newRating`` value still flows from /game/finish into
+            PREF_RATING so adaptive opponent matching keeps working
+            internally.)
       5.  Coach reflection (DropCapTextView, txtCoachDescription) —
           first letter renders as a cyan-glowing italic drop cap.
       6.  Optional payload container (layoutPayload).
@@ -30,7 +34,7 @@
       8.  Footer — btnStartTraining as Atrium.Button.Primary.
 
     Preserved IDs (every findViewById in GameSummaryBottomSheet.kt
-    keeps resolving): txtNewRating, txtActionBadge, progressConfidence,
+    keeps resolving): txtActionBadge, progressConfidence,
     txtConfidenceLabel, txtCoachTitle, txtCoachDescription,
     layoutPayload, txtLearningStatus, trainingCard, txtTrainingTopic,
     txtTrainingFormat, txtTrainingGain, progressDifficulty,
@@ -140,37 +144,10 @@
         android:layout_marginTop="@dimen/atrium_space_16"
         android:baselineAligned="false">
 
-        <!-- Cell 1 — RATING. -->
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical"
-            android:padding="@dimen/atrium_space_12">
-
-            <TextView
-                android:id="@+id/txtNewRating"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textAppearance="@style/Atrium.Numeric.Cyan"
-                android:textSize="20sp"
-                tools:text="+7" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/atrium_space_4"
-                android:textAppearance="@style/Atrium.Kicker"
-                android:text="Rating" />
-
-        </LinearLayout>
-
-        <View
-            android:layout_width="@dimen/atrium_hairline_thickness"
-            android:layout_height="match_parent"
-            android:background="@color/atrium_hairline" />
-
-        <!-- Cell 2 — ACCURACY (txtConfidenceLabel value + thin track). -->
+        <!-- Cell 1 — ACCURACY (txtConfidenceLabel value + thin track).
+             Was Cell 2 before the user-visible Elo rating display was
+             retired; the RATING cell + its trailing hairline were
+             removed so the strip is now ACCURACY · THEME. -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -212,7 +189,7 @@
             android:layout_height="match_parent"
             android:background="@color/atrium_hairline" />
 
-        <!-- Cell 3 — THEME (txtLearningStatus reused as italic value). -->
+        <!-- Cell 2 — THEME (txtLearningStatus reused as italic value). -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"

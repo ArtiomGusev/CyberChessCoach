@@ -96,13 +96,18 @@
             android:padding="@dimen/atrium_space_16"
             android:background="@drawable/atrium_paywall_plan_active">
 
-            <!-- Rating row. -->
+            <!-- Rating row.  Hidden when the user-visible Elo display
+                 was removed from the UI; view stays in the tree so
+                 OnboardingCompleteActivity.findViewById<TextView>(
+                 R.id.onboardingCompleteRating) keeps resolving. -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:baselineAligned="false">
+                android:baselineAligned="false"
+                android:visibility="gone"
+                tools:visibility="gone">
 
                 <TextView
                     android:layout_width="0dp"
@@ -129,7 +134,8 @@
                 android:layout_height="@dimen/atrium_hairline_thickness"
                 android:layout_marginTop="@dimen/atrium_space_8"
                 android:layout_marginBottom="@dimen/atrium_space_8"
-                android:background="@color/atrium_hairline" />
+                android:background="@color/atrium_hairline"
+                android:visibility="gone" />
 
             <!-- Confidence row. -->
             <LinearLayout
@@ -164,15 +170,24 @@
                 android:layout_height="@dimen/atrium_hairline_thickness"
                 android:layout_marginTop="@dimen/atrium_space_8"
                 android:layout_marginBottom="@dimen/atrium_space_8"
-                android:background="@color/atrium_hairline" />
+                android:background="@color/atrium_hairline"
+                android:visibility="gone" />
 
-            <!-- First opponent row. -->
+            <!-- First opponent row.  Hidden when the user-visible Elo
+                 display was removed — the row showed "~1680 · adaptive"
+                 which is a direct function of the player's rating
+                 (opponent = rating - ~40) and would leak the rating
+                 number we just hid.  View stays in the tree so the
+                 findViewById<TextView>(R.id.onboardingCompleteOpponent)
+                 lookup in OnboardingCompleteActivity keeps resolving. -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:baselineAligned="false">
+                android:baselineAligned="false"
+                android:visibility="gone"
+                tools:visibility="gone">
 
                 <TextView
                     android:layout_width="0dp"

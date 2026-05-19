@@ -96,15 +96,16 @@
                 android:text="—"
                 tools:text="Tuesday · Day 047" />
 
-            <!-- Personal rating kicker — the player's current Elo
-                 from the server.  Wired in HomeActivity.onCreate:
-                 reads cached PREF_RATING for instant display, then
-                 fires GET /auth/me to refresh.  Hidden when no
-                 rating is known yet (fresh install before first
-                 successful /auth/me).  Cyan accent because this is
-                 the player-side anchor on this screen, mirroring
-                 the same role assignment used in AtriumChapterHeaderView
-                 / EvalBandView. -->
+            <!-- Training XP / Level kicker — replaces the legacy Elo
+                 rating display.  Wired in HomeActivity.onCreate: reads
+                 cached PREF_TRAINING_XP for instant display, then fires
+                 GET /auth/me to refresh.  Hidden until the first
+                 successful /auth/me populates the cache.  Cyan accent
+                 keeps the role assignment of the previous Elo kicker
+                 (player-side anchor on this screen, mirroring
+                 AtriumChapterHeaderView / EvalBandView).  The id is
+                 retained — only the displayed text changes — so test
+                 hooks and existing findViewById callers keep working. -->
             <TextView
                 android:id="@+id/homePersonalRating"
                 android:layout_width="wrap_content"
@@ -115,7 +116,7 @@
                 android:text="—"
                 android:visibility="gone"
                 tools:visibility="visible"
-                tools:text="Rating · 1196" />
+                tools:text="Level 1 · 0 XP" />
 
             <!--
                 Pending-sync indicator — surfaces an unsynced
@@ -257,7 +258,7 @@
                             android:layout_marginTop="@dimen/atrium_space_4"
                             android:textAppearance="@style/Atrium.Kicker"
                             android:text="—"
-                            tools:text="vs. ~1680 · your move" />
+                            tools:text="vs. adaptive · your move" />
 
                     </LinearLayout>
 
@@ -303,7 +304,7 @@
                         android:id="@+id/homeRowNewGameSub"
                         style="@style/Atrium.HomeLibraryRow.Sub"
                         android:text="Adaptive opponent"
-                        tools:text="Adaptive opponent · ~1680" />
+                        tools:text="Adaptive opponent" />
 
                 </LinearLayout>
 

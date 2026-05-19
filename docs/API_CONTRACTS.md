@@ -395,9 +395,18 @@ Returns the authenticated player's profile + skill vector.
   "email":        <string>,
   "rating":       <float>,
   "confidence":   <float>,
-  "skill_vector": { "<skill>": <float>, ... }
+  "skill_vector": { "<skill>": <float>, ... },
+  "training_xp":  <int>
 }
 ```
+
+`training_xp` is a monotonic counter incremented when the player completes a
+training exercise (the seed = replay of an engine-flagged mistake from their
+own game; the derivatives = weekly micro-tasks of the same mistake pattern in
+new positions).  The Android client renders it as a Level/XP card on the Home
+screen; `rating` and `confidence` are still returned but are no longer shown
+to the user — they continue to drive adaptive opponent selection internally.
+Defaults to `0` for legacy rows.
 
 ### `PATCH /auth/me`
 

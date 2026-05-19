@@ -50,7 +50,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var gameApiClient: GameApiClient
     private lateinit var authApiClient: AuthApiClient
     private lateinit var authRepo: AuthRepository
-    private lateinit var txtRatingHeader: TextView
     private lateinit var txtWeaknessTags: TextView
     private lateinit var txtNextTrainingChip: TextView
     private var currentPlayerId: String = "demo"
@@ -177,7 +176,6 @@ class MainActivity : AppCompatActivity() {
         txtEngineScore = findViewById(R.id.txtEngineScore)
         txtMistakeCategory = findViewById(R.id.txtMistakeCategory)
 
-        txtRatingHeader = findViewById(R.id.txtRatingHeader)
         txtWeaknessTags = findViewById(R.id.txtWeaknessTags)
         txtNextTrainingChip = findViewById(R.id.txtNextTrainingChip)
         val btnExitToHome = findViewById<Button>(R.id.btnExitToHome)
@@ -349,12 +347,11 @@ class MainActivity : AppCompatActivity() {
             performLogout()
         }
 
-        // Show persisted rating and cached curriculum chip if available.
+        // Cached curriculum chip if available — the rating header was
+        // retired from the drawer when the user-visible Elo display was
+        // removed.  PREF_RATING is still read elsewhere (silent adaptive
+        // opponent matching) but no longer drives any UI on this screen.
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-        val storedRating = prefs.getFloat(PREF_RATING, -1f)
-        if (storedRating >= 0f) {
-            txtRatingHeader.text = "Rating: %.0f".format(storedRating)
-        }
         val cachedTopic = prefs.getString(PREF_CURRICULUM_TOPIC, null)
         val cachedExType = prefs.getString(PREF_CURRICULUM_EXERCISE_TYPE, null)
         if (cachedTopic != null) {
@@ -388,14 +385,20 @@ class MainActivity : AppCompatActivity() {
                         // SettingsBottomSheet.firePatchAuthMe).  No
                         // auto-retry on cold-start.
                         val server = r.data
-                        txtRatingHeader.text = "Rating: %.0f".format(server.rating)
                         // Wipe the stale onboarding-time estimate too,
                         // so older installs (where the PATCH cleanup
                         // hadn't yet been added) don't carry the
-                        // pre-PR-#175 dirty value forward.
+                        // pre-PR-#175 dirty value forward.  Rating +
+                        // confidence are still cached because adaptive
+                        // opponent matching reads them silently — only
+                        // the drawer's "Rating: ..." label was retired
+                        // when the UI hid the user-facing Elo number.
+                        // training_xp populates the new Home Level/XP
+                        // kicker via PREF_TRAINING_XP.
                         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
                             .putFloat(PREF_RATING, server.rating)
                             .putFloat(PREF_CONFIDENCE, server.confidence)
+                            .putInt(PREF_TRAINING_XP, server.trainingXp)
                             .remove(PREF_PLAYER_RATING_ESTIMATE)
                             .remove(PREF_PLAYER_CONFIDENCE_LOCAL)
                             .apply()
@@ -605,6 +608,12 @@ class MainActivity : AppCompatActivity() {
         const val PREFS_NAME = "chesscoach_prefs"
         const val PREF_RATING = "last_rating"
         const val PREF_CONFIDENCE = "last_confidence"
+        // Training XP counter cached from /auth/me.  Drives the Home
+        // screen's Level/XP kicker that replaced the user-visible Elo
+        // rating.  Rating + confidence are still cached above because
+        // they continue to power adaptive opponent matching internally
+        // — only the user-facing display switched.
+        const val PREF_TRAINING_XP = "last_training_xp"
         const val PREF_CURRICULUM_TOPIC = "curriculum_topic"
         const val PREF_CURRICULUM_DIFFICULTY = "curriculum_difficulty"
         const val PREF_CURRICULUM_EXERCISE_TYPE = "curriculum_exercise_type"
@@ -1176,8 +1185,10 @@ class MainActivity : AppCompatActivity() {
     ) {
         coachText.text = response.coachContent.title
 
-        // Update rating header immediately so it's visible when the drawer is open
-        txtRatingHeader.text = "Rating: %.0f".format(response.newRating)
+        // (Drawer rating header retired alongside the rest of the
+        // user-visible Elo surfaces.  ``response.newRating`` is still
+        // consumed downstream — GameSummaryBottomSheet writes it back
+        // to PREF_RATING so adaptive opponent matching keeps working.)
 
         if (supportFragmentManager.isStateSaved) return
         val sheet = GameSummaryBottomSheet.newInstance(

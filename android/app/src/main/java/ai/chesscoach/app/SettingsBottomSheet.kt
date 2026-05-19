@@ -119,11 +119,12 @@ class SettingsBottomSheet : BottomSheetDialogFragment() {
         view.findViewById<View>(R.id.rowNotifications).setOnClickListener { notif.toggle() }
 
         // ── Profile · Skill rating chevron row ──────────────────────
-        val ratingValueLabel = view.findViewById<TextView>(R.id.rowEditRatingValue)
-        ratingValueLabel.text = formatRatingLabel(prefs)
-        view.findViewById<View>(R.id.rowEditRating).setOnClickListener {
-            showEditRatingDialog(prefs, ratingValueLabel)
-        }
+        // Retired when the user-visible Elo display was hidden from the
+        // UI; the layout views are still in the tree with
+        // ``visibility="gone"`` (see bottom_sheet_settings.xml).  The
+        // showEditRatingDialog / persistRating / firePatchAuthMe helpers
+        // below are now unreachable from the UI but remain in place
+        // until the next phase replaces the calibration affordance.
 
         // ── Integrations · Lichess chevron row ──────────────────────
         view.findViewById<View>(R.id.rowConnectLichess).setOnClickListener {

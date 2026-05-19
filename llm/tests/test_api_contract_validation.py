@@ -44,6 +44,14 @@ def _assert_int_or_none(value, field: str) -> None:
     ), f"{field} must be int | None, got {type(value).__name__}: {value!r}"
 
 
+def _assert_int(value, field: str) -> None:
+    # ``bool`` is a subclass of ``int`` in Python; exclude it explicitly so a
+    # ``True`` / ``False`` slipping through never silently passes the check.
+    assert isinstance(value, int) and not isinstance(
+        value, bool
+    ), f"{field} must be int, got {type(value).__name__}: {value!r}"
+
+
 def _assert_str(value, field: str) -> None:
     assert isinstance(value, str), f"{field} must be str, got {type(value).__name__}: {value!r}"
 
@@ -478,7 +486,7 @@ class TestGameFinishContractSchema:
 class TestAuthMeContractSchema:
     """GET /auth/me response must include a 'skill_vector' dict field (P2-A)."""
 
-    def _call_me(self, skill_vector_json: str = "{}"):
+    def _call_me(self, skill_vector_json: str = "{}", training_xp: int = 0):
         from types import SimpleNamespace
 
         from llm.seca.auth.router import me
@@ -489,6 +497,7 @@ class TestAuthMeContractSchema:
             rating=1450.0,
             confidence=0.65,
             skill_vector_json=skill_vector_json,
+            training_xp=training_xp,
         )
         return me(player=player)
 
@@ -535,6 +544,34 @@ class TestAuthMeContractSchema:
             "Non-numeric entries must be excluded from skill_vector response."
         )
         assert "tactics" in result["skill_vector"]
+
+    def test_me_response_has_training_xp_field(self):
+        """training_xp must be present so the Android Home screen can render
+        a Level/XP card in place of the hidden Elo rating."""
+        result = self._call_me()
+        assert "training_xp" in result, (
+            "GET /auth/me must include 'training_xp' — Home screen reads it "
+            "to render the Level/XP card after Elo was removed from the UI."
+        )
+
+    def test_training_xp_is_int(self):
+        """training_xp is an integer counter on the wire; the Android client
+        deserialises it as ``Int`` and renders it as ``Level N · X XP``."""
+        result = self._call_me(training_xp=42)
+        _assert_int(result["training_xp"], "training_xp")
+        assert result["training_xp"] == 42
+
+    def test_training_xp_defaults_to_zero(self):
+        """Fresh players have no completed trainings yet → 0."""
+        result = self._call_me()
+        assert result["training_xp"] == 0
+
+    def test_training_xp_null_coerced_to_zero(self):
+        """A legacy row predating the column migration may serialise NULL;
+        ``_serialise_player`` must coerce that to 0 so the client never sees
+        a missing-XP shape."""
+        result = self._call_me(training_xp=None)
+        assert result["training_xp"] == 0
 
 
 # ---------------------------------------------------------------------------

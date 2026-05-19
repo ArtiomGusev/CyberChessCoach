@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timedelta
 
-from sqlalchemy import DateTime, Float, ForeignKey, String, Text
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -30,6 +30,16 @@ class Player(Base):
     confidence: Mapped[float] = mapped_column(Float, default=0.5)
     skill_vector_json: Mapped[str] = mapped_column(Text, default="{}")
     player_embedding: Mapped[str] = mapped_column(Text, default="[]")
+
+    # Monotonic counter incremented when the player completes a
+    # training exercise (seed = replay of their own engine-flagged
+    # mistake; derivatives = weekly micro-tasks generated from the
+    # mistake pattern).  Surfaced via /auth/me so the Android Home
+    # screen can render a Level/XP card in place of the hidden Elo
+    # rating.  Rating + confidence stay on the row because they still
+    # drive adaptive opponent selection internally — only the UI
+    # surface changes.
+    training_xp: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     sessions: Mapped[list["Session"]] = relationship("Session", back_populates="player")
 

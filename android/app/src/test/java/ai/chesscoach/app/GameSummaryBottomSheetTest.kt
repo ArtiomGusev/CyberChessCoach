@@ -13,8 +13,10 @@ import org.junit.Test
  *
  * Invariants pinned
  * -----------------
- *  1.  FORMAT_RATING_WHOLE:              formatRating rounds to integer correctly.
- *  2.  FORMAT_RATING_ZERO:               formatRating handles 0.0.
+ *  1.  RETIRED: formatRating helper was removed when the user-visible
+ *      Elo display was hidden from the UI.  See Home XP kicker tests
+ *      in HomeActivityTest for the replacement player-anchor surface.
+ *  2.  (retired)
  *  3.  FORMAT_CONFIDENCE_PERCENT:        formatConfidence converts 0.0–1.0 to percent string.
  *  4.  CONFIDENCE_PROGRESS_BOUNDS:       confidenceProgress clamps outside 0–1.
  *  5.  CONFIDENCE_PROGRESS_MIDPOINT:     confidenceProgress 0.5 → 50.
@@ -61,21 +63,8 @@ class GameSummaryBottomSheetTest {
     )
 
     // ------------------------------------------------------------------
-    // 1–2  formatRating
+    // 1–2  formatRating — retired alongside the Elo display.
     // ------------------------------------------------------------------
-
-    @Test
-    fun `formatRating rounds to integer`() {
-        // Atrium re-skin: bare value, no "Rating:" prefix — the cell
-        // kicker carries the label.  See GameSummaryBottomSheet docstring.
-        assertEquals("1200", GameSummaryBottomSheet.formatRating(1200f))
-        assertEquals("1350", GameSummaryBottomSheet.formatRating(1349.6f))
-    }
-
-    @Test
-    fun `formatRating handles zero`() {
-        assertEquals("0", GameSummaryBottomSheet.formatRating(0f))
-    }
 
     // ------------------------------------------------------------------
     // 3–5  formatConfidence / confidenceProgress
@@ -207,11 +196,10 @@ class GameSummaryBottomSheetTest {
             description = "You missed a fork on move 12.",
         )
         // Atrium re-skin (192d7408): bare values — the metric-strip
-        // cells carry their own "RATING" / "ACCURACY" kickers, so the
-        // formatters no longer prefix.  Two single-call tests above
-        // were updated in the same commit; this end-to-end test was
-        // missed and only surfaced when ./gradlew test ran.
-        assertEquals("1350", GameSummaryBottomSheet.formatRating(resp.newRating))
+        // cells carry their own kickers, so the formatters no longer
+        // prefix.  The RATING cell was retired when the user-visible
+        // Elo display was hidden; only ACCURACY / THEME / coach copy
+        // remain on the strip.
         assertEquals("85%",  GameSummaryBottomSheet.formatConfidence(resp.confidence))
         assertEquals(85,                GameSummaryBottomSheet.confidenceProgress(resp.confidence))
         assertEquals("DRILL",           GameSummaryBottomSheet.actionBadgeLabel(resp.coachAction.type))

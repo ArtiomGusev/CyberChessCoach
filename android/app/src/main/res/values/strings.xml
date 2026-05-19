@@ -31,9 +31,14 @@
     <string name="lichess_import_button_label">Import games</string>
     <string name="lichess_unlink_button_label">Unlink Lichess</string>
 
-    <!-- Calibration banner — shown once on the post-link transition. -->
-    <string name="lichess_calibration_banner">Rating set to %1$d from your Lichess %2$s (%3$d games).</string>
-    <string name="lichess_calibration_banner_provisional">Rating set to %1$d from your Lichess %2$s (%3$d games, provisional).</string>
+    <!-- Calibration banner — shown once on the post-link transition.
+         The numeric rating used to lead this line ("Rating set to 1645
+         from your Lichess ...") but was dropped when the user-visible
+         Elo display was hidden from the UI.  The calibrated rating is
+         still applied internally and continues to drive adaptive
+         opponent matching — we just no longer expose the number. -->
+    <string name="lichess_calibration_banner">Calibrated from your Lichess %1$s (%2$d games).</string>
+    <string name="lichess_calibration_banner_provisional">Calibrated from your Lichess %1$s (%2$d games, provisional).</string>
 
     <!-- Import-completion toasts. -->
     <string name="lichess_import_summary_inserted">Imported %1$d games</string>

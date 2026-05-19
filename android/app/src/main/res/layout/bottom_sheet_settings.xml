@@ -242,7 +242,13 @@
         <View
             style="@style/Atrium.SettingsDivider" />
 
-        <!-- ── Profile ──────────────────────────────────────────────── -->
+        <!-- ── Profile ──────────────────────────────────────────────────
+             The "Skill rating" row was the only entry under Profile
+             and was retired when the user-visible Elo display was
+             hidden from the UI.  Header + row + divider are kept in
+             the tree with ``visibility="gone"`` so existing findViewById
+             callers in SettingsBottomSheet.kt resolve without a
+             refactor; the click handler is no longer wired. -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -251,11 +257,13 @@
             android:paddingStart="@dimen/atrium_space_24"
             android:paddingEnd="@dimen/atrium_space_24"
             android:paddingTop="@dimen/atrium_space_16"
-            android:paddingBottom="@dimen/atrium_space_8" />
+            android:paddingBottom="@dimen/atrium_space_8"
+            android:visibility="gone" />
 
         <LinearLayout
             android:id="@+id/rowEditRating"
-            style="@style/Atrium.SettingsRow.Trailing">
+            style="@style/Atrium.SettingsRow.Trailing"
+            android:visibility="gone">
 
             <TextView
                 style="@style/Atrium.SettingsRow.Title"
@@ -282,7 +290,8 @@
         </LinearLayout>
 
         <View
-            style="@style/Atrium.SettingsDivider" />
+            style="@style/Atrium.SettingsDivider"
+            android:visibility="gone" />
 
         <!-- ── Integrations ─────────────────────────────────────────── -->
         <TextView

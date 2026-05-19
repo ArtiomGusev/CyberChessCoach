@@ -20,7 +20,6 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
-import kotlin.math.roundToInt
 
 /**
  * Cereveon · Atrium · Home / Library (handoff screen #5).
@@ -96,11 +95,15 @@ class HomeActivity : AppCompatActivity() {
 
     /**
      * Lazy AuthApiClient used for the cold-start GET /auth/me that
-     * populates the personal-rating kicker.  Pre-PR-#184 only
-     * MainActivity fetched /auth/me, so the home screen's rating
-     * display was blank until the user either opened MainActivity OR
-     * finished a game.  User feedback 2026-05-18: "When I open the
-     * app there is no personal rating - it appears only after a game".
+     * populates the training-XP kicker (post-Elo-removal).  Same
+     * round-trip pattern as the earlier rating-kicker variant — the
+     * server response is now read for ``training_xp`` instead of
+     * ``rating`` and the cached value lives under
+     * [MainActivity.PREF_TRAINING_XP] so a cold-start renders
+     * instantly without waiting for the network.  Rating + confidence
+     * fields are still read off the same response (they remain in the
+     * SharedPreferences cache to power adaptive opponent matching
+     * internally) — they are simply not displayed any more.
      */
     private val authApiClient: AuthApiClient by lazy {
         HttpAuthApiClient(
@@ -253,42 +256,47 @@ class HomeActivity : AppCompatActivity() {
             launchMain(sheet = MainActivity.OPEN_SHEET_PROFILE)
         }
 
-        // Mirror the cached rating into the "I — New game" sub so it
-        // reflects the player's current calibration without waiting for
-        // a network round-trip.  The opponent rating is biased ~40
-        // below per the Onboarding handoff.
+        // Render the XP kicker from the cached counter so a Home
+        // cold-start shows a value instantly, before the /auth/me
+        // round-trip below.  The "I — New game" sub keeps its
+        // default "Adaptive opponent" copy — the rating-derived
+        // opponent number that used to be appended was removed when
+        // Elo was hidden from the UI.
         val personalRatingView = findViewById<TextView>(R.id.homePersonalRating)
-        val newGameSubView = findViewById<TextView>(R.id.homeRowNewGameSub)
-        val cachedRating = prefs.getFloat(MainActivity.PREF_RATING, -1f)
-        if (cachedRating >= 0f) {
-            renderRatingChips(personalRatingView, newGameSubView, cachedRating)
+        val cachedXp = prefs.getInt(MainActivity.PREF_TRAINING_XP, -1)
+        if (cachedXp >= 0) {
+            renderXpKicker(personalRatingView, cachedXp)
         }
 
         // Refresh from the server on every Home cold-start so:
         //   - A fresh install (no SharedPreferences cache) shows the
-        //     rating immediately, not just after the first game.
-        //   - The rating kicker stays in sync with server-side Elo
-        //     updates that landed while the app was backgrounded
-        //     (e.g. games finished on another device).
+        //     XP kicker immediately, not just after the first game.
+        //   - The kicker stays in sync with server-side XP updates
+        //     that landed while the app was backgrounded (e.g.
+        //     trainings completed on another device).
         // Same /auth/me round-trip MainActivity already runs at its
         // cold-start; running it here too is cheap (one GET) and the
         // PREF write-back is shared.  PR #183's "no PATCH from cold-
-        // start" invariant is preserved — this is pure GET.
+        // start" invariant is preserved — this is pure GET.  We still
+        // write rating + confidence to SharedPreferences because they
+        // continue to drive adaptive opponent matching internally,
+        // even though they are no longer displayed.
         val authToken = authRepo.getToken()
         if (authToken != null) {
             lifecycleScope.launch {
                 when (val r = authApiClient.me(authToken)) {
                     is ApiResult.Success -> {
                         val server = r.data
-                        renderRatingChips(personalRatingView, newGameSubView, server.rating)
+                        renderXpKicker(personalRatingView, server.trainingXp)
                         prefs.edit()
                             .putFloat(MainActivity.PREF_RATING, server.rating)
                             .putFloat(MainActivity.PREF_CONFIDENCE, server.confidence)
+                            .putInt(MainActivity.PREF_TRAINING_XP, server.trainingXp)
                             .apply()
                     }
                     else -> {
-                        // Cache-hit path already populated the chips
-                        // (or they stay hidden on a fresh install) —
+                        // Cache-hit path already populated the kicker
+                        // (or it stays hidden on a fresh install) —
                         // network failure is non-fatal at the home
                         // surface.  MainActivity's own /auth/me on the
                         // next New-game tap is the recovery.
@@ -299,20 +307,16 @@ class HomeActivity : AppCompatActivity() {
     }
 
     /**
-     * Populate the personal-rating kicker AND the New-game row's
-     * adaptive-opponent sub from a single rating value.  Centralised
-     * so the cache-hit and post-/auth/me code paths can't drift on
-     * formatting.
+     * Populate the XP / Level kicker from a single training-XP value.
+     * Centralised so the cache-hit and post-/auth/me code paths can't
+     * drift on formatting.
      */
-    private fun renderRatingChips(
+    private fun renderXpKicker(
         personalRating: TextView,
-        newGameSub: TextView,
-        rating: Float,
+        xp: Int,
     ) {
-        personalRating.text = "Rating · ${rating.roundToInt()}"
+        personalRating.text = formatXpKicker(xp)
         personalRating.visibility = View.VISIBLE
-        val opponent = OnboardingActivity.formatFirstOpponent(rating)
-        newGameSub.text = "Adaptive opponent · $opponent"
     }
 
     /**
@@ -338,19 +342,19 @@ class HomeActivity : AppCompatActivity() {
         if (::syncIndicator.isInitialized) {
             refreshSyncIndicator(prefs)
         }
-        // The user may have finished a game in MainActivity while Home
-        // was off-screen — GameSummaryBottomSheet writes PREF_RATING
-        // before dismissing, so re-read it here to refresh the rating
-        // kicker without waiting for the next /auth/me on next cold-
-        // start.  Defensive ``isInitialized`` guard mirrors the
-        // sync-indicator one above (HomeActivity#onCreate may have
-        // early-returned in the unauthenticated branch).
-        val cachedRating = prefs.getFloat(MainActivity.PREF_RATING, -1f)
-        if (cachedRating >= 0f) {
+        // The user may have finished a training (or game) in
+        // MainActivity while Home was off-screen — the XP cache is
+        // updated alongside any /auth/me round-trip, so re-read it
+        // here to refresh the kicker without waiting for the next
+        // /auth/me on next cold-start.  Defensive ``isInitialized``
+        // guard mirrors the sync-indicator one above (HomeActivity
+        // #onCreate may have early-returned in the unauthenticated
+        // branch).
+        val cachedXp = prefs.getInt(MainActivity.PREF_TRAINING_XP, -1)
+        if (cachedXp >= 0) {
             val personalRating = findViewById<TextView>(R.id.homePersonalRating)
-            val newGameSub = findViewById<TextView>(R.id.homeRowNewGameSub)
-            if (personalRating != null && newGameSub != null) {
-                renderRatingChips(personalRating, newGameSub, cachedRating)
+            if (personalRating != null) {
+                renderXpKicker(personalRating, cachedXp)
             }
         }
     }
@@ -433,10 +437,8 @@ class HomeActivity : AppCompatActivity() {
             return
         }
 
-        val playerRating = prefs.getFloat(MainActivity.PREF_RATING, -1f)
-            .takeIf { it >= 0f }
         resumeTitle.text = formatResumeTitle(gameNumber, moveCount)
-        resumeSub.text   = formatResumeSub(playerRating, timestamp)
+        resumeSub.text   = formatResumeSub(timestamp)
         resumeBlock.visibility = View.VISIBLE
         findViewById<View>(R.id.homeResumeCard).setOnClickListener {
             // EXTRA_RESUME tells MainActivity.onCreate to skip
@@ -510,19 +512,33 @@ class HomeActivity : AppCompatActivity() {
             "Game ${"%03d".format(max(1, gameNumber))} · move $moveCount"
 
         /**
-         * "vs. ~XXXX · HH:mm" — opponent rating biased ~40 below the
-         * player's (matches the Onboarding handoff intent).  When no
-         * cached rating is available we fall back to "vs. adaptive".
-         * Time renders in the device's local timezone since the kicker
-         * itself is a wall-clock display.
+         * "vs. adaptive · HH:mm" — opponent identity reads as the
+         * generic adaptive opponent.  The numeric opponent rating
+         * (player rating biased ~40 below) was removed when Elo was
+         * hidden from the UI; the opponent-matching math still uses
+         * the cached rating internally, the user just no longer sees
+         * the derived number.  Time renders in the device's local
+         * timezone since the kicker itself is a wall-clock display.
          */
-        fun formatResumeSub(playerRating: Float?, timestampMillis: Long): String {
-            val opponent = playerRating
-                ?.let { (it - 40f).coerceAtLeast(800f).roundToInt() }
-                ?.let { "vs. ~$it" }
-                ?: "vs. adaptive"
+        fun formatResumeSub(timestampMillis: Long): String {
             val time = SimpleDateFormat("HH:mm", Locale.US).format(Date(timestampMillis))
-            return "$opponent · $time"
+            return "vs. adaptive · $time"
         }
+
+        /**
+         * "Level N · X XP" — total XP plus the level it implies.
+         * Phase 1 ships a simple linear curve (100 XP per level) so
+         * the renderer is testable without a back-end source of
+         * truth on the level boundary; later phases can swap the
+         * formula without touching callers.
+         */
+        fun formatXpKicker(xp: Int): String {
+            val safeXp = max(0, xp)
+            val level = max(1, safeXp / XP_PER_LEVEL + 1)
+            return "Level $level · $safeXp XP"
+        }
+
+        /** Linear XP-per-level boundary used by [formatXpKicker]. */
+        const val XP_PER_LEVEL = 100
     }
 }

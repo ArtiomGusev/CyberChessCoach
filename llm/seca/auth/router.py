@@ -111,6 +111,17 @@ def init_schema() -> None:
             _column_type_for_dialect("TEXT DEFAULT '[]'", "TEXT DEFAULT '[]'"),
         )
 
+        # Player.training_xp — monotonic per-player XP counter that
+        # replaces the user-visible Elo kicker on the Android Home
+        # screen.  DEFAULT 0 backfills legacy rows so /auth/me never
+        # returns NULL for this field (Mapped[int] is non-Optional).
+        _ensure_column(
+            conn,
+            "players",
+            "training_xp",
+            "INTEGER DEFAULT 0",
+        )
+
         # F-07 rotation race grace window — see Session model + service.
         # Sessions table pre-dates these columns on both dialects.
         # Both columns nullable so existing rows pass through without a
@@ -485,6 +496,7 @@ def _serialise_player(player) -> dict:
         "rating": player.rating,
         "confidence": player.confidence,
         "skill_vector": skill_vector,
+        "training_xp": int(player.training_xp or 0),
     }
 
 
