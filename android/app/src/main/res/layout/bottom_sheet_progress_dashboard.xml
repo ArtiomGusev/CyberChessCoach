@@ -5,23 +5,25 @@
     Top → bottom:
       1.  Drag handle.
       2.  Chapter header — "PROFILE" / "Your trends".
-      3.  Hero rating — italic display 44sp.  Activity sets
-          txtRating to a bare integer (e.g. "1720"); the kicker
-          beneath labels it.
-      4.  Confidence row — small inline cell with mono numeric and
-          ACCURACY-style kicker.
-      5.  RATING TREND section — kicker + RatingSparklineView (or
-          txtNoRatingHistory empty state).
-      6.  WEAKNESS PROFILE section — kicker + WeaknessBarChartView.
+      3.  WEAKNESS PROFILE section — kicker + WeaknessBarChartView.
           Atrium uses italic chips for "patterns" (handoff #9), but
           the existing bar chart is more informative — kept and
           re-skinned via the foundation theme cascade rather than
           reduced to chips.
-      7.  HOW THE COACH SEES YOU section — kicker +
+      4.  HOW THE COACH SEES YOU section — kicker +
           worldModelContainer (activity inflates content into it).
-      8.  TRAINING FOCUS section — kicker + recommendationsList,
+      5.  TRAINING FOCUS section — kicker + recommendationsList,
           with txtNoRecommendations empty state.
-      9.  txtDashboardError shown when the dashboard fetch fails.
+      6.  txtDashboardError shown when the dashboard fetch fails.
+
+    Retired sections.
+    The hero rating cell, confidence row, and "Rating trend" sparkline
+    were retired when the user-visible Elo display was hidden from the
+    UI.  Their views remain in the layout with ``visibility="gone"`` so
+    the existing findViewById callers keep resolving (avoids a Kotlin-
+    side refactor in the same change), but they no longer render to
+    the user.  The opponent-Elo row inside the world-model container
+    is suppressed in code (``populateWorldModel`` filters it out).
 
     Preserved IDs (every findViewById in
     ProgressDashboardBottomSheet.kt resolves unchanged):
@@ -59,14 +61,20 @@
             app:atriumKicker="Profile"
             app:atriumTitle="Your trends" />
 
-        <!-- Hero rating + kicker. -->
+        <!-- Hero rating + kicker.  Retired when the user-visible Elo
+             display was hidden; the view stays in the tree (with
+             ``visibility="gone"``) so ProgressDashboardBottomSheet's
+             findViewById<TextView>(R.id.txtRating) lookup keeps
+             resolving without a Kotlin-side refactor. -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:paddingStart="@dimen/atrium_space_24"
             android:paddingEnd="@dimen/atrium_space_24"
-            android:paddingTop="@dimen/atrium_space_8">
+            android:paddingTop="@dimen/atrium_space_8"
+            android:visibility="gone"
+            tools:visibility="gone">
 
             <TextView
                 android:id="@+id/txtRating"
@@ -85,7 +93,8 @@
 
         </LinearLayout>
 
-        <!-- Inline confidence row. -->
+        <!-- Inline confidence row.  Retired alongside the hero rating
+             cell; same ``visibility="gone"`` rationale as above. -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -93,7 +102,9 @@
             android:gravity="center_vertical"
             android:paddingStart="@dimen/atrium_space_24"
             android:paddingEnd="@dimen/atrium_space_24"
-            android:paddingTop="@dimen/atrium_space_12">
+            android:paddingTop="@dimen/atrium_space_12"
+            android:visibility="gone"
+            tools:visibility="gone">
 
             <TextView
                 android:layout_width="wrap_content"
@@ -111,6 +122,10 @@
 
         </LinearLayout>
 
+        <!-- Divider between the (now-hidden) confidence row and the
+             (now-hidden) "Rating trend" sparkline section.  Gone so
+             two consecutive hidden sections don't leave an orphan
+             hairline visible above the WEAKNESS PROFILE block. -->
         <View
             android:layout_width="match_parent"
             android:layout_height="@dimen/atrium_hairline_thickness"
@@ -118,9 +133,12 @@
             android:layout_marginEnd="@dimen/atrium_space_24"
             android:layout_marginTop="@dimen/atrium_space_16"
             android:layout_marginBottom="@dimen/atrium_space_16"
-            android:background="@color/atrium_hairline" />
+            android:background="@color/atrium_hairline"
+            android:visibility="gone" />
 
-        <!-- RATING TREND. -->
+        <!-- RATING TREND.  Entire section hidden when the
+             user-visible Elo display was retired; views stay in the
+             tree for findViewById compatibility. -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -128,7 +146,8 @@
             android:text="Rating trend"
             android:paddingStart="@dimen/atrium_space_24"
             android:paddingEnd="@dimen/atrium_space_24"
-            android:paddingBottom="@dimen/atrium_space_4" />
+            android:paddingBottom="@dimen/atrium_space_4"
+            android:visibility="gone" />
 
         <ai.chesscoach.app.RatingSparklineView
             android:id="@+id/progressSparkline"
@@ -138,7 +157,7 @@
             android:layout_marginEnd="@dimen/atrium_space_24"
             android:layout_marginBottom="@dimen/atrium_space_8"
             android:visibility="gone"
-            tools:visibility="visible" />
+            tools:visibility="gone" />
 
         <TextView
             android:id="@+id/txtNoRatingHistory"
@@ -160,7 +179,8 @@
             android:layout_marginEnd="@dimen/atrium_space_24"
             android:layout_marginTop="@dimen/atrium_space_12"
             android:layout_marginBottom="@dimen/atrium_space_16"
-            android:background="@color/atrium_hairline" />
+            android:background="@color/atrium_hairline"
+            android:visibility="gone" />
 
         <!-- WEAKNESS PROFILE. -->
         <TextView

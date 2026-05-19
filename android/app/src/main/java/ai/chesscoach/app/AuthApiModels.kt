@@ -56,6 +56,16 @@ data class MeResponse(
      * Empty when the player has no game history yet.
      */
     @SerialName("skill_vector") val skillVector: Map<String, Float> = emptyMap(),
+    /**
+     * Monotonic XP counter incremented when the player completes a training
+     * exercise (seed = replay of an engine-flagged mistake; derivatives =
+     * weekly micro-tasks of the same mistake pattern in new positions).
+     *
+     * Replaces the user-visible Elo rating on the Home screen — ``rating``
+     * and ``confidence`` are still returned because they drive adaptive
+     * opponent selection internally, but they are no longer displayed.
+     */
+    @SerialName("training_xp") val trainingXp: Int = 0,
 )
 
 /**

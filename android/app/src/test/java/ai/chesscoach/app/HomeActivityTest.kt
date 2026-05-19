@@ -130,32 +130,57 @@ class HomeActivityTest {
     }
 
     @Test
-    fun `formatResumeSub biases the opponent rating 40 below the player`() {
+    fun `formatResumeSub renders adaptive opponent without the rating number`() {
+        // After Elo was hidden from the UI the resume sub no longer
+        // exposes the rating-derived opponent number; it always
+        // reads "vs. adaptive · HH:mm" so the user can't infer the
+        // hidden rating from the displayed opponent strength.
         withUtc {
             val noon = parseUtcDateTime("2026-04-21T12:34:00Z")
-            assertEquals("vs. ~1680 · 12:34", HomeActivity.formatResumeSub(1720f, noon))
-            assertEquals("vs. ~1460 · 12:34", HomeActivity.formatResumeSub(1500f, noon))
+            assertEquals("vs. adaptive · 12:34", HomeActivity.formatResumeSub(noon))
         }
     }
 
     @Test
-    fun `formatResumeSub floors the opponent rating at 800`() {
+    fun `formatResumeSub is independent of any cached rating`() {
+        // The function takes only a timestamp now — there is no rating
+        // parameter and the cached PREF_RATING is no longer consulted
+        // when building this string.  Smoke-test the timestamp branch
+        // at a few wall-clock values.
         withUtc {
-            val noon = parseUtcDateTime("2026-04-21T12:34:00Z")
-            // Player rating below 840 would otherwise drop the opponent
-            // below the slider's 800 floor; clamp keeps the engine in
-            // its valid range.
-            assertEquals("vs. ~800 · 12:34", HomeActivity.formatResumeSub(820f, noon))
-            assertEquals("vs. ~800 · 12:34", HomeActivity.formatResumeSub(800f, noon))
+            val morning = parseUtcDateTime("2026-04-21T08:05:00Z")
+            val evening = parseUtcDateTime("2026-04-21T21:59:00Z")
+            assertEquals("vs. adaptive · 08:05", HomeActivity.formatResumeSub(morning))
+            assertEquals("vs. adaptive · 21:59", HomeActivity.formatResumeSub(evening))
         }
     }
 
+    // ── XP kicker helper ─────────────────────────────────────────────
+
     @Test
-    fun `formatResumeSub falls back to adaptive when no rating is cached`() {
-        withUtc {
-            val noon = parseUtcDateTime("2026-04-21T12:34:00Z")
-            assertEquals("vs. adaptive · 12:34", HomeActivity.formatResumeSub(null, noon))
-        }
+    fun `formatXpKicker renders Level 1 0 XP for a fresh player`() {
+        assertEquals("Level 1 · 0 XP", HomeActivity.formatXpKicker(0))
+    }
+
+    @Test
+    fun `formatXpKicker increments level every XP_PER_LEVEL xp`() {
+        // Linear curve documented on HomeActivity.XP_PER_LEVEL: each
+        // bucket of XP_PER_LEVEL xp earns one level, starting at 1.
+        val perLevel = HomeActivity.XP_PER_LEVEL
+        assertEquals("Level 1 · ${perLevel - 1} XP", HomeActivity.formatXpKicker(perLevel - 1))
+        assertEquals("Level 2 · $perLevel XP", HomeActivity.formatXpKicker(perLevel))
+        assertEquals("Level 3 · ${perLevel * 2} XP", HomeActivity.formatXpKicker(perLevel * 2))
+        assertEquals("Level 11 · ${perLevel * 10} XP", HomeActivity.formatXpKicker(perLevel * 10))
+    }
+
+    @Test
+    fun `formatXpKicker clamps negative xp at 0`() {
+        // Defensive: a malformed cache (e.g. PREF_TRAINING_XP
+        // accidentally read as -1 sentinel) must not render
+        // "Level 0 · -1 XP" or anything sub-zero — clamp to the
+        // fresh-player presentation.
+        assertEquals("Level 1 · 0 XP", HomeActivity.formatXpKicker(-1))
+        assertEquals("Level 1 · 0 XP", HomeActivity.formatXpKicker(-500))
     }
 
     // ── helpers ──────────────────────────────────────────────────────

@@ -130,16 +130,6 @@ class GameSummaryBottomSheet : BottomSheetDialogFragment() {
         // ── Pure helper functions — testable without Android framework ────────
 
         /**
-         * Format a rating float as a bare integer string ("1200").
-         *
-         * Atrium's metric strip already labels the cell with a "RATING"
-         * kicker; the value cell shows just the number.  Drawer/header
-         * call sites that want the "Rating: X" form construct it
-         * inline (see MainActivity.txtRatingHeader).
-         */
-        fun formatRating(rating: Float): String = "%.0f".format(rating)
-
-        /**
          * Format confidence 0.0–1.0 as a bare percentage ("72%").
          * The Atrium ACCURACY cell carries its own "ACCURACY" kicker
          * underneath, so the value need not include the label.
@@ -217,7 +207,10 @@ class GameSummaryBottomSheet : BottomSheetDialogFragment() {
         val moveCount       = args.getInt(ARG_MOVE_COUNT, 0)
 
         // ── Bind views ────────────────────────────────────────────────────────
-        view.findViewById<TextView>(R.id.txtNewRating).text      = formatRating(rating)
+        // (txtNewRating retired alongside the rest of the user-visible
+        // Elo surfaces; ``rating`` is still unpacked below for the
+        // PREF_RATING write-back that powers adaptive opponent matching
+        // internally.)
         view.findViewById<TextView>(R.id.txtActionBadge).text    = actionBadgeLabel(actionType)
         view.findViewById<TextView>(R.id.txtCoachTitle).text     = title.ifBlank { "Game Over" }
         view.findViewById<TextView>(R.id.txtCoachDescription).text = description

@@ -56,7 +56,10 @@
             android:textAppearance="@style/Atrium.Display"
             android:text="How do you play?" />
 
-        <!-- Muted italic subtitle. -->
+        <!-- Muted italic subtitle.  Was anchored to a numeric rating
+             estimate before the user-visible Elo display was hidden;
+             rephrased to point at the abstract skill band so the user
+             still has guidance on what the slider is asking for. -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -65,7 +68,7 @@
             android:textColor="@color/atrium_muted"
             android:textSize="14sp"
             android:gravity="center_horizontal"
-            android:text="Drag the dot to your honest estimate." />
+            android:text="Drag the dot to where you'd place your skill." />
 
         <!-- ✦ ornament. -->
         <TextView
@@ -78,13 +81,18 @@
             android:textSize="14sp"
             android:text="✦" />
 
-        <!-- Hero rating value. -->
+        <!-- Hero rating value.  Hidden when the user-visible Elo
+             display was removed; the view stays in the tree so
+             OnboardingActivity.findViewById<TextView>(R.id.txtRatingValue)
+             keeps resolving without a Kotlin-side refactor. -->
         <TextView
             android:id="@+id/txtRatingValue"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:textAppearance="@style/Atrium.Display.Large"
             android:text="1500"
+            android:visibility="gone"
+            tools:visibility="gone"
             tools:text="1720" />
 
         <!-- Rating slider. -->
@@ -102,7 +110,11 @@
             app:trackColorInactive="@color/atrium_hairline"
             app:tickColor="@android:color/transparent" />
 
-        <!-- Tick labels row. -->
+        <!-- Tick labels row.  Numeric rating bands ("800 / 1400 /
+             2000 / 2600+") were replaced with abstract skill bands
+             when the user-visible Elo display was hidden.  The slider
+             range still maps to the same internal rating values; the
+             user just sees an abstract anchor instead of a number. -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -115,7 +127,7 @@
                 android:layout_weight="1"
                 android:textAppearance="@style/Atrium.Kicker"
                 android:gravity="start"
-                android:text="800" />
+                android:text="Beginner" />
 
             <TextView
                 android:layout_width="0dp"
@@ -123,7 +135,7 @@
                 android:layout_weight="1"
                 android:textAppearance="@style/Atrium.Kicker"
                 android:gravity="center"
-                android:text="1400" />
+                android:text="Casual" />
 
             <TextView
                 android:layout_width="0dp"
@@ -131,7 +143,7 @@
                 android:layout_weight="1"
                 android:textAppearance="@style/Atrium.Kicker"
                 android:gravity="center"
-                android:text="2000" />
+                android:text="Strong" />
 
             <TextView
                 android:layout_width="0dp"
@@ -139,7 +151,7 @@
                 android:layout_weight="1"
                 android:textAppearance="@style/Atrium.Kicker"
                 android:gravity="end"
-                android:text="2600+" />
+                android:text="Expert" />
 
         </LinearLayout>
 
@@ -239,12 +251,20 @@
             android:layout_marginBottom="@dimen/atrium_space_16"
             android:background="@color/atrium_hairline" />
 
-        <!-- First-opponent preview row. -->
+        <!-- First-opponent preview row.  Was "~1480 · adaptive" before
+             the user-visible Elo display was hidden — exposing the
+             opponent number would leak the player's own (now-hidden)
+             rating since opponent = rating - ~40.  The block stays in
+             the tree with ``visibility="gone"`` so the
+             findViewById<TextView>(R.id.txtFirstOpponent) lookup in
+             OnboardingActivity keeps resolving. -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:gravity="center_vertical">
+            android:gravity="center_vertical"
+            android:visibility="gone"
+            tools:visibility="gone">
 
             <View
                 android:layout_width="6dp"

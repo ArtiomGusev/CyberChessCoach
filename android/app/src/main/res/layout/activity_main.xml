@@ -18,9 +18,12 @@
     with no Kotlin-side changes.  IDs that simply move to a different
     parent: chessBoard, drawerLayout, txtCoach, txtCoachContainer,
     statusPulse, scoreRow, txtEngineScore, txtMistakeCategory,
-    txtRatingHeader, txtWeaknessTags, txtNextTrainingChip, btnReset,
+    txtWeaknessTags, txtNextTrainingChip, btnReset,
     btnUndo, btnChat, btnGameHistory, btnProgressDashboard, btnTraining,
-    btnChangePassword, btnLogout.
+    btnChangePassword, btnLogout.  (``txtRatingHeader`` was retired when
+    the user-visible Elo rating was hidden from the UI — opponent
+    matching still uses the cached rating internally; the drawer no
+    longer displays it.)
 
     New IDs added (no MainActivity wiring required to stay functional;
     activity may opt-in to populate them):
@@ -339,14 +342,6 @@
         android:paddingStart="@dimen/atrium_space_20"
         android:paddingEnd="@dimen/atrium_space_20"
         android:paddingBottom="@dimen/atrium_space_44">
-
-        <TextView
-            android:id="@+id/txtRatingHeader"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textAppearance="@style/Atrium.Numeric.Cyan"
-            android:text="Rating: —"
-            android:paddingBottom="@dimen/atrium_space_4" />
 
         <TextView
             android:id="@+id/txtWeaknessTags"

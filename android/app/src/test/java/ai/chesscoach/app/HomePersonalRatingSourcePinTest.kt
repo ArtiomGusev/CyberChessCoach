@@ -6,44 +6,43 @@ import org.junit.Test
 import java.io.File
 
 /**
- * Bidirectional source-pin for the personal-rating kicker added to
- * the Home screen (PR #184).
+ * Bidirectional source-pin for the player-anchor kicker on the Home
+ * screen.
  *
- * Why this test exists
- * --------------------
- * 2026-05-18 user feedback: "When I open the app there is no
- * personal rating - it appears only after a game".  Pre-PR-#184 the
- * Home screen showed ONLY the adaptive-opponent line on the
- * "New game" row; the player's own rating was never displayed there.
- * PR #184 adds ``R.id.homePersonalRating`` (a TextView styled as a
- * cyan-accent kicker) and the matching cache-then-refresh logic in
- * ``HomeActivity.onCreate`` + ``onResume``.
- *
- * This test follows the same bidirectional-pin pattern as
- * [[GameSummaryTrainingCardSourcePinTest]] /
- * [[ProgressDashboardCoachPlanSourcePinTest]]: if the XML view type
- * changes without updating the Kotlin cast (or vice versa), the cold-
- * start render crashes with a ClassCastException.
+ * History
+ * -------
+ * Originally added in PR #184 as the personal-rating kicker (closing
+ * 2026-05-18 user feedback "When I open the app there is no personal
+ * rating - it appears only after a game").  When Elo was hidden from
+ * the UI the same view-id was repurposed to display training XP
+ * (``Level N · X XP``) — the layout id, view-type cast, and the
+ * cache-then-refresh wiring all carry over; only the cached
+ * SharedPreferences key changed from ``PREF_RATING`` to
+ * ``PREF_TRAINING_XP``.  The pin still guards against drift between
+ * the XML and Kotlin sides, which would crash cold-start with a
+ * ClassCastException (see GameSummaryTrainingCardSourcePinTest for
+ * the original incident pattern).
  *
  * Pinned invariants
  * -----------------
- *  1. XML_DECLARES_HOME_PERSONAL_RATING   the activity_home.xml file
- *                                          declares exactly one element
- *                                          with android:id=@+id/homePersonalRating.
- *  2. KOTLIN_FINDS_HOME_PERSONAL_RATING    HomeActivity.kt looks up the
- *                                          view via findViewById.
+ *  1. XML_DECLARES_HOME_PERSONAL_RATING   activity_home.xml declares
+ *                                          exactly one element with
+ *                                          android:id=@+id/homePersonalRating.
+ *  2. KOTLIN_FINDS_HOME_PERSONAL_RATING    HomeActivity.kt looks up
+ *                                          the view via findViewById.
  *  3. CAST_MATCHES_VIEW_TYPE               XML tag short-name == Kotlin
  *                                          cast short-name.
  *  4. HOME_FETCHES_AUTH_ME                 HomeActivity calls
  *                                          authApiClient.me on cold-
- *                                          start so the rating
+ *                                          start so the kicker
  *                                          populates without waiting
  *                                          for the next game finish.
- *  5. HOME_REREADS_RATING_IN_ON_RESUME     HomeActivity.onResume re-
- *                                          reads PREF_RATING so a game
- *                                          finished in MainActivity
- *                                          updates the kicker without
- *                                          requiring a cold-start.
+ *  5. HOME_REREADS_XP_IN_ON_RESUME         HomeActivity.onResume re-
+ *                                          reads PREF_TRAINING_XP so a
+ *                                          training completed in
+ *                                          MainActivity updates the
+ *                                          kicker without requiring a
+ *                                          cold-start.
  */
 class HomePersonalRatingSourcePinTest {
 
@@ -113,16 +112,17 @@ class HomePersonalRatingSourcePinTest {
         val kt = File(ktPath).readText()
         assertTrue(
             "HomeActivity.kt must call ``authApiClient.me(...)`` somewhere — " +
-                "otherwise a fresh install (no cached PREF_RATING) leaves the " +
-                "rating kicker empty until the user opens MainActivity or " +
-                "finishes a game.  This was the 2026-05-18 user complaint that " +
-                "PR #184 closed.",
+                "otherwise a fresh install (no cached PREF_TRAINING_XP) leaves " +
+                "the kicker empty until the user opens MainActivity or " +
+                "finishes a game.  Same cold-start guarantee that PR #184 " +
+                "introduced for the rating kicker; carried over to the XP " +
+                "kicker that replaced it.",
             kt.contains("authApiClient.me("),
         )
     }
 
     @Test
-    fun `HOME_REREADS_RATING_IN_ON_RESUME - onResume refreshes the kicker from PREF_RATING`() {
+    fun `HOME_REREADS_XP_IN_ON_RESUME - onResume refreshes the kicker from PREF_TRAINING_XP`() {
         val kt = File(ktPath).readText()
         // Slice onResume's body so the match doesn't accidentally
         // pick up the onCreate read (which DOES exist but isn't what
@@ -143,12 +143,12 @@ class HomePersonalRatingSourcePinTest {
             kt.substring(onResumeStart)
 
         assertTrue(
-            "HomeActivity.onResume must re-read ``MainActivity.PREF_RATING`` " +
-                "from SharedPreferences so a game finished in MainActivity " +
-                "updates the rating kicker when the user pops back to Home.  " +
+            "HomeActivity.onResume must re-read ``MainActivity.PREF_TRAINING_XP`` " +
+                "from SharedPreferences so a training completed in MainActivity " +
+                "updates the kicker when the user pops back to Home.  " +
                 "Without this hook, the kicker stays at the stale onCreate " +
                 "value until the next cold-start.",
-            onResumeBody.contains("PREF_RATING"),
+            onResumeBody.contains("PREF_TRAINING_XP"),
         )
     }
 }

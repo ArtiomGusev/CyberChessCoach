@@ -16,7 +16,6 @@ import androidx.lifecycle.ViewModelProvider.NewInstanceFactory
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
-import kotlin.math.roundToInt
 
 /**
  * Cereveon · Atrium · Lichess Connect bottom sheet.
@@ -323,13 +322,18 @@ class LichessConnectBottomSheet : BottomSheetDialogFragment() {
     // ------------------------------------------------------------------
 
     private fun formatCalibrationBanner(c: LichessCalibrationResult): String {
-        val rating = c.rating?.roundToInt() ?: return ""
+        // We still require ``c.rating`` to be non-null before showing
+        // anything — that's the marker for "a calibration was applied
+        // to this player".  The value itself is no longer rendered:
+        // the user-visible Elo display was hidden, so the banner now
+        // just confirms the source perf + games-basis.
+        c.rating ?: return ""
         val perf = c.perf ?: return ""
         val basis = c.gamesBasis ?: 0
         return if (c.provisional == true) {
-            getString(R.string.lichess_calibration_banner_provisional, rating, perf, basis)
+            getString(R.string.lichess_calibration_banner_provisional, perf, basis)
         } else {
-            getString(R.string.lichess_calibration_banner, rating, perf, basis)
+            getString(R.string.lichess_calibration_banner, perf, basis)
         }
     }
 
