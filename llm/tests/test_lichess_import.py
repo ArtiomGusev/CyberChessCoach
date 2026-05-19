@@ -142,16 +142,28 @@ def other_player(db_session):
     return p
 
 
-def _fake_request() -> StarletteRequest:
+def _fake_request(headers: list[tuple[bytes, bytes]] | None = None) -> StarletteRequest:
     return StarletteRequest(
         {
             "type": "http",
             "method": "POST",
             "path": "/lichess/link",
-            "headers": [],
+            "headers": headers or [],
             "client": ("127.0.0.1", 0),
         }
     )
+
+
+def _fake_response():
+    """Stub ``fastapi.Response`` for handlers that set status_code via DI.
+
+    FastAPI normally injects a fresh ``Response`` per request; tests
+    that call the handler directly (bypassing the router) need to
+    construct one manually.
+    """
+    from fastapi import Response  # local import to keep top-of-file lean
+
+    return Response()
 
 
 @contextmanager
@@ -1026,6 +1038,7 @@ class TestRouter:
         with _limiter_disabled():
             result = trigger_import(
                 request=_fake_request(),
+                response=_fake_response(),
                 player=player,
                 db=db_session,
                 max_games=10,
@@ -1040,6 +1053,7 @@ class TestRouter:
             with pytest.raises(Exception) as excinfo:
                 trigger_import(
                     request=_fake_request(),
+                    response=_fake_response(),
                     player=player,
                     db=db_session,
                     max_games=10,
@@ -1063,3 +1077,674 @@ class TestRouter:
             )
             result = unlink(request=_fake_request(), player=player, db=db_session)
         assert result == {"unlinked": True}
+
+
+# ===========================================================================
+# v2 async import — job lifecycle, coalesce, cancellation, janitor, v1 pin
+# ===========================================================================
+#
+# IJ_01  start_import_job creates a queued row + commits.
+# IJ_02  start_import_job coalesces concurrent callers (same player_id)
+#        onto a single row — pinned by a real two-thread test.
+# IJ_03  start_import_job rejects an unlinked player with LichessNotLinkedError.
+# IJ_04  run_import_job promotes queued -> running -> succeeded on a clean stream.
+# IJ_05  run_import_job marks the row failed on an exception, does NOT advance
+#        the LinkedAccount watermark.
+# IJ_06  run_import_job is idempotent at pickup: a row that's already terminal
+#        (set by unlink_account, the janitor, or a prior worker) is skipped
+#        without clobbering error_message.
+# IJ_07  unlink_account marks any active job as failed before deleting the link.
+# IJ_08  _run_import_stream observes an external job.status flip mid-stream
+#        and exits without advancing the watermark.
+# IJ_09  cleanup_stale_import_jobs_on_startup sweeps queued/running rows.
+# IJ_10  serialize_job exposes the v2 wire shape stably.
+# IJ_11  POST /lichess/import without an X-API-Version header returns the
+#        legacy v1 200 body shape verbatim (regression pin).
+# IJ_12  POST /lichess/import with X-API-Version: 2 returns the v2 202 body
+#        and dispatches a worker for queued rows.
+
+import threading
+import time
+
+from sqlalchemy.pool import StaticPool
+
+from llm.seca.lichess import _locks_guard, _player_import_locks
+from llm.seca.lichess.models import (
+    JOB_STATUS_ACTIVE,
+    JOB_STATUS_FAILED,
+    JOB_STATUS_QUEUED,
+    JOB_STATUS_RUNNING,
+    JOB_STATUS_SUCCEEDED,
+    LichessImportJob,
+)
+
+
+@pytest.fixture()
+def cleared_player_locks():
+    """Reset the per-player import lock dict between tests.
+
+    The lock factory is process-global; previous tests may have stashed
+    Locks keyed on player_ids reused here.  Clearing is fast and
+    purely additive — production code never depends on the previous
+    state of the dict.
+    """
+    with _locks_guard:
+        _player_import_locks.clear()
+    yield
+    with _locks_guard:
+        _player_import_locks.clear()
+
+
+@pytest.fixture()
+def worker_session_factory(db_session, monkeypatch):
+    """Bind ``import_service._WorkerSession`` to the test's in-memory engine.
+
+    Required for any test that exercises ``run_import_job`` or
+    ``cleanup_stale_import_jobs_on_startup`` — those open their own
+    session via the module-level factory, which would otherwise hit the
+    production file-based SQLite.
+    """
+    engine = db_session.get_bind()
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(import_service, "_WorkerSession", factory)
+    return factory
+
+
+class TestImportJobLifecycle:
+    """IJ_01..IJ_06 + IJ_10 — start_import_job + run_import_job + serialize."""
+
+    @pytest.fixture()
+    def linked_player(self, db_session, player, monkeypatch):
+        _stub_profile(monkeypatch, profile={"id": "alice", "perfs": {}})
+        import_service.link_account(db_session, player, "alice")
+        return player
+
+    # IJ_01
+    def test_start_import_job_creates_queued_row(
+        self, db_session, linked_player, cleared_player_locks
+    ):
+        job = import_service.start_import_job(
+            db_session, linked_player, max_games=42
+        )
+        assert job.id  # UUID assigned
+        assert job.status == JOB_STATUS_QUEUED
+        assert job.target_max_games == 42
+        assert job.inserted == 0
+        assert job.skipped_duplicate == 0
+        assert job.skipped_invalid == 0
+        assert job.player_id == linked_player.id
+
+        rows = db_session.query(LichessImportJob).filter_by(player_id=linked_player.id).all()
+        assert len(rows) == 1
+
+    # IJ_01 (negative: invalid max_games)
+    def test_start_import_job_rejects_non_positive(
+        self, db_session, linked_player, cleared_player_locks
+    ):
+        with pytest.raises(ValueError):
+            import_service.start_import_job(
+                db_session, linked_player, max_games=0
+            )
+
+    # IJ_03
+    def test_start_import_job_raises_when_unlinked(
+        self, db_session, player, cleared_player_locks
+    ):
+        with pytest.raises(LichessNotLinkedError):
+            import_service.start_import_job(db_session, player, max_games=10)
+
+    # IJ_04
+    def test_run_import_job_clean_stream_marks_succeeded(
+        self,
+        db_session,
+        linked_player,
+        monkeypatch,
+        cleared_player_locks,
+        worker_session_factory,
+    ):
+        _stub_games(
+            monkeypatch,
+            games=[
+                _game_dict(external_id="g1", white="alice", black="bob", winner="white"),
+                _game_dict(external_id="g2", white="alice", black="bob", winner="black"),
+            ],
+        )
+        job = import_service.start_import_job(
+            db_session, linked_player, max_games=50
+        )
+        # Worker runs synchronously from the test thread.
+        import_service.run_import_job(job.id, max_games=50, rated=True)
+
+        db_session.refresh(job)
+        assert job.status == JOB_STATUS_SUCCEEDED
+        assert job.inserted == 2
+        assert job.error_message is None
+
+        # Watermark advanced on success.
+        link_row = (
+            db_session.query(LinkedAccount)
+            .filter(LinkedAccount.player_id == linked_player.id)
+            .one()
+        )
+        assert link_row.last_imported_at is not None
+
+    # IJ_05
+    def test_run_import_job_failure_preserves_watermark(
+        self,
+        db_session,
+        linked_player,
+        monkeypatch,
+        cleared_player_locks,
+        worker_session_factory,
+    ):
+        def _raising_iter(*_args, **_kwargs):
+            yield _game_dict(external_id="g1", white="alice", black="bob", winner="white")
+            raise lichess_client.LichessUpstreamError("simulated upstream failure")
+
+        monkeypatch.setattr(import_service.lichess_client, "fetch_user_games", _raising_iter)
+
+        job = import_service.start_import_job(
+            db_session, linked_player, max_games=50
+        )
+        import_service.run_import_job(job.id, max_games=50, rated=True)
+
+        db_session.refresh(job)
+        assert job.status == JOB_STATUS_FAILED
+        assert job.error_message is not None
+        assert "simulated upstream failure" in job.error_message
+
+        # Watermark stays None — the partial commits did NOT advance it.
+        link_row = (
+            db_session.query(LinkedAccount)
+            .filter(LinkedAccount.player_id == linked_player.id)
+            .one()
+        )
+        assert link_row.last_imported_at is None
+
+    # IJ_06
+    def test_run_import_job_skips_already_terminal_row(
+        self,
+        db_session,
+        linked_player,
+        cleared_player_locks,
+        worker_session_factory,
+    ):
+        # Insert a row already marked failed (e.g. by unlink_account).
+        # The worker must NOT overwrite the error_message with a generic
+        # "linked account not found" or similar.
+        job = LichessImportJob(
+            player_id=linked_player.id,
+            status=JOB_STATUS_FAILED,
+            target_max_games=10,
+            error_message="link removed during import",
+        )
+        db_session.add(job)
+        db_session.commit()
+
+        import_service.run_import_job(job.id, max_games=10, rated=True)
+
+        db_session.refresh(job)
+        assert job.status == JOB_STATUS_FAILED
+        assert job.error_message == "link removed during import"
+
+    # IJ_10
+    def test_serialize_job_shape_stable(self, db_session, linked_player, cleared_player_locks):
+        job = import_service.start_import_job(
+            db_session, linked_player, max_games=25
+        )
+        payload = import_service.serialize_job(job)
+        assert set(payload.keys()) == {
+            "job_id",
+            "status",
+            "inserted",
+            "skipped_duplicate",
+            "skipped_invalid",
+            "target_max_games",
+            "last_imported_at_ms",
+            "error_message",
+            "created_at",
+            "updated_at",
+        }
+        assert payload["job_id"] == job.id
+        assert payload["status"] == JOB_STATUS_QUEUED
+        assert payload["target_max_games"] == 25
+        assert payload["inserted"] == 0
+        assert payload["last_imported_at_ms"] is None
+
+
+class TestCoalesce:
+    """IJ_02 — real two-thread race against the per-player lock."""
+
+    def test_coalesce_concurrent_starts_same_player(self, cleared_player_locks):
+        # Shared engine across threads (StaticPool keeps the single
+        # SQLite :memory: DB shared).  The default per-test fixture
+        # uses NullPool which gives each connection a fresh DB —
+        # useless for a multi-thread race test.
+        engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(bind=engine)
+        SessionFactory = sessionmaker(bind=engine, expire_on_commit=False)
+
+        with SessionFactory() as setup_db:
+            setup_player = Player(
+                email="coalesce@test.com",
+                password_hash="x",
+                rating=1200.0,
+                confidence=0.5,
+                skill_vector_json="{}",
+                player_embedding="[]",
+            )
+            setup_db.add(setup_player)
+            setup_db.flush()
+            setup_db.add(
+                LinkedAccount(
+                    player_id=setup_player.id,
+                    platform="lichess",
+                    external_username="alice",
+                )
+            )
+            setup_db.commit()
+            player_id = setup_player.id
+
+        results: list[str] = []
+        errors: list[BaseException] = []
+        barrier = threading.Barrier(2)
+
+        def worker():
+            try:
+                with SessionFactory() as db:
+                    p = db.get(Player, player_id)
+                    barrier.wait(timeout=5)
+                    job = import_service.start_import_job(
+                        db, p, max_games=25
+                    )
+                    results.append(job.id)
+            except BaseException as exc:  # pylint: disable=broad-except
+                errors.append(exc)
+
+        t1 = threading.Thread(target=worker)
+        t2 = threading.Thread(target=worker)
+        t1.start()
+        t2.start()
+        t1.join(timeout=10)
+        t2.join(timeout=10)
+
+        assert not errors, f"worker threw: {errors}"
+        assert len(results) == 2, f"expected both threads to return; got {results}"
+        assert results[0] == results[1], "coalesce must hand back the same job_id"
+
+        with SessionFactory() as db:
+            n = db.query(LichessImportJob).filter_by(player_id=player_id).count()
+            assert n == 1, f"expected exactly 1 row, got {n}"
+
+
+class TestUnlinkTerminatesRunning:
+    """IJ_07 + IJ_08 — unlink + mid-stream cancellation."""
+
+    @pytest.fixture()
+    def linked_player(self, db_session, player, monkeypatch):
+        _stub_profile(monkeypatch, profile={"id": "alice", "perfs": {}})
+        import_service.link_account(db_session, player, "alice")
+        return player
+
+    # IJ_07
+    def test_unlink_marks_active_jobs_failed(
+        self, db_session, linked_player, cleared_player_locks
+    ):
+        running = LichessImportJob(
+            player_id=linked_player.id,
+            status=JOB_STATUS_RUNNING,
+            target_max_games=50,
+            inserted=3,
+        )
+        queued = LichessImportJob(
+            player_id=linked_player.id,
+            status=JOB_STATUS_QUEUED,
+            target_max_games=50,
+        )
+        succeeded = LichessImportJob(
+            player_id=linked_player.id,
+            status=JOB_STATUS_SUCCEEDED,
+            target_max_games=50,
+            inserted=10,
+        )
+        db_session.add_all([running, queued, succeeded])
+        db_session.commit()
+
+        import_service.unlink_account(db_session, linked_player)
+
+        db_session.refresh(running)
+        db_session.refresh(queued)
+        db_session.refresh(succeeded)
+        assert running.status == JOB_STATUS_FAILED
+        assert running.error_message == "link removed during import"
+        assert queued.status == JOB_STATUS_FAILED
+        assert queued.error_message == "link removed during import"
+        # Already-terminal rows must NOT be touched.
+        assert succeeded.status == JOB_STATUS_SUCCEEDED
+        assert succeeded.error_message is None
+        # And the link row itself is gone.
+        assert (
+            db_session.query(LinkedAccount).filter_by(player_id=linked_player.id).first()
+            is None
+        )
+
+    # IJ_08
+    def test_run_import_stream_aborts_on_external_status_flip(
+        self,
+        db_session,
+        linked_player,
+        monkeypatch,
+        cleared_player_locks,
+    ):
+        job = LichessImportJob(
+            player_id=linked_player.id,
+            status=JOB_STATUS_RUNNING,
+            target_max_games=10,
+        )
+        db_session.add(job)
+        db_session.commit()
+
+        games = [
+            _game_dict(
+                external_id=f"g{i}",
+                white="alice",
+                black="bob",
+                winner="white",
+                created_at_ms=1_700_000_000_000 + i * 1000,
+            )
+            for i in range(5)
+        ]
+
+        yielded_count = [0]
+
+        def _cancelling_iter(*_args, **_kwargs):
+            for i, g in enumerate(games):
+                yielded_count[0] = i + 1
+                if i == 1:
+                    # After the SECOND yield, externally flip the job
+                    # to failed (simulating ``unlink_account`` running
+                    # in another request thread).  ``_run_import_stream``
+                    # commits per game then refreshes ``job.status``;
+                    # the flip will be observed on the next iteration.
+                    db_session.query(LichessImportJob).filter_by(id=job.id).update(
+                        {
+                            "status": JOB_STATUS_FAILED,
+                            "error_message": "link removed during import",
+                        }
+                    )
+                    db_session.commit()
+                yield g
+
+        monkeypatch.setattr(
+            import_service.lichess_client, "fetch_user_games", _cancelling_iter
+        )
+
+        link_row = (
+            db_session.query(LinkedAccount).filter_by(player_id=linked_player.id).one()
+        )
+        import_service._run_import_stream(
+            db_session,
+            link_row,
+            linked_player,
+            max_games=10,
+            rated=True,
+            job=job,
+        )
+
+        # At least one game past the flip-trigger may land before the
+        # next-iteration refresh sees the failed status — but the stream
+        # must NOT process all 5.
+        inserted = (
+            db_session.query(GameEvent)
+            .filter_by(player_id=linked_player.id, source="lichess")
+            .count()
+        )
+        assert inserted < 5, f"expected partial insertion; got {inserted}"
+        # Status check must have stopped the iterator before exhaustion.
+        assert yielded_count[0] < 5
+
+        # Cancellation must NOT advance the watermark.
+        db_session.refresh(link_row)
+        assert link_row.last_imported_at is None
+
+
+class TestStartupJanitor:
+    """IJ_09 — cleanup_stale_import_jobs_on_startup."""
+
+    def test_janitor_sweeps_active_rows_to_failed(
+        self, db_session, player, cleared_player_locks, worker_session_factory
+    ):
+        running = LichessImportJob(
+            player_id=player.id,
+            status=JOB_STATUS_RUNNING,
+            target_max_games=10,
+        )
+        queued = LichessImportJob(
+            player_id=player.id,
+            status=JOB_STATUS_QUEUED,
+            target_max_games=10,
+        )
+        succeeded = LichessImportJob(
+            player_id=player.id,
+            status=JOB_STATUS_SUCCEEDED,
+            target_max_games=10,
+            inserted=7,
+        )
+        db_session.add_all([running, queued, succeeded])
+        db_session.commit()
+
+        affected = import_service.cleanup_stale_import_jobs_on_startup()
+        assert affected == 2
+
+        db_session.expire_all()
+        running = db_session.get(LichessImportJob, running.id)
+        queued = db_session.get(LichessImportJob, queued.id)
+        succeeded = db_session.get(LichessImportJob, succeeded.id)
+        assert running.status == JOB_STATUS_FAILED
+        assert running.error_message == "abandoned by server restart"
+        assert queued.status == JOB_STATUS_FAILED
+        assert queued.error_message == "abandoned by server restart"
+        # Already-terminal rows must stay untouched.
+        assert succeeded.status == JOB_STATUS_SUCCEEDED
+        assert succeeded.error_message is None
+
+    def test_janitor_is_idempotent(
+        self, db_session, player, cleared_player_locks, worker_session_factory
+    ):
+        # Second call (after the first sweep) is a no-op.
+        running = LichessImportJob(
+            player_id=player.id,
+            status=JOB_STATUS_RUNNING,
+            target_max_games=10,
+        )
+        db_session.add(running)
+        db_session.commit()
+
+        assert import_service.cleanup_stale_import_jobs_on_startup() == 1
+        assert import_service.cleanup_stale_import_jobs_on_startup() == 0
+
+
+class TestV1LegacyPathRegression:
+    """IJ_11 — pin the v1 sync response shape so it never silently drifts.
+
+    The shipped Android v1 client (pre-PR #187 + before the Lichess v2
+    PR) sends ``X-API-Version: 1`` (or no header — also routed to v1).
+    Its parser expects exactly the keys
+    ``{"inserted", "skipped_duplicate", "skipped_invalid", "last_imported_at"}``.
+    A drift here would 500 every shipped client until they update.
+    """
+
+    @pytest.fixture()
+    def linked_player(self, db_session, player, monkeypatch):
+        _stub_profile(monkeypatch, profile={"id": "alice", "perfs": {}})
+        import_service.link_account(db_session, player, "alice")
+        return player
+
+    def _request_with_version(self, version: str | None) -> StarletteRequest:
+        headers = []
+        if version is not None:
+            headers.append((b"x-api-version", version.encode()))
+        return _fake_request(headers=headers)
+
+    def test_no_header_returns_v1_shape(self, db_session, linked_player, monkeypatch):
+        _stub_games(
+            monkeypatch,
+            games=[_game_dict(external_id="g1", white="alice", black="bob", winner="white")],
+        )
+        with _limiter_disabled():
+            result = trigger_import(
+                request=self._request_with_version(None),
+                response=_fake_response(),
+                player=linked_player,
+                db=db_session,
+                max_games=10,
+                rated=True,
+            )
+
+        # v1 contract: exactly these keys, no job_id / no status / no target_max_games.
+        assert isinstance(result, dict)
+        assert set(result.keys()) == {
+            "inserted",
+            "skipped_duplicate",
+            "skipped_invalid",
+            "last_imported_at",
+        }
+        assert "job_id" not in result
+        assert "status" not in result
+        assert result["inserted"] == 1
+
+    def test_explicit_v1_header_returns_v1_shape(
+        self, db_session, linked_player, monkeypatch
+    ):
+        _stub_games(
+            monkeypatch,
+            games=[_game_dict(external_id="g1", white="alice", black="bob", winner="white")],
+        )
+        with _limiter_disabled():
+            result = trigger_import(
+                request=self._request_with_version("1"),
+                response=_fake_response(),
+                player=linked_player,
+                db=db_session,
+                max_games=10,
+                rated=True,
+            )
+        assert set(result.keys()) == {
+            "inserted",
+            "skipped_duplicate",
+            "skipped_invalid",
+            "last_imported_at",
+        }
+        assert result["inserted"] == 1
+
+    # IJ_12 — v2 header returns the new shape + 202 status.
+    def test_v2_header_returns_job_payload(
+        self,
+        db_session,
+        linked_player,
+        monkeypatch,
+        cleared_player_locks,
+    ):
+        # Stub the worker pool so the test stays single-threaded: the
+        # router will submit() the job, but we just want to verify the
+        # 202 + job_id response shape, not the worker's progress.
+        submitted: list[tuple] = []
+
+        class _StubExecutor:
+            def submit(self, fn, *args, **kwargs):  # pylint: disable=unused-argument
+                submitted.append((fn, args, kwargs))
+
+        monkeypatch.setattr("llm.seca.lichess.router._executor", _StubExecutor())
+
+        response = _fake_response()
+        with _limiter_disabled():
+            result = trigger_import(
+                request=self._request_with_version("2"),
+                response=response,
+                player=linked_player,
+                db=db_session,
+                max_games=25,
+                rated=True,
+            )
+
+        assert response.status_code == 202
+        # v2 shape — must carry job_id + target_max_games.
+        assert set(result.keys()) >= {
+            "job_id",
+            "status",
+            "inserted",
+            "skipped_duplicate",
+            "skipped_invalid",
+            "target_max_games",
+        }
+        assert result["target_max_games"] == 25
+        assert result["inserted"] == 0
+        # Worker submission fired for the queued (fresh-inserted) row.
+        assert len(submitted) == 1
+        assert submitted[0][1][0] == result["job_id"]
+
+
+class TestGetImportJobRoute:
+    """Owner-scoped GET /lichess/import/job/{job_id}."""
+
+    @pytest.fixture()
+    def linked_player(self, db_session, player, monkeypatch):
+        _stub_profile(monkeypatch, profile={"id": "alice", "perfs": {}})
+        import_service.link_account(db_session, player, "alice")
+        return player
+
+    def test_get_import_job_returns_owned_job(
+        self, db_session, linked_player, cleared_player_locks
+    ):
+        from llm.seca.lichess.router import get_import_job
+
+        job = import_service.start_import_job(
+            db_session, linked_player, max_games=10
+        )
+        with _limiter_disabled():
+            payload = get_import_job(
+                request=_fake_request(),
+                job_id=job.id,
+                player=linked_player,
+                db=db_session,
+            )
+        assert payload["job_id"] == job.id
+        assert payload["status"] == JOB_STATUS_QUEUED
+
+    def test_get_import_job_404_for_nonexistent(self, db_session, linked_player):
+        from fastapi import HTTPException
+
+        from llm.seca.lichess.router import get_import_job
+
+        with _limiter_disabled(), pytest.raises(HTTPException) as excinfo:
+            get_import_job(
+                request=_fake_request(),
+                job_id="no-such-job",
+                player=linked_player,
+                db=db_session,
+            )
+        assert excinfo.value.status_code == 404
+
+    def test_get_import_job_404_for_other_players_job(
+        self, db_session, linked_player, other_player, cleared_player_locks
+    ):
+        from fastapi import HTTPException
+
+        from llm.seca.lichess.router import get_import_job
+
+        # Job owned by linked_player; other_player must not be able to read it.
+        job = import_service.start_import_job(
+            db_session, linked_player, max_games=10
+        )
+        with _limiter_disabled(), pytest.raises(HTTPException) as excinfo:
+            get_import_job(
+                request=_fake_request(),
+                job_id=job.id,
+                player=other_player,
+                db=db_session,
+            )
+        assert excinfo.value.status_code == 404

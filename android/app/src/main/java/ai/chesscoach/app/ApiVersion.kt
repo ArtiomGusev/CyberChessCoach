@@ -21,6 +21,6 @@ package ai.chesscoach.app
  * value with no risk of drift.  See `docs/API_CONTRACTS.md` >
  * "API schema versioning" for the migration policy.
  */
-const val COACH_API_VERSION: String = "1"
+const val COACH_API_VERSION: String = "2"
 
 const val COACH_API_VERSION_HEADER: String = "X-API-Version"

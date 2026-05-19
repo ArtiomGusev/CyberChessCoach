@@ -368,8 +368,8 @@ Two response headers carry the version contract:
 
 | Header | Value | Meaning |
 |---|---|---|
-| `X-API-Version` | `1` (currently) | Server's *preferred* version — what new clients should target |
-| `X-API-Versions-Supported` | `1` (comma-separated when multiple) | Every version the server will accept on inbound requests |
+| `X-API-Version` | `2` (currently) | Server's *preferred* version — what new clients should target |
+| `X-API-Versions-Supported` | `1, 2` (comma-separated when multiple) | Every version the server will accept on inbound requests |
 
 The Android client sends `X-API-Version` on coaching requests; the
 server gates on it (**lenient on missing**, **strict on

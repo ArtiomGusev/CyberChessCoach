@@ -79,6 +79,15 @@ data class LichessStatusResponse(
     @SerialName("linked_at") val linkedAt: String? = null,
     @SerialName("last_imported_at") val lastImportedAt: String? = null,
     @SerialName("imported_game_count") val importedGameCount: Int = 0,
+    /**
+     * v2 only: non-null when a Lichess import job is in flight
+     * (status ``queued`` or ``running``) for the current player.  The
+     * Connect sheet uses this on view-open to rejoin a progress view
+     * that survived a sheet dismiss / device restart.  ``null`` on a
+     * not-linked response (server omits the field) and on linked
+     * responses where no job is active.
+     */
+    @SerialName("active_import_job_id") val activeImportJobId: String? = null,
 )
 
 /**
@@ -104,3 +113,63 @@ data class LichessImportResponse(
  */
 @Serializable
 data class LichessUnlinkResponse(val unlinked: Boolean)
+
+// ─────────────────────────────────────────────────────────────────────
+// v2 async import — replaces synchronous LichessImportResponse on the
+// new client.  See docs/API_CONTRACTS.md §31 and the plan note in
+// LichessConnectViewModel about the polling lifecycle.
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * 202 response from POST /lichess/import when the client sends
+ * ``X-API-Version: 2``.  Carries the freshly-created (or coalesced)
+ * job's state — counters are 0 on a brand-new job, non-zero when a
+ * concurrent caller already started the import.
+ *
+ * Shape is identical to [LichessImportJobStatus] so a fake / cached
+ * decoder can use either type.  Kept as a separate type for clarity
+ * at the call-site (POST returns Accepted, GET returns Status).
+ */
+@Serializable
+data class LichessImportAccepted(
+    @SerialName("job_id") val jobId: String,
+    val status: String,
+    val inserted: Int = 0,
+    @SerialName("skipped_duplicate") val skippedDuplicate: Int = 0,
+    @SerialName("skipped_invalid") val skippedInvalid: Int = 0,
+    @SerialName("target_max_games") val targetMaxGames: Int,
+    @SerialName("last_imported_at_ms") val lastImportedAtMs: Long? = null,
+    @SerialName("error_message") val errorMessage: String? = null,
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null,
+)
+
+/**
+ * 200 response from GET /lichess/import/job/{job_id}.  Same shape as
+ * [LichessImportAccepted]; the field set is stable across the job's
+ * lifecycle.  [status] ∈ {``queued``, ``running``, ``succeeded``,
+ * ``failed``}.  [errorMessage] is non-null on ``failed`` only.
+ */
+@Serializable
+data class LichessImportJobStatus(
+    @SerialName("job_id") val jobId: String,
+    val status: String,
+    val inserted: Int = 0,
+    @SerialName("skipped_duplicate") val skippedDuplicate: Int = 0,
+    @SerialName("skipped_invalid") val skippedInvalid: Int = 0,
+    @SerialName("target_max_games") val targetMaxGames: Int,
+    @SerialName("last_imported_at_ms") val lastImportedAtMs: Long? = null,
+    @SerialName("error_message") val errorMessage: String? = null,
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null,
+) {
+    companion object {
+        const val STATUS_QUEUED = "queued"
+        const val STATUS_RUNNING = "running"
+        const val STATUS_SUCCEEDED = "succeeded"
+        const val STATUS_FAILED = "failed"
+    }
+
+    val isTerminal: Boolean
+        get() = status == STATUS_SUCCEEDED || status == STATUS_FAILED
+}

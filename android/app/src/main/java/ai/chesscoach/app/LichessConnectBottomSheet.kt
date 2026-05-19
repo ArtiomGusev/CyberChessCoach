@@ -73,6 +73,11 @@ class LichessConnectBottomSheet : BottomSheetDialogFragment() {
     private lateinit var importedCountText: TextView
     private lateinit var lastSyncedText: TextView
 
+    // v2 async-import progress block — hidden except during Importing.
+    private lateinit var importProgressBlock: View
+    private lateinit var importProgressBar: ProgressBar
+    private lateinit var importProgressCaption: TextView
+
     /**
      * Test seam — production callers don't pass one and we build the
      * default factory in onCreate; instrumentation tests can swap in a
@@ -101,6 +106,9 @@ class LichessConnectBottomSheet : BottomSheetDialogFragment() {
         calibrationBanner = view.findViewById(R.id.lichessCalibrationBanner)
         importedCountText = view.findViewById(R.id.lichessImportedCount)
         lastSyncedText = view.findViewById(R.id.lichessLastSyncedValue)
+        importProgressBlock = view.findViewById(R.id.lichessImportProgressBlock)
+        importProgressBar = view.findViewById(R.id.lichessImportProgressBar)
+        importProgressCaption = view.findViewById(R.id.lichessImportProgressCaption)
 
         val factory = viewModelFactoryOverride ?: defaultFactory(requireContext())
         viewModel = ViewModelProvider(this, factory)[LichessConnectViewModel::class.java]
@@ -119,11 +127,31 @@ class LichessConnectBottomSheet : BottomSheetDialogFragment() {
         btnUnlink.setOnClickListener {
             viewModel.unlink()
         }
+        // refreshStatus is fired from onStart() (below) so it ALSO
+        // runs when the user foregrounds the app without re-creating
+        // the sheet view — that's the resume-on-reopen path that picks
+        // up active_import_job_id from /lichess/status and rejoins the
+        // determinate progress bar.
+    }
 
-        // Initial fetch.  If the player has no token (signed out), the
-        // ViewModel surfaces UNAUTHENTICATED and we dismiss — sheet
-        // requires an authenticated session by construction.
+    override fun onStart() {
+        super.onStart()
+        // Single source of truth for "view is visible → load latest state".
+        // Fires on both first-open AND app-foreground-while-sheet-open.
+        // If the player has no token (signed out), the ViewModel surfaces
+        // UNAUTHENTICATED and the sheet dismisses — sheet requires an
+        // authenticated session by construction.
         viewModel.refreshStatus()
+    }
+
+    override fun onStop() {
+        // Pause the v2 import-job poll loop on background / sheet
+        // dismiss so we don't hammer the server while the user isn't
+        // looking (and so Doze doesn't punish us on resume).  The
+        // server-side job continues independently; the next onStart()
+        // fires refreshStatus() which rejoins via active_import_job_id.
+        viewModel.pausePolling()
+        super.onStop()
     }
 
     // ------------------------------------------------------------------
@@ -155,6 +183,10 @@ class LichessConnectBottomSheet : BottomSheetDialogFragment() {
                 groupNotLinked.isVisible = false
                 groupLinked.isVisible = true
                 setControlsEnabled(true)
+                // Hide the v2 import-progress block when transitioning
+                // out of Importing (or just landing on Linked fresh).
+                importProgressBlock.isVisible = false
+                btnImport.isVisible = true
 
                 linkedHandleText.text = state.username
                 importedCountText.text = state.importedGameCount.toString()
@@ -173,6 +205,57 @@ class LichessConnectBottomSheet : BottomSheetDialogFragment() {
 
                 // One-shot import summary toast.
                 state.lastImportSummary?.let { surfaceImportSummary(it) }
+            }
+            is LichessConnectViewModel.UiState.Importing -> {
+                // Render the surrounding Linked context (handle, counts)
+                // so the user sees what's being imported into.
+                val prior = state.previousLinked
+                loadingSpinner.isVisible = false
+                groupNotLinked.isVisible = false
+                groupLinked.isVisible = true
+                linkedHandleText.text = prior.username
+                importedCountText.text = prior.importedGameCount.toString()
+                lastSyncedText.text =
+                    prior.lastImportedAt?.let { formatTimestamp(it) }
+                        ?: getString(R.string.lichess_never_synced)
+                calibrationBanner.isVisible = false
+
+                // Swap the Import button for the determinate progress
+                // block.  Unlink stays enabled so the user can cancel
+                // the in-flight job by unlinking (server-side
+                // unlink_account cancels the job).
+                btnImport.isVisible = false
+                importProgressBlock.isVisible = true
+                btnImport.isEnabled = false
+                btnLink.isEnabled = false
+                btnUnlink.isEnabled = true
+
+                // Bind progress values.  ``target`` is the request
+                // cap, not the true game count (which we won't know
+                // until the stream ends), hence "of up to N" in the
+                // caption.  Clamp progress to [0, target] defensively
+                // — the server should never send inserted > target,
+                // but a transient race could push it over.
+                val target = state.target.coerceAtLeast(1)
+                val inserted = state.inserted.coerceIn(0, target)
+                importProgressBar.max = target
+                importProgressBar.progress = inserted
+
+                val skipped = state.skippedDuplicate + state.skippedInvalid
+                importProgressCaption.text = if (skipped == 0) {
+                    getString(
+                        R.string.lichess_import_progress_caption,
+                        inserted,
+                        target,
+                    )
+                } else {
+                    getString(
+                        R.string.lichess_import_progress_caption_with_skipped,
+                        inserted,
+                        target,
+                        skipped,
+                    )
+                }
             }
             is LichessConnectViewModel.UiState.Error -> {
                 // Error state preserves the previous state under the

@@ -356,7 +356,24 @@ def _assert_safe_world_model(world_model):
 
 
 def _assert_no_background_tasks():
-    """Detect accidental async learner loops via env flags."""
+    """Detect accidental async learner loops via env flags.
+
+    Scope is narrow despite the function name: it crashes only when
+    ``SECA_ENABLE_ONLINE_LEARNING=1``, the legacy trip-wire for the
+    RL trainer that Rule 3 in ``CLAUDE.md`` prohibits.
+
+    This guard does NOT (and must not) reject general background work.
+    Specifically, the Lichess v2 import worker
+    (``llm.seca.lichess.router._executor``, a ``ThreadPoolExecutor``
+    that runs the streaming NDJSON read off the request thread) is
+    permitted: it is I/O-bound coordination, not online learning,
+    and writes to ``game_events`` / ``lichess_import_jobs`` only.
+    Any future I/O worker that follows the same pattern (off-thread
+    HTTP / file streaming, no model updates) is also permitted; if
+    you want to add a tripwire for those, narrow this check on
+    explicit signals (env flag, registered worker type) rather than
+    on the existence of background threads.
+    """
     if os.getenv("SECA_ENABLE_ONLINE_LEARNING") == "1":
         _crash("Online learning explicitly enabled via env")
 

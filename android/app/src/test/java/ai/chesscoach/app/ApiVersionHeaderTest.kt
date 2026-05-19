@@ -64,11 +64,17 @@ class ApiVersionHeaderTest {
     // ----------------------------------------------------------------------
 
     @Test
-    fun `AVH_CLIENT_CONST coach api version constant equals 1`() {
+    fun `AVH_CLIENT_CONST coach api version constant equals 2`() {
         assertEquals(
-            "COACH_API_VERSION must equal '1' until a deliberate bump.  See " +
-                "docs/API_CONTRACTS.md > API schema versioning.",
-            "1",
+            "COACH_API_VERSION must equal '2' until the next deliberate bump. " +
+                "Bumped 1 -> 2 in the Lichess v2 async-import PR (POST " +
+                "/lichess/import switches from synchronous 200 + summary " +
+                "to 202 + job payload).  Server-side sibling: AVH_01 in " +
+                "llm/tests/test_api_version_header.py.  '1' remains in " +
+                "the server's API_VERSIONS_SUPPORTED tuple for backward " +
+                "compat with shipped v1 builds; this constant is the " +
+                "preferred / current version a fresh build targets.",
+            "2",
             COACH_API_VERSION,
         )
         assertEquals("X-API-Version", COACH_API_VERSION_HEADER)

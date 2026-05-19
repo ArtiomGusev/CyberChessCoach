@@ -102,17 +102,20 @@ def client(server_module, monkeypatch):
 
 
 def test_avh_01_api_version_constant(server_module) -> None:
-    assert server_module.API_VERSION == "1", (
-        "API_VERSION constant must equal '1' until a deliberate bump.  "
-        "Bumping requires updating both server and Android constants in "
-        "the same release; see docs/API_CONTRACTS.md > API schema versioning."
+    assert server_module.API_VERSION == "2", (
+        "API_VERSION constant must equal '2' until the next deliberate bump.  "
+        "Bumped 1 -> 2 in the Lichess v2 async-import PR (POST /lichess/import "
+        "switches response shape from 200 + summary dict to 202 + job payload "
+        "when the client sends X-API-Version: 2).  '1' remains in "
+        "API_VERSIONS_SUPPORTED for backward compat with shipped Android "
+        "builds — see test_avh_06 + the next bump checklist in README."
     )
 
 
 def test_avh_02_health_response_carries_version(client) -> None:
     resp = client.get("/health")
     assert resp.status_code == 200
-    assert resp.headers.get("X-API-Version") == "1"
+    assert resp.headers.get("X-API-Version") == "2"
 
 
 def test_avh_03_seca_status_response_carries_version(client) -> None:
@@ -121,7 +124,7 @@ def test_avh_03_seca_status_response_carries_version(client) -> None:
     open endpoint it already polls for the safety gate."""
     resp = client.get("/seca/status")
     assert resp.status_code == 200
-    assert resp.headers.get("X-API-Version") == "1"
+    assert resp.headers.get("X-API-Version") == "2"
 
 
 def test_avh_04_coaching_response_carries_version(client) -> None:
@@ -138,7 +141,7 @@ def test_avh_04_coaching_response_carries_version(client) -> None:
         json={"fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"},
     )
     assert resp.status_code == 200, f"expected 200, got {resp.status_code}: {resp.text!r}"
-    assert resp.headers.get("X-API-Version") == "1"
+    assert resp.headers.get("X-API-Version") == "2"
 
 
 def test_avh_05_missing_header_is_lenient(client) -> None:
@@ -152,7 +155,7 @@ def test_avh_05_missing_header_is_lenient(client) -> None:
         json={"fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"},
     )
     assert resp.status_code == 200
-    assert resp.headers.get("X-API-Version") == "1"
+    assert resp.headers.get("X-API-Version") == "2"
 
 
 def test_avh_06_matching_header_is_accepted(client) -> None:
@@ -192,7 +195,7 @@ def test_avh_08_mismatch_response_carries_server_version(client) -> None:
         json={"fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"},
     )
     assert resp.status_code == 400
-    assert resp.headers.get("X-API-Version") == "1"
+    assert resp.headers.get("X-API-Version") == "2"
 
 
 @pytest.mark.parametrize("path", ["/", "/health", "/seca/status"])
@@ -206,7 +209,7 @@ def test_avh_09_discovery_routes_exempt_from_mismatch(client, path: str) -> None
         f"discovery route {path} must accept any X-API-Version; "
         f"got {resp.status_code}"
     )
-    assert resp.headers.get("X-API-Version") == "1"
+    assert resp.headers.get("X-API-Version") == "2"
 
 
 def test_avh_10_cors_allow_headers_includes_x_api_version(server_module) -> None:
@@ -308,8 +311,45 @@ def test_avh_14_error_detail_names_supported_range(client) -> None:
         f"error detail must mention what the server supports; got {detail!r}"
     )
     assert "999" in detail, "error detail must echo the client-sent version"
-    # The current supported list is just ("1",); the detail should
-    # mention "1" (the current preferred version + the only entry).
+    # The supported list now contains both "1" and "2"; the detail
+    # should mention what the server accepts so the client can update.
     assert "1" in detail, (
         f"error detail must list the supported range; got {detail!r}"
     )
+    assert "2" in detail, (
+        f"error detail must list the supported range; got {detail!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# PR (Lichess v2 async-import) — backward-compat pin
+# ---------------------------------------------------------------------------
+
+
+def test_avh_15_v1_header_still_accepted_after_bump(client) -> None:
+    """AVH_15: backward compat with shipped v1 clients.
+
+    The bump from API_VERSION='1' to '2' (Lichess v2 async-import PR)
+    must NOT break clients still sending ``X-API-Version: 1``.  Both
+    versions live in ``API_VERSIONS_SUPPORTED`` simultaneously; the
+    legacy v1 import path still serves the old 200 + summary shape
+    so the shipped Android v1 build keeps working until users
+    upgrade.
+
+    Complements ``test_avh_06_matching_header_is_accepted`` (which
+    happens to also send "1") by asserting the **intent**: this is a
+    backward-compat property, not an accident of which version we
+    happen to call "current".
+    """
+    resp = client.post(
+        "/engine/eval",
+        headers={"X-Api-Key": "ci-test-key", "X-API-Version": "1"},
+        json={"fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"},
+    )
+    assert resp.status_code == 200, (
+        f"v1 header must remain accepted while '1' is in API_VERSIONS_SUPPORTED; "
+        f"got {resp.status_code}: {resp.text!r}"
+    )
+    # Response still carries the server's preferred version (=='2') —
+    # that's how a v1 client learns it should upgrade.
+    assert resp.headers.get("X-API-Version") == "2"
